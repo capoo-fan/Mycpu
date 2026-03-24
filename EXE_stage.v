@@ -13,7 +13,6 @@ module EXE_stage(
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus
   );
 
-  // 内部信号
   reg         reset;
   always @(posedge clk) reset <= ~resetn;
 
@@ -52,7 +51,7 @@ module EXE_stage(
   reg         es_is_rdcnt;
   reg  [ 1:0] es_rdcnt_sel;
 
-  // 解包 ds_to_es_bus
+
   wire [31:0] ds_pc;
   wire [11:0] ds_alu_op;
   wire [31:0] ds_alu_src1;
@@ -84,7 +83,6 @@ module EXE_stage(
   wire        ds_has_ine;
   wire        ds_is_rdcnt;
   wire [ 1:0] ds_rdcnt_sel;
-
   assign {ds_pc, ds_alu_op, ds_alu_src1, ds_alu_src2, ds_rkd_value,
           ds_res_from_mem, ds_gr_we, ds_mem_we, ds_dest,
           ds_is_mul, ds_is_div, ds_mul_signed, ds_mul_hi,
@@ -95,9 +93,10 @@ module EXE_stage(
           ds_csr_re, ds_csr_we, ds_csr_num, ds_csr_wmask,
           ds_has_adef, ds_has_ine, ds_is_rdcnt, ds_rdcnt_sel} = ds_to_es_bus;
 
+
   wire [31:0] alu_result;
 
-  // 乘法器 / 除法器
+  // 乘除法
   wire [63:0] mul_product;
   wire [31:0] div_quotient;
   wire [31:0] div_remainder;
@@ -109,10 +108,10 @@ module EXE_stage(
   wire   mul_result_ready = !es_is_mul       || mul_cnt;
   wire   div_result_ready = !es_is_div       || div_complete;
   wire   es_ready_go      = mul_result_ready && div_result_ready;
-  assign es_allowin       = !es_valid        || es_ready_go && ms_allowin;
+  assign es_allowin       = !es_valid        || (es_ready_go && ms_allowin);
   assign es_to_ms_valid   = es_valid         && es_ready_go;
 
-  // EX 级最终结果: ALU / 乘法器 / 除法器
+  // EXE 的结果
   wire [31:0] es_final_result = es_is_mul ? (es_mul_hi ? mul_product[63:32] : mul_product[31:0]) :
        es_is_div ? (es_is_mod ? div_remainder : div_quotient) :
        alu_result;
@@ -122,8 +121,6 @@ module EXE_stage(
        !(es_is_mul && !mul_cnt) && !(es_is_div && !div_complete);
   assign es_fwd_bus = {es_valid, es_gr_we, es_fwd_valid,
                        (es_res_from_mem | es_csr_re), es_dest, es_final_result};
-
-  // 输出总线
   assign es_to_ms_bus = {es_pc,
                          es_final_result,
                          es_rkd_value,
@@ -155,7 +152,7 @@ module EXE_stage(
   // 除法器使能
   assign div_en = es_valid && es_is_div && !div_complete && !es_has_any_ex;
 
-  // 时序逻辑
+
   always @(posedge clk)
   begin
     if (reset)
@@ -238,7 +235,7 @@ module EXE_stage(
         es_is_rdcnt     <= ds_is_rdcnt;
         es_rdcnt_sel    <= ds_rdcnt_sel;
       end
-      else
+      else //如果没有新信号，赋0防止误操作
       begin
         es_gr_we        <= 1'b0;
         es_mem_we       <= 1'b0;
@@ -256,7 +253,7 @@ module EXE_stage(
     end
   end
 
-  // --- 乘法流水线计数器 ---
+  //乘法流水线计数器
   always @(posedge clk)
   begin
     if (reset)

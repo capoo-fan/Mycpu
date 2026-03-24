@@ -1,21 +1,21 @@
 `include "mycpu.vh"
 
 module ID_stage(
-    input  wire        clk,
-    input  wire        resetn,
-    input  wire                        fs_to_ds_valid,
-    input  wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus,
-    output wire        ds_allowin,
-    output wire        br_taken,
-    output wire [31:0] br_target,
-    input  wire        es_allowin,
-    input  wire [`ES_FWD_BUS_WD-1:0]   es_fwd_bus,
-    input  wire [`MS_FWD_BUS_WD-1:0]   ms_fwd_bus,
-    input  wire [`WS_FWD_BUS_WD-1:0]   ws_fwd_bus,
-    input  wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus,
-    input  wire                        ws_flush,
-    output wire                        ds_to_es_valid,
-    output wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus
+    input  wire                           clk,
+    input  wire                           resetn,
+    input  wire                           fs_to_ds_valid,
+    input  wire [`FS_TO_DS_BUS_WD-1:0]    fs_to_ds_bus,
+    output wire                           ds_allowin,
+    output wire                           br_taken,
+    output wire [31:0]                    br_target,
+    input  wire                           es_allowin,
+    input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus,
+    input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus,
+    input  wire [`WS_FWD_BUS_WD-1  :  0]  ws_fwd_bus,
+    input  wire [`WS_TO_RF_BUS_WD-1:  0]  ws_to_rf_bus,
+    input  wire                           ws_flush,
+    output wire                           ds_to_es_valid,
+    output wire [`DS_TO_ES_BUS_WD-1:  0]  ds_to_es_bus
   );
   reg         reset;
   always @(posedge clk) reset <= ~resetn;
@@ -29,15 +29,17 @@ module ID_stage(
   wire [31:0] fs_pc;
   wire [31:0] fs_inst;
   wire        fs_has_adef;
+
   assign {fs_pc, fs_inst, fs_has_adef} = fs_to_ds_bus;
 
 
-  wire        es_fwd_es_valid;
-  wire        es_fwd_gr_we;
-  wire        es_fwd_fwd_valid;
-  wire        es_fwd_res_from_mem;
-  wire [ 4:0] es_fwd_dest;
-  wire [31:0] es_fwd_data;
+  //  EXE MEM WB 前递逻辑
+  wire        es_fwd_es_valid;       // EXE阶段指令有效
+  wire        es_fwd_gr_we;          // EXE指令是否写通用寄存器
+  wire        es_fwd_fwd_valid;      // 是否可前递
+  wire        es_fwd_res_from_mem;   // 是否来自 MEM (Load)
+  wire [ 4:0] es_fwd_dest;           // 目的寄存器地址
+  wire [31:0] es_fwd_data;           // 前递数据
   assign {es_fwd_es_valid, es_fwd_gr_we, es_fwd_fwd_valid,
           es_fwd_res_from_mem, es_fwd_dest, es_fwd_data} = es_fwd_bus;
 
@@ -56,13 +58,15 @@ module ID_stage(
   assign {ws_fwd_ws_valid, ws_fwd_gr_we, ws_fwd_dest, ws_fwd_data} = ws_fwd_bus;
 
 
-  wire        ws_rf_we;
-  wire [ 4:0] ws_rf_waddr;
-  wire [31:0] ws_rf_wdata;
+
+
+  wire        ws_rf_we;      // 写使能
+  wire [ 4:0] ws_rf_waddr;   // 写地址
+  wire [31:0] ws_rf_wdata;   // 写数据
   assign {ws_rf_we, ws_rf_waddr, ws_rf_wdata} = ws_to_rf_bus;
 
   // 指令解码
-  wire [31:0] inst;
+  wire   [31:0]  inst;
   assign inst = ds_inst;
 
   // 指令字段拆解
@@ -84,7 +88,8 @@ module ID_stage(
   wire [ 3:0] op_21_20_d;
   wire [31:0] op_19_15_d;
 
-  // 指令识别信号
+
+  // ALU 指令
   wire inst_add_w, inst_sub_w, inst_slt, inst_sltu;
   wire inst_nor, inst_and, inst_or, inst_xor;
   wire inst_slli_w, inst_srli_w, inst_srai_w;
@@ -98,11 +103,14 @@ module ID_stage(
   wire inst_st_b, inst_st_h;
   wire inst_mul_w, inst_mulh_w, inst_mulh_wu;
   wire inst_div_w, inst_mod_w, inst_div_wu, inst_mod_wu;
+
+  //异常指令
   wire inst_csrrd, inst_csrwr, inst_csrxchg, inst_syscall, inst_ertn;
   wire inst_break;
   wire inst_rdcntvl, inst_rdcntvh, inst_rdcntid;
 
-  // 指令译码逻辑
+
+  // ALU 指令译码
   assign inst_add_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00];
   assign inst_sub_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h02];
   assign inst_slt     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h04];
@@ -123,7 +131,6 @@ module ID_stage(
   assign inst_beq     = op_31_26_d[6'h16];
   assign inst_bne     = op_31_26_d[6'h17];
   assign inst_lu12i_w = op_31_26_d[6'h05] & ~inst[25];
-
   assign inst_slti      = op_31_26_d[6'h00] & op_25_22_d[4'h8];
   assign inst_sltui     = op_31_26_d[6'h00] & op_25_22_d[4'h9];
   assign inst_andi      = op_31_26_d[6'h00] & op_25_22_d[4'hd];
@@ -133,8 +140,6 @@ module ID_stage(
   assign inst_srl_w     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h0f];
   assign inst_sra_w     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h10];
   assign inst_pcaddu12i = op_31_26_d[6'h07] & ~inst[25];
-
-  // 乘除法指令译码
   assign inst_mul_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h18];
   assign inst_mulh_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h19];
   assign inst_mulh_wu = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h1a];
@@ -142,17 +147,14 @@ module ID_stage(
   assign inst_mod_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h01];
   assign inst_div_wu  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h02];
   assign inst_mod_wu  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h03];
-
   assign inst_blt  = op_31_26_d[6'h18];
   assign inst_bge  = op_31_26_d[6'h19];
   assign inst_bltu = op_31_26_d[6'h1a];
   assign inst_bgeu = op_31_26_d[6'h1b];
-
   assign inst_ld_b  = op_31_26_d[6'h0a] & op_25_22_d[4'h0];
   assign inst_ld_h  = op_31_26_d[6'h0a] & op_25_22_d[4'h1];
   assign inst_ld_bu = op_31_26_d[6'h0a] & op_25_22_d[4'h8];
   assign inst_ld_hu = op_31_26_d[6'h0a] & op_25_22_d[4'h9];
-
   assign inst_st_b = op_31_26_d[6'h0a] & op_25_22_d[4'h4];
   assign inst_st_h = op_31_26_d[6'h0a] & op_25_22_d[4'h5];
 
@@ -163,18 +165,13 @@ module ID_stage(
   assign inst_csrxchg = inst_csr & ~(rj == 5'b00000) & ~(rj == 5'b00001);
   assign inst_syscall = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h16];
   assign inst_ertn    = op_31_26_d[6'h01] & op_25_22_d[4'h9] & op_21_20_d[2'h0] & op_19_15_d[5'h10];
-
-  // BREAK
   assign inst_break = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h14];
-
-  // RDCNT 指令
-
   wire rdcnt_base = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h0] & op_19_15_d[5'h00];
   assign inst_rdcntvl = rdcnt_base & (rk == 5'h18) & (rj == 5'h00) & (rd != 5'h00);
   assign inst_rdcntvh = rdcnt_base & (rk == 5'h19) & (rj == 5'h00);
   assign inst_rdcntid = rdcnt_base & (rk == 5'h18) & (rd == 5'h00) & (rj != 5'h00);
 
-  // INE 检测
+  // 找出未知指令
   wire inst_known = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
        inst_nor | inst_and | inst_or | inst_xor |
        inst_slli_w | inst_srli_w | inst_srai_w |
@@ -194,13 +191,13 @@ module ID_stage(
   wire has_ine = !inst_known && !ds_has_adef;
 
 
-  // 中间信号
+
   wire is_mul      = inst_mul_w | inst_mulh_w | inst_mulh_wu;
   wire is_div      = inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
   wire is_rdcnt    = inst_rdcntvl | inst_rdcntvh | inst_rdcntid;
   wire [1:0] rdcnt_sel = inst_rdcntvh ? 2'd1 :
        inst_rdcntid ? 2'd2 :
-       2'd0; // default = rdcntvl
+       2'd0;
   wire ld_byte     = inst_ld_b | inst_ld_bu;
   wire ld_half     = inst_ld_h | inst_ld_hu;
   wire ld_sign_ext = inst_ld_b | inst_ld_h;
@@ -253,7 +250,7 @@ module ID_stage(
   wire [13:0] csr_num_val = inst[23:10];
   wire [31:0] csr_wmask_val = inst_csrxchg ? rj_value : 32'hffffffff;
 
-  // ALU操作码
+  // ALU 操作码
   wire [11:0] alu_op;
   assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w | inst_jirl | inst_bl | inst_pcaddu12i | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_b | inst_st_h;
   assign alu_op[ 1] = inst_sub_w;
@@ -274,7 +271,30 @@ module ID_stage(
   wire [31:0] rf_rdata1;
   wire [31:0] rf_rdata2;
 
-  // 数据前递逻辑
+  // 数据前递
+  wire rj_fwd_from_es = es_fwd_es_valid && es_fwd_gr_we && es_fwd_fwd_valid &&
+       (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr1);
+  wire rj_fwd_from_ms = ms_fwd_ms_valid && ms_fwd_gr_we && !ms_fwd_res_from_mem &&
+       (ms_fwd_dest != 5'b0) && (ms_fwd_dest == rf_raddr1);
+  wire rj_fwd_from_ws = ws_fwd_ws_valid && ws_fwd_gr_we &&
+       (ws_fwd_dest != 5'b0) && (ws_fwd_dest == rf_raddr1);
+  wire [31:0] rj_value = rj_fwd_from_es ? es_fwd_data :
+       rj_fwd_from_ms ? ms_fwd_data :
+       rj_fwd_from_ws ? ws_fwd_data :
+       rf_rdata1;
+
+  wire rkd_fwd_from_es = es_fwd_es_valid && es_fwd_gr_we && es_fwd_fwd_valid &&
+       (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr2);
+  wire rkd_fwd_from_ms = ms_fwd_ms_valid && ms_fwd_gr_we && !ms_fwd_res_from_mem &&
+       (ms_fwd_dest != 5'b0) && (ms_fwd_dest == rf_raddr2);
+  wire rkd_fwd_from_ws = ws_fwd_ws_valid && ws_fwd_gr_we &&
+       (ws_fwd_dest != 5'b0) && (ws_fwd_dest == rf_raddr2);
+  wire [31:0] rkd_value = rkd_fwd_from_es ? es_fwd_data :
+       rkd_fwd_from_ms ? ms_fwd_data :
+       rkd_fwd_from_ws ? ws_fwd_data :
+       rf_rdata2;
+
+
   wire ds_need_rj  = ~inst_b & ~inst_bl & ~inst_lu12i_w & ~inst_pcaddu12i &
        ~inst_csrrd & ~inst_csrwr & ~inst_syscall & ~inst_ertn &
        ~inst_break & ~is_rdcnt;
@@ -289,41 +309,19 @@ module ID_stage(
   wire ds_rf_raddr1_valid = ds_need_rj  && (rf_raddr1 != 5'b0);
   wire ds_rf_raddr2_valid = ds_need_rkd && (rf_raddr2 != 5'b0);
 
-  // rj 前递选择
-  wire rj_fwd_from_es = es_fwd_es_valid && es_fwd_gr_we && es_fwd_fwd_valid &&
-       (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr1);
-  wire rj_fwd_from_ms = ms_fwd_ms_valid && ms_fwd_gr_we && !ms_fwd_res_from_mem &&
-       (ms_fwd_dest != 5'b0) && (ms_fwd_dest == rf_raddr1);
-  wire rj_fwd_from_ws = ws_fwd_ws_valid && ws_fwd_gr_we &&
-       (ws_fwd_dest != 5'b0) && (ws_fwd_dest == rf_raddr1);
-
-  wire [31:0] rj_value = rj_fwd_from_es ? es_fwd_data :
-       rj_fwd_from_ms ? ms_fwd_data :
-       rj_fwd_from_ws ? ws_fwd_data :
-       rf_rdata1;
-
-  //  rkd 前递选择
-  wire rkd_fwd_from_es = es_fwd_es_valid && es_fwd_gr_we && es_fwd_fwd_valid &&
-       (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr2);
-  wire rkd_fwd_from_ms = ms_fwd_ms_valid && ms_fwd_gr_we && !ms_fwd_res_from_mem &&
-       (ms_fwd_dest != 5'b0) && (ms_fwd_dest == rf_raddr2);
-  wire rkd_fwd_from_ws = ws_fwd_ws_valid && ws_fwd_gr_we &&
-       (ws_fwd_dest != 5'b0) && (ws_fwd_dest == rf_raddr2);
-
-  wire [31:0] rkd_value = rkd_fwd_from_es ? es_fwd_data :
-       rkd_fwd_from_ms ? ms_fwd_data :
-       rkd_fwd_from_ws ? ws_fwd_data :
-       rf_rdata2;
-
   // Load-Use 冒险检测
   wire load_stall_rj_es  = es_fwd_es_valid && es_fwd_res_from_mem && es_fwd_gr_we &&
-       (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr1) && ds_rf_raddr1_valid;
+       (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr1) && ds_rf_raddr1_valid; // rj 依赖 EXE 阶段的 Load 指令
   wire load_stall_rkd_es = es_fwd_es_valid && es_fwd_res_from_mem && es_fwd_gr_we &&
        (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr2) && ds_rf_raddr2_valid;
+
   wire load_stall_rj_ms  = ms_fwd_ms_valid && ms_fwd_res_from_mem && ms_fwd_gr_we &&
        (ms_fwd_dest != 5'b0) && (ms_fwd_dest == rf_raddr1) && ds_rf_raddr1_valid;
   wire load_stall_rkd_ms = ms_fwd_ms_valid && ms_fwd_res_from_mem && ms_fwd_gr_we &&
        (ms_fwd_dest != 5'b0) && (ms_fwd_dest == rf_raddr2) && ds_rf_raddr2_valid;
+  wire load_use_stall = load_stall_rj_es || load_stall_rkd_es ||
+       load_stall_rj_ms || load_stall_rkd_ms ||
+       multicycle_stall_rj || multicycle_stall_rkd;
 
   // 乘除法多周期阻塞
   wire es_multicycle_busy = es_fwd_es_valid && es_fwd_gr_we &&
@@ -333,17 +331,14 @@ module ID_stage(
   wire multicycle_stall_rkd = es_multicycle_busy &&
        (es_fwd_dest != 5'b0) && (es_fwd_dest == rf_raddr2) && ds_rf_raddr2_valid;
 
-  wire load_use_stall = load_stall_rj_es || load_stall_rkd_es ||
-       load_stall_rj_ms || load_stall_rkd_ms ||
-       multicycle_stall_rj || multicycle_stall_rkd;
+
 
   // 流水线控制
   wire   ds_ready_go    = !load_use_stall;
-  assign ds_allowin     = !ds_valid || ds_ready_go && es_allowin;
+  assign ds_allowin     = !ds_valid || (ds_ready_go && es_allowin);
   assign ds_to_es_valid = ds_valid && ds_ready_go;
 
-  // 分支逻辑
-  wire rj_eq_rd          = (rj_value == rkd_value);
+  // 分支判断  wire rj_eq_rd          = (rj_value == rkd_value);
   wire rj_lt_rd_signed   = ($signed(rj_value) < $signed(rkd_value));
   wire rj_lt_rd_unsigned = (rj_value < rkd_value);
 
@@ -366,7 +361,7 @@ module ID_stage(
   wire [31:0] ds_alu_src1 = src1_is_pc ? ds_pc : rj_value;
   wire [31:0] ds_alu_src2 = src2_is_imm ? imm : rkd_value;
 
-  // 输出总线打包 (215 bits)
+  // 总线打包
   assign ds_to_es_bus = {ds_pc,
                          alu_op,
                          ds_alu_src1,
@@ -400,7 +395,6 @@ module ID_stage(
                          rdcnt_sel
                         };
 
-  // 时序逻辑
   always @(posedge clk)
   begin
     if (reset)
