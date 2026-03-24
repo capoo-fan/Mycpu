@@ -4,25 +4,27 @@ module IF_stage(
     input  wire        clk,
     input  wire        resetn,
     input  wire        ds_allowin,
-    input  wire        br_taken,
-    input  wire [31:0] br_target,
-    input  wire        ws_flush, //异常冲刷
+    input  wire        br_taken,     //跳转信号
+    input  wire [31:0] br_target,    //跳转目标地址
+    input  wire        ws_flush,     //异常冲刷信号
     input  wire [31:0] ws_flush_pc,
     output wire        fs_to_ds_valid,
     output wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus,
+
     // 类SRAM 指令接口
+    input  wire        inst_sram_addr_ok, // sram 可以接受地址
+    input  wire        inst_sram_data_ok, 
+    input  wire [31:0] inst_sram_rdata
     output wire        inst_sram_req,
     output wire        inst_sram_wr,
     output wire [ 1:0] inst_sram_size,
     output wire [ 3:0] inst_sram_wstrb,
     output wire [31:0] inst_sram_addr,
     output wire [31:0] inst_sram_wdata,
-    input  wire        inst_sram_addr_ok,
-    input  wire        inst_sram_data_ok,
-    input  wire [31:0] inst_sram_rdata
   );
   reg         reset;
-  always @(posedge clk) reset <= ~resetn;
+  always @(posedge clk)
+    reset <= ~resetn;
 
   // PC 寄存器
   reg  [31:0] pc;
@@ -30,11 +32,11 @@ module IF_stage(
   wire [31:0] nextpc;
 
   // 握手状态
-  reg         fs_wait_data;   // 请求已被接受, 等待 data_ok
-  reg  [31:0] fs_pc_r;        // 正在等待返回的请求对应的 PC
-  reg         fs_cancel;      // 在途请求需要取消 (分支/冲刷)
+  reg         fs_wait_data;   // 请求已被接受, 等待 Data
+  reg  [31:0] fs_pc_r;        // 锁存在途请求的 PC
+  reg         fs_cancel;      // 在途请求需要取消 (遇到分支或冲刷)
 
-  // 指令缓冲 (当 data_ok 到来但 ID 不能接收时)
+  // 指令缓冲区，ID 无法接收时暂存指令
   reg         fs_buf_valid;
   reg  [31:0] fs_buf_inst;
   reg  [31:0] fs_buf_pc;
@@ -45,18 +47,16 @@ module IF_stage(
 
   assign inst_sram_req   = !reset && !fs_wait_data && !fs_buf_valid; //不在复位，无在途请求，缓冲区为空
   assign inst_sram_wr    = 1'b0;
-  assign inst_sram_size  = 2'b10;       // 始终取 4 字节
+  assign inst_sram_size  = 2'b10;
   assign inst_sram_wstrb = 4'b0;
   assign inst_sram_addr  = pc;
   assign inst_sram_wdata = 32'b0;
 
   // 握手成功信号
   wire got_addr_ok = inst_sram_req && inst_sram_addr_ok;
-  wire got_data_ok = fs_wait_data  && inst_sram_data_ok; 
+  wire got_data_ok = fs_wait_data  && inst_sram_data_ok;
 
-  wire fresh_inst_valid = got_data_ok && !fs_cancel; //当数据已返回且数据未被取消
-
-  // 流水线控制
+  wire fresh_inst_valid = got_data_ok && !fs_cancel; //指令返回且未被取消
   wire fs_valid    = fs_buf_valid || fresh_inst_valid;
   wire fs_ready_go = 1'b1;
   assign fs_to_ds_valid = fs_valid && fs_ready_go && !br_taken && !ws_flush;
@@ -73,7 +73,7 @@ module IF_stage(
   // 输出总线: {fs_pc[31:0], fs_inst[31:0], has_adef}
   assign fs_to_ds_bus = {fs_pc_out, fs_inst_safe, fs_has_adef};
 
-  // PC 更新: 仅在请求被接受时推进
+  // PC 更新逻辑
   always @(posedge clk)
   begin
     if (reset)
@@ -86,7 +86,6 @@ module IF_stage(
       pc <= seq_pc;
   end
 
-  // 在途请求状态跟踪
   always @(posedge clk)
   begin
     if (reset)
@@ -112,9 +111,9 @@ module IF_stage(
     if (reset)
       fs_cancel <= 1'b0;
     else if (got_data_ok)
-      fs_cancel <= 1'b0;                   
+      fs_cancel <= 1'b0;
     else if ((got_addr_ok || fs_wait_data) && (br_taken || ws_flush))
-      fs_cancel <= 1'b1;            
+      fs_cancel <= 1'b1;
   end
 
   // 指令缓冲管理
