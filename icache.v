@@ -18,7 +18,15 @@ module icache(
     input                rd_rdy,    //读请求握手信号
     input                ret_valid, //返回数据有效
     input   [1  : 0]     ret_last,  //返回数据是一次读请求对应的最后一个返回数据
-    input   [31 : 0]     ret_data   //读返回数据
+    input   [31 : 0]     ret_data,  //读返回数据
+
+    output               wr_req,    //写请求有效
+    output  [2  : 0]     wr_type,   //写请求类型
+    output  [31 : 0]     wr_addr,   //写请求起始地址
+    output  [3  : 0]     wr_wstrb,  //写请求字节使能
+    output  [127: 0]     wr_data,   //写请求数据
+    input                wr_rdy     //写请求握手信号
+    
   );
 
   // 主状态机 (只读 cache 没有 Write 状态机)
@@ -92,6 +100,13 @@ module icache(
   assign rd_type = 3'b011;
   assign rd_req  = (main_state == MAIN_REPLACE);
   assign rd_addr = {req_tag, req_index, 4'b0000};
+
+  // 当前 icache 为只读实现，不产生写请求。
+  assign wr_req   = 1'b0;
+  assign wr_type  = 3'b000;
+  assign wr_addr  = 32'b0;
+  assign wr_wstrb = 4'b0;
+  assign wr_data  = 128'b0;
 
   always @(*)
   begin
