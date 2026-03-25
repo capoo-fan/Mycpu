@@ -15,8 +15,6 @@ module WB_stage(
     output wire [ 4:0]                  debug_wb_rf_wnum,
     output wire [31:0]                  debug_wb_rf_wdata
   );
-
-  // 内部信号
   reg         reset;
   always @(posedge clk) reset <= ~resetn;
 
@@ -44,7 +42,7 @@ module WB_stage(
   reg  [ 1:0] ws_rdcnt_sel;
   reg         ws_has_ale;
 
-  // 解包 ms_to_ws_bus
+  // 总线解包
   wire [31:0] ms_pc;
   wire [31:0] ms_alu_result;
   wire        ms_res_from_mem;
@@ -77,7 +75,7 @@ module WB_stage(
           ms_has_adef, ms_has_ine, ms_is_rdcnt, ms_rdcnt_sel,
           ms_has_ale} = ms_to_ws_bus;
 
-  // 流水线控制
+
   wire ws_ready_go = 1'b1;
   assign ws_allowin = !ws_valid || ws_ready_go;
 
@@ -86,8 +84,6 @@ module WB_stage(
   wire [31:0] counter_lo;
   wire [31:0] counter_hi;
   wire [31:0] tid_value;
-
-  // 异常检测 
   wire wb_ex = ws_valid && (has_int || ws_has_adef || ws_has_ine ||
                             ws_inst_syscall || ws_inst_break || ws_has_ale);
   wire ertn_flush_w = ws_valid && ws_inst_ertn && !wb_ex;
@@ -100,8 +96,6 @@ module WB_stage(
                         ws_inst_syscall ? `ECODE_SYS  :
                         ws_inst_break   ? `ECODE_BRK  :
                                           `ECODE_ALE;
-
-  // BADV 值: ADEF -> PC, ALE -> 访存地址
   wire [31:0] wb_vaddr = ws_has_adef ? ws_pc : ws_alu_result;
 
   // CSR 模块接口
@@ -137,10 +131,9 @@ module WB_stage(
         .tid_value  (tid_value     )
       );
 
-  // Load byte/halfword 提取
+ 
   wire [ 1:0] ws_addr_low  = ws_alu_result[1:0];
-  wire [ 7:0] ws_load_byte = ws_addr_low[1] ? (ws_addr_low[0] ? ws_mem_result[31:24] : ws_mem_result[23:16]) :
-       (ws_addr_low[0] ? ws_mem_result[15:8]  : ws_mem_result[7:0]);
+  wire [ 7:0] ws_load_byte = ws_addr_low[1] ? (ws_addr_low[0] ? ws_mem_result[31:24] : ws_mem_result[23:16]) :(ws_addr_low[0] ? ws_mem_result[15:8]  : ws_mem_result[7:0]);
   wire [15:0] ws_load_half = ws_addr_low[1] ? ws_mem_result[31:16] : ws_mem_result[15:0];
   wire [31:0] ws_load_result =
        ws_ld_byte ? (ws_ld_sign_ext ? {{24{ws_load_byte[7]}}, ws_load_byte}
@@ -154,21 +147,18 @@ module WB_stage(
                                 (ws_rdcnt_sel == 2'd2) ? tid_value  :
                                                          counter_lo;
 
-  // 最终结果选择: RDCNT > CSR读 > 内存读 > ALU结果
+  //  RDCNT > CSR读 > 内存读 > ALU结果
   wire [31:0] final_result = ws_is_rdcnt     ? ws_rdcnt_result :
                              ws_csr_re       ? csr_rvalue      :
                              ws_res_from_mem ? ws_load_result  :
                                               ws_alu_result;
 
-  // 写回信号 (异常/ertn 不写寄存器)
   wire        ws_rf_we    = ws_gr_we && ws_valid && !wb_ex && !ertn_flush_w;
   wire [ 4:0] ws_rf_waddr = ws_dest;
   wire [31:0] ws_rf_wdata = final_result;
 
-  // 前递信号
+  // 总线信号
   assign ws_fwd_bus = {ws_valid, ws_gr_we, ws_dest, final_result};
-
-  // 写回总线
   assign ws_to_rf_bus = {ws_rf_we, ws_rf_waddr, ws_rf_wdata};
 
   assign debug_wb_pc       = ws_pc;
@@ -176,7 +166,7 @@ module WB_stage(
   assign debug_wb_rf_wnum  = ws_dest;
   assign debug_wb_rf_wdata = final_result;
 
-  // 时序逻辑
+
   always @(posedge clk)
   begin
     if (reset)
