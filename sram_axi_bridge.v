@@ -2,7 +2,7 @@ module sram_axi_bridge(
     input  wire        aclk,
     input  wire        aresetn,
 
-    // ICache miss 访问接口
+    // icache 读接口
     input  wire        cache_rd_req,
     input  wire [ 2:0] cache_rd_type,
     input  wire [31:0] cache_rd_addr,
@@ -10,15 +10,15 @@ module sram_axi_bridge(
     output wire        cache_ret_valid,
     output wire [ 1:0] cache_ret_last,
     output wire [31:0] cache_ret_data,
-
-    input  wire        cache_wr_req,
-    input  wire [ 2:0] cache_wr_type,
-    input  wire [31:0] cache_wr_addr,
-    input  wire [ 3:0] cache_wr_wstrb,
+    // icache 写接口
+    input  wire         cache_wr_req,
+    input  wire [ 2:0]  cache_wr_type,
+    input  wire [31:0]  cache_wr_addr,
+    input  wire [ 3:0]  cache_wr_wstrb,
     input  wire [127:0] cache_wr_data,
-    output wire        cache_wr_rdy,
+    output wire         cache_wr_rdy,
 
-    // data SRAM-like 接口
+    // 访存接口
     input  wire        data_sram_req,
     input  wire        data_sram_wr,
     input  wire [ 1:0] data_sram_size,
@@ -29,7 +29,7 @@ module sram_axi_bridge(
     output wire        data_sram_data_ok,
     output wire [31:0] data_sram_rdata,
 
-    // AXI
+    // 读请求
     output wire [ 3:0] arid,
     output wire [31:0] araddr,
     output wire [ 7:0] arlen,
@@ -41,6 +41,7 @@ module sram_axi_bridge(
     output wire        arvalid,
     input  wire        arready,
 
+    // 读响应
     input  wire [ 3:0] rid,
     input  wire [31:0] rdata,
     input  wire [ 1:0] rresp,
@@ -48,6 +49,7 @@ module sram_axi_bridge(
     input  wire        rvalid,
     output wire        rready,
 
+    //写请求
     output wire [ 3:0] awid,
     output wire [31:0] awaddr,
     output wire [ 7:0] awlen,
@@ -59,6 +61,7 @@ module sram_axi_bridge(
     output wire        awvalid,
     input  wire        awready,
 
+    //写数据
     output wire [ 3:0] wid,
     output wire [31:0] wdata,
     output wire [ 3:0] wstrb,
@@ -66,27 +69,24 @@ module sram_axi_bridge(
     output wire        wvalid,
     input  wire        wready,
 
+    // 写响应
     input  wire [ 3:0] bid,
     input  wire [ 1:0] bresp,
     input  wire        bvalid,
     output wire        bready
   );
 
-  // ----------------------------
-  // 请求拆分
-  // ----------------------------
   wire data_rd_req = data_sram_req && !data_sram_wr;
   wire data_wr_req = data_sram_req && data_sram_wr;
 
+  // 握手成功信号
   wire ar_hs = arvalid && arready;
   wire r_hs  = rvalid && rready;
   wire aw_hs = awvalid && awready;
   wire w_hs  = wvalid && wready;
   wire b_hs  = bvalid && bready;
 
-  // ----------------------------
-  // AR: 支持 cache burst read
-  // ----------------------------
+
   reg        ar_busy;
   reg [ 3:0] ar_id_r;
   reg [31:0] ar_addr_r;
@@ -102,6 +102,7 @@ module sram_axi_bridge(
   wire accept_ar_cache = !ar_busy && cache_rd_req && !cache_rd_pending;
   wire accept_ar_data  = !ar_busy && !accept_ar_cache && data_rd_req && !data_rd_pending;
 
+  // AR: 统一处理 Cache 和 Date
   always @(posedge aclk)
   begin
     if (!aresetn)
@@ -163,22 +164,21 @@ module sram_axi_bridge(
   assign arlock  = 2'b0;
   assign arcache = 4'b0;
   assign arprot  = 3'b0;
-
   assign rready = cache_rd_pending || data_rd_pending;
 
 
   // AW/W: 统一处理 cache burst write 与 data single write
-  reg        wr_active;
-  reg        wr_is_cache;
-  reg [31:0] wr_addr_r;
-  reg [ 7:0] wr_len_r;
-  reg [ 2:0] wr_size_r;
-  reg [ 3:0] wr_strb_r;
+  reg         wr_active;
+  reg         wr_is_cache;
+  reg [31:0]  wr_addr_r;
+  reg [ 7:0]  wr_len_r;
+  reg [ 2:0]  wr_size_r;
+  reg [ 3:0]  wr_strb_r;
   reg [127:0] wr_line_r;
-  reg [ 2:0] wr_total_beats;
-  reg [ 2:0] wr_beat_cnt;
-  reg        aw_sent;
-  reg        w_done;
+  reg [ 2:0]  wr_total_beats;
+  reg [ 2:0]  wr_beat_cnt;
+  reg         aw_sent;
+  reg         w_done;
 
   wire [2:0] cache_wr_size = (cache_wr_type == 3'b011) ? 3'b010 : cache_wr_type;
   wire [7:0] cache_wr_len  = (cache_wr_type == 3'b011) ? 8'd3   : 8'd0;
@@ -240,14 +240,12 @@ module sram_axi_bridge(
     begin
       if (!aw_sent && aw_hs)
         aw_sent <= 1'b1;
-
       if (!w_done && w_hs)
       begin
         if (wr_beat_cnt + 3'd1 >= wr_total_beats)
           w_done <= 1'b1;
         wr_beat_cnt <= wr_beat_cnt + 3'd1;
       end
-
       if (b_hs)
       begin
         wr_active <= 1'b0;
@@ -278,7 +276,6 @@ module sram_axi_bridge(
   assign cache_ret_valid = r_hs && (rid == 4'd0);
   assign cache_ret_last  = {1'b0, (r_hs && (rid == 4'd0) && rlast)};
   assign cache_ret_data  = rdata;
-  // cache 要求 wr_rdy 先于 wr_req 置起，空闲时即宣告可接收写回
   assign cache_wr_rdy    = write_idle;
 
   assign data_sram_addr_ok = accept_ar_data || accept_wr_data;
