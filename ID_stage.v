@@ -8,6 +8,11 @@ module ID_stage(
     output wire                           ds_allowin,
     output wire                           br_taken,
     output wire [31:0]                    br_target,
+    output wire                           bpu_valid,
+    output wire                           bpu_is_bj,
+    output wire [31:0]                    bpu_pc,
+    output wire                           bpu_real_taken,
+    output wire [31:0]                    bpu_real_target,
     input  wire                           es_allowin,
     input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus,
     input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus,
@@ -18,19 +23,22 @@ module ID_stage(
     output wire [`DS_TO_ES_BUS_WD-1:  0]  ds_to_es_bus
   );
   reg         reset;
-  always @(posedge clk) reset <= ~resetn;
+  always @(posedge clk)
+    reset <= ~resetn;
 
   // ID 级寄存器
   reg         ds_valid;
   reg  [31:0] ds_pc;
   reg  [31:0] ds_inst;
   reg         ds_has_adef;
+  reg  [31:0] ds_pred_target;
 
   wire [31:0] fs_pc;
   wire [31:0] fs_inst;
   wire        fs_has_adef;
+  wire [31:0] fs_pred_target;
 
-  assign {fs_pc, fs_inst, fs_has_adef} = fs_to_ds_bus;
+  assign {fs_pc, fs_inst, fs_has_adef, fs_pred_target} = fs_to_ds_bus;
 
 
   //  EXE MEM WB 前递逻辑
@@ -338,24 +346,42 @@ module ID_stage(
   assign ds_allowin     = !ds_valid || (ds_ready_go && es_allowin);
   assign ds_to_es_valid = ds_valid && ds_ready_go;
 
-  // 分支判断  wire rj_eq_rd          = (rj_value == rkd_value);
+  // 分支判断
+  wire rj_eq_rd          = (rj_value == rkd_value);
   wire rj_lt_rd_signed   = ($signed(rj_value) < $signed(rkd_value));
   wire rj_lt_rd_unsigned = (rj_value < rkd_value);
 
-  assign br_taken = (inst_beq  &&  rj_eq_rd ||
-                     inst_bne  && !rj_eq_rd ||
-                     inst_blt  &&  rj_lt_rd_signed ||
-                     inst_bge  && !rj_lt_rd_signed ||
-                     inst_bltu &&  rj_lt_rd_unsigned ||
-                     inst_bgeu && !rj_lt_rd_unsigned ||
-                     inst_jirl ||
-                     inst_bl   ||
-                     inst_b
-                    ) && ds_valid && !load_use_stall && es_allowin;
+  wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
+       inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
 
-  assign br_target = (inst_beq || inst_bne || inst_blt || inst_bge ||
-                      inst_bltu || inst_bgeu || inst_bl || inst_b)
-         ? (ds_pc + br_offs) : (rj_value + jirl_offs);
+  wire ds_real_taken = (inst_beq  &&  rj_eq_rd ||
+                        inst_bne  && !rj_eq_rd ||
+                        inst_blt  &&  rj_lt_rd_signed ||
+                        inst_bge  && !rj_lt_rd_signed ||
+                        inst_bltu &&  rj_lt_rd_unsigned ||
+                        inst_bgeu && !rj_lt_rd_unsigned ||
+                        inst_jirl ||
+                        inst_bl   ||
+                        inst_b) && ds_is_bj;
+
+  wire [31:0] ds_real_target = (inst_beq || inst_bne || inst_blt || inst_bge ||
+                                inst_bltu || inst_bgeu || inst_bl || inst_b)
+       ? (ds_pc + br_offs) : (rj_value + jirl_offs);
+
+  wire ds_pred_taken = (ds_pred_target != (ds_pc + 32'h4));
+  wire ds_br_resolve = ds_valid && ds_ready_go && es_allowin && ds_is_bj;
+  wire ds_taken_miss = ds_real_taken ^ ds_pred_taken;
+  wire ds_target_miss = ds_real_taken && ds_pred_taken && (ds_real_target != ds_pred_target);
+
+  assign br_taken = ds_br_resolve && (ds_taken_miss || ds_target_miss);
+  assign br_target = ds_real_taken ? ds_real_target : (ds_pc + 32'h4);
+
+  // 反馈给 BPU 的真实分支结果
+  assign bpu_valid       = ds_to_es_valid && es_allowin && !ws_flush;
+  assign bpu_is_bj       = bpu_valid && ds_is_bj;
+  assign bpu_pc          = ds_pc;
+  assign bpu_real_taken  = ds_real_taken;
+  assign bpu_real_target = ds_real_target;
 
   // ALU 源操作数
   wire [31:0] ds_alu_src1 = src1_is_pc ? ds_pc : rj_value;
@@ -412,12 +438,14 @@ module ID_stage(
       ds_pc       <= 32'b0;
       ds_inst     <= 32'b0;
       ds_has_adef <= 1'b0;
+      ds_pred_target <= 32'b0;
     end
     else if (ds_allowin && fs_to_ds_valid)
     begin
       ds_pc       <= fs_pc;
       ds_inst     <= fs_inst;
       ds_has_adef <= fs_has_adef;
+      ds_pred_target <= fs_pred_target;
     end
   end
 

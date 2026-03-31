@@ -52,7 +52,7 @@ module mycpu_top(
   );
 
   // 内部类SRAM信号
- 
+
   wire        inst_sram_req;
   wire        inst_sram_wr;
   wire [ 1:0] inst_sram_size;
@@ -104,6 +104,8 @@ module mycpu_top(
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus;
 
+  wire [31:0] bpu_if_pc;
+
   // 前递总线
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus;
@@ -116,9 +118,68 @@ module mycpu_top(
   wire        br_taken;
   wire [31:0] br_target;
 
+  // BPU 预测与训练信号
+  wire [31:0] bpu_pred_target;
+  wire        bpu_pred_error;
+  wire        bpu_pl_suspend;
+  wire        bpu_if_valid;
+
+  wire        bpu_id_valid;
+  wire        bpu_id_is_bj;
+  wire [31:0] bpu_id_pc;
+  wire        bpu_id_real_taken;
+  wire [31:0] bpu_id_real_target;
+
+  reg         bpu_ex_valid;
+  reg         bpu_ex_is_bj;
+  reg  [31:0] bpu_ex_pc;
+  reg         bpu_ex_real_taken;
+  reg  [31:0] bpu_ex_real_target;
+
   // 异常冲刷信号
   wire        ws_flush;
   wire [31:0] ws_flush_pc;
+
+  assign bpu_if_pc      = fs_to_ds_bus[`FS_TO_DS_BUS_WD-1:`FS_TO_DS_BUS_WD-32];
+  assign bpu_if_valid   = fs_to_ds_valid && ds_allowin;
+  assign bpu_pl_suspend = !ds_allowin;
+
+  // 将 ID 级真实结果延后一拍，对齐 BPU 的 ex_* 校正接口
+  always @(posedge aclk)
+  begin
+    if (!aresetn)
+    begin
+      bpu_ex_valid       <= 1'b0;
+      bpu_ex_is_bj       <= 1'b0;
+      bpu_ex_pc          <= 32'b0;
+      bpu_ex_real_taken  <= 1'b0;
+      bpu_ex_real_target <= 32'b0;
+    end
+    else
+    begin
+      bpu_ex_valid       <= bpu_id_valid;
+      bpu_ex_is_bj       <= bpu_id_is_bj;
+      bpu_ex_pc          <= bpu_id_pc;
+      bpu_ex_real_taken  <= bpu_id_real_taken;
+      bpu_ex_real_target <= bpu_id_real_target;
+    end
+  end
+
+  BPU u_bpu(
+        .clk        (aclk              ),
+        .resetn     (aresetn            ),
+        .if_pc      (bpu_if_pc          ),
+        .if_valid   (bpu_if_valid       ),
+        .id_valid   (bpu_id_valid       ),
+        .pl_suspend (bpu_pl_suspend     ),
+        .pred_target(bpu_pred_target    ),
+        .pred_error (bpu_pred_error     ),
+        .ex_valid   (bpu_ex_valid       ),
+        .ex_is_bj   (bpu_ex_is_bj       ),
+        .ex_pc      (bpu_ex_pc          ),
+        .real_taken (bpu_ex_real_taken  ),
+        .real_target(bpu_ex_real_target )
+      );
 
   // IF stage
   IF_stage u_if(
@@ -129,6 +190,7 @@ module mycpu_top(
              .br_target        (br_target        ),
              .ws_flush         (ws_flush         ),
              .ws_flush_pc      (ws_flush_pc      ),
+             .pred_target      (bpu_pred_target  ),
              .fs_to_ds_valid   (fs_to_ds_valid   ),
              .fs_to_ds_bus     (fs_to_ds_bus     ),
              .inst_sram_req    (inst_sram_req    ),
@@ -151,6 +213,11 @@ module mycpu_top(
              .ds_allowin     (ds_allowin     ),
              .br_taken       (br_taken       ),
              .br_target      (br_target      ),
+             .bpu_valid      (bpu_id_valid   ),
+             .bpu_is_bj      (bpu_id_is_bj   ),
+             .bpu_pc         (bpu_id_pc      ),
+             .bpu_real_taken (bpu_id_real_taken),
+             .bpu_real_target(bpu_id_real_target),
              .es_allowin     (es_allowin     ),
              .es_fwd_bus     (es_fwd_bus     ),
              .ms_fwd_bus     (ms_fwd_bus     ),
@@ -240,6 +307,7 @@ module mycpu_top(
            .wr_data  (icache_wr_data   ),
            .wr_rdy   (icache_wr_rdy    )
          );
+
 
 
   // 类SRAM - AXI 转接桥 (2x1)
