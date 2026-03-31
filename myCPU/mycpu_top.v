@@ -140,8 +140,8 @@ module mycpu_top(
   wire        ws_flush;
   wire [31:0] ws_flush_pc;
 
-  assign bpu_if_pc      = fs_to_ds_bus[`FS_TO_DS_BUS_WD-1:`FS_TO_DS_BUS_WD-32];
-  assign bpu_if_valid   = fs_to_ds_valid && ds_allowin;
+  assign bpu_if_pc      = inst_sram_addr;
+  assign bpu_if_valid   = inst_sram_req && inst_sram_addr_ok;
   assign bpu_pl_suspend = !ds_allowin;
 
   // 将 ID 级真实结果延后一拍，对齐 BPU 的 ex_* 校正接口
