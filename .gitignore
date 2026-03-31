@@ -1,5 +1,58 @@
-plan.md
+
+
+# --- 编辑器/IDE ---
+# VS Code 本地配置 (如果不希望同步个人设置)
+.vscode/
+
+
+# --- 仿真波形 (非常重要，这些文件会很大) ---
+*.vcd
+*.fst
+*.lxt
+*.lxt2
+*.wlf
+
+# --- Verilator ---
+# Verilator 编译生成的 C++ 中间文件和可执行文件的目录
+obj_dir/
+
+# --- Icarus Verilog ---
+# 默认编译输出
+a.out
+# 你自定义的编译输出文件名 (之前例子中用到的)
+rf_wave
+
+# --- 临时/日志文件 ---
+*.log
+*.jou
+*.pb
+
+# --- C/C++ 软件部分 (如果后续写汇编或C) ---
+*.o
+*.a
+*.bin
+*.hex
+*.dump
+
+# --- 本仓库 Makefile 生成目录/文件 ---
+# 通用 obj 目录（minicpu_env/func、mycpu_env/func 等）
+obj/
+
+project/
+
+.Xil/
+*.sim/
+*.cache/
+*.hw/
+*.ip_user_files/
+# Large reference files
+CPU设计实战.pdf
 
 .DS_Store
+
+*.out
+*.log
+
+*.bak
 
 *.tmp.*

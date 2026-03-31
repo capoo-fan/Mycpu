@@ -1,5 +1,3 @@
-`timescale 1ns / 1ps
-
 `include "mycpu.vh"
 
 module BPU (
