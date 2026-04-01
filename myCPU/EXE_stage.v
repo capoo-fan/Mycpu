@@ -33,7 +33,7 @@ module EXE_stage(
   reg         es_mul_hi;
   reg         es_div_signed;
   reg         es_is_mod;
-  reg         mul_cnt;
+  reg  [2:0]  mul_cnt;
   reg         es_ld_byte;
   reg         es_ld_half;
   reg         es_ld_sign_ext;
@@ -103,9 +103,11 @@ module EXE_stage(
   wire        div_complete;
   wire        div_en;
 
+  localparam [2:0] MUL_LATENCY = 3'd3;
+
 
   // 流水线控制
-  wire   mul_result_ready = !es_is_mul       || mul_cnt;
+  wire   mul_result_ready = !es_is_mul       || (mul_cnt == MUL_LATENCY);
   wire   div_result_ready = !es_is_div       || div_complete;
   wire   es_ready_go      = mul_result_ready && div_result_ready;
   assign es_allowin       = !es_valid        || (es_ready_go && ms_allowin);
@@ -118,7 +120,7 @@ module EXE_stage(
 
   // 前递信号
   wire es_fwd_valid = !es_res_from_mem && !es_csr_re && !es_is_rdcnt &&
-       !(es_is_mul && !mul_cnt) && !(es_is_div && !div_complete);
+      !(es_is_mul && (mul_cnt != MUL_LATENCY)) && !(es_is_div && !div_complete);
   assign es_fwd_bus = {es_valid, es_gr_we, es_fwd_valid,
                        (es_res_from_mem | es_csr_re), es_dest, es_final_result};
   assign es_to_ms_bus = {es_pc,
@@ -257,28 +259,23 @@ module EXE_stage(
   always @(posedge clk)
   begin
     if (reset)
-      mul_cnt <= 1'b0;
+      mul_cnt <= 3'd0;
     else if (es_allowin)
-      mul_cnt <= 1'b0;
-    else if (es_is_mul && !mul_cnt)
-      mul_cnt <= 1'b1;
+      mul_cnt <= 3'd0;
+    else if (es_is_mul && (mul_cnt < MUL_LATENCY))
+      mul_cnt <= mul_cnt + 3'd1;
   end
 
   alu u_alu(
+        .clk        (clk        ),
+        .resetn     (resetn     ),
+        .mul_signed (es_mul_signed),
         .alu_op     (es_alu_op  ),
         .alu_src1   (es_alu_src1),
         .alu_src2   (es_alu_src2),
-        .alu_result (alu_result )
+        .alu_result (alu_result ),
+        .mul_result (mul_product)
       );
-
-  multiplier u_mul(
-               .mul_clk   (clk          ),
-               .resetn    (resetn       ),
-               .mul_signed(es_mul_signed),
-               .x         (es_alu_src1  ),
-               .y         (es_alu_src2  ),
-               .result    (mul_product  )
-             );
 
   divider u_div(
             .div_clk   (clk          ),

@@ -6,6 +6,7 @@ add_files -scan_for_includes [glob -nocomplain ../rtl/*/*.v]
 
 # Add IPs
 add_files -quiet [glob -nocomplain ../rtl/xilinx_ip/*/*.xci]
+add_files -quiet [glob -nocomplain ../../../xilinx_ip/*.xci]
 
 # Add simulation files
 add_files -fileset sim_1 ../testbench
@@ -18,3 +19,5 @@ add_files -fileset constrs_1 -quiet ./constraints
 
 set_property -name "top" -value "tb_top" -objects  [get_filesets sim_1]
 set_property -name "xsim.simulate.log_all_signals" -value "1" -objects [get_filesets sim_1]
+set_property verilog_define {USE_XILINX_MULT_IP} [get_filesets sources_1]
+set_property verilog_define {USE_XILINX_MULT_IP} [get_filesets sim_1]

@@ -1,8 +1,12 @@
 module alu(
+    input  wire        clk,
+    input  wire        resetn,
+    input  wire        mul_signed,
     input  wire [11:0] alu_op,
     input  wire [31:0] alu_src1,
     input  wire [31:0] alu_src2,
-    output wire [31:0] alu_result
+    output wire [31:0] alu_result,
+    output wire [63:0] mul_result
   );
 
   wire op_add;
@@ -44,6 +48,10 @@ module alu(
   wire [63:0] sr64_result;
   wire [31:0] sr_result;
 
+  wire [63:0] mul_ss_result;
+  wire [63:0] mul_unsigned_fix;
+  wire [63:0] mul_unsigned_result;
+
 
   wire [31:0] adder_a;
   wire [31:0] adder_b;
@@ -82,6 +90,44 @@ module alu(
   assign sr64_result = {{32{op_sra & alu_src1[31]}}, alu_src1[31:0]} >> alu_src2[4:0]; //rj >> i5
 
   assign sr_result   = sr64_result[31:0];
+
+  // 乘法器的开关，如果使用Xilinx的乘法IP核，则定义USE_XILINX_MULT_IP宏，否则使用自己写的乘法器
+`ifdef USE_XILINX_MULT_IP
+
+  mult_gen_0 u_mult_gen_0 (
+               .CLK (clk     ),
+               .A   (alu_src1),
+               .B   (alu_src2),
+               .P   (mul_ss_result)
+             );
+`else
+  reg [63:0] mul_pipe_s0;
+  reg [63:0] mul_pipe_s1;
+  reg [63:0] mul_pipe_s2;
+
+  always @(posedge clk)
+  begin
+    if (!resetn)
+    begin
+      mul_pipe_s0 <= 64'd0;
+      mul_pipe_s1 <= 64'd0;
+      mul_pipe_s2 <= 64'd0;
+    end
+    else
+    begin
+      mul_pipe_s0 <= $signed(alu_src1) * $signed(alu_src2);
+      mul_pipe_s1 <= mul_pipe_s0;
+      mul_pipe_s2 <= mul_pipe_s1;
+    end
+  end
+
+  assign mul_ss_result = mul_pipe_s2;
+`endif
+
+  assign mul_unsigned_fix = (alu_src1[31] ? {alu_src2, 32'b0} : 64'd0)
+         + (alu_src2[31] ? {alu_src1, 32'b0} : 64'd0);
+  assign mul_unsigned_result = mul_ss_result + mul_unsigned_fix;
+  assign mul_result = mul_signed ? mul_ss_result : mul_unsigned_result;
 
   // final result mux
   assign alu_result = ({32{op_add|op_sub}} & add_sub_result)
