@@ -17,11 +17,7 @@ module IF_stage(
     input  wire        inst_sram_data_ok,
     input  wire [31:0] inst_sram_rdata,
     output wire        inst_sram_req,
-    output wire        inst_sram_wr,
-    output wire [ 1:0] inst_sram_size,
-    output wire [ 3:0] inst_sram_wstrb,
-    output wire [31:0] inst_sram_addr,
-    output wire [31:0] inst_sram_wdata
+    output wire [31:0] inst_sram_addr
   );
   reg         reset;
   always @(posedge clk)
@@ -47,11 +43,7 @@ module IF_stage(
 
 
   assign inst_sram_req   = !reset && !fs_wait_data && !fs_buf_valid; //不在复位，无在途请求，缓冲区为空
-  assign inst_sram_wr    = 1'b0;
-  assign inst_sram_size  = 2'b10;
-  assign inst_sram_wstrb = 4'b0;
   assign inst_sram_addr  = pc;
-  assign inst_sram_wdata = 32'b0;
 
   // 握手成功信号
   wire got_addr_ok = inst_sram_req && inst_sram_addr_ok;
