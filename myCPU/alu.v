@@ -102,26 +102,20 @@ module alu(
              );
 `else
   reg [63:0] mul_pipe_s0;
-  reg [63:0] mul_pipe_s1;
-  reg [63:0] mul_pipe_s2;
 
   always @(posedge clk)
   begin
     if (!resetn)
     begin
       mul_pipe_s0 <= 64'd0;
-      mul_pipe_s1 <= 64'd0;
-      mul_pipe_s2 <= 64'd0;
     end
     else
     begin
       mul_pipe_s0 <= $signed(alu_src1) * $signed(alu_src2);
-      mul_pipe_s1 <= mul_pipe_s0;
-      mul_pipe_s2 <= mul_pipe_s1;
     end
   end
 
-  assign mul_ss_result = mul_pipe_s2;
+  assign mul_ss_result = mul_pipe_s0;
 `endif
 
   assign mul_unsigned_fix = (alu_src1[31] ? {alu_src2, 32'b0} : 64'd0)

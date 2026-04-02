@@ -103,7 +103,7 @@ module EXE_stage(
   wire        div_complete;
   wire        div_en;
 
-  localparam [2:0] MUL_LATENCY = 3'd3;
+  localparam [2:0] MUL_LATENCY = 3'd1;
 
 
   // 流水线控制
