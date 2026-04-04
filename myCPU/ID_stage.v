@@ -8,11 +8,16 @@ module ID_stage(
     output wire                           ds_allowin,
     output wire                           br_taken,
     output wire [31:0]                    br_target,
+    // BPU 接口
     output wire                           bpu_valid,
     output wire                           bpu_is_bj,
     output wire [31:0]                    bpu_pc,
     output wire                           bpu_real_taken,
     output wire [31:0]                    bpu_real_target,
+    output wire                           bpu_is_call,
+    output wire                           bpu_is_ret,
+    output wire [31:0]                    bpu_ret_addr,
+    
     input  wire                           es_allowin,
     input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus,
     input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus,
@@ -354,6 +359,9 @@ module ID_stage(
   wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
        inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
 
+  wire ds_is_call = inst_bl || (inst_jirl && (rd == 5'd1));   // 调用信号
+  wire ds_is_ret  = inst_jirl && (rd == 5'd0) && (rj == 5'd1) && (i16 == 16'h0000); // 返回信号
+
   wire ds_real_taken = (inst_beq  &&  rj_eq_rd ||
                         inst_bne  && !rj_eq_rd ||
                         inst_blt  &&  rj_lt_rd_signed ||
@@ -382,6 +390,9 @@ module ID_stage(
   assign bpu_pc          = ds_pc;
   assign bpu_real_taken  = ds_real_taken;
   assign bpu_real_target = ds_real_target;
+  assign bpu_is_call     = bpu_is_bj && ds_real_taken && ds_is_call;
+  assign bpu_is_ret      = bpu_is_bj && ds_real_taken && ds_is_ret;
+  assign bpu_ret_addr    = ds_pc + 32'h4;
 
   // ALU 源操作数
   wire [31:0] ds_alu_src1 = src1_is_pc ? ds_pc : rj_value;

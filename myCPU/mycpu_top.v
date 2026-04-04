@@ -86,12 +86,18 @@ module mycpu_top(
   wire [31:0] bpu_id_pc;
   wire        bpu_id_real_taken;
   wire [31:0] bpu_id_real_target;
+  wire        bpu_id_is_call;
+  wire        bpu_id_is_ret;
+  wire [31:0] bpu_id_ret_addr;
 
   reg         bpu_ex_valid;
   reg         bpu_ex_is_bj;
   reg  [31:0] bpu_ex_pc;
   reg         bpu_ex_real_taken;
   reg  [31:0] bpu_ex_real_target;
+  reg         bpu_ex_is_call;
+  reg         bpu_ex_is_ret;
+  reg  [31:0] bpu_ex_ret_addr;
 
   // 异常冲刷信号
   wire        ws_flush;
@@ -110,7 +116,10 @@ module mycpu_top(
         .ex_is_bj   (bpu_ex_is_bj       ),
         .ex_pc      (bpu_ex_pc          ),
         .real_taken (bpu_ex_real_taken  ),
-        .real_target(bpu_ex_real_target )
+        .real_target(bpu_ex_real_target ),
+        .ex_is_call (bpu_ex_is_call     ),
+        .ex_is_ret  (bpu_ex_is_ret      ),
+        .ex_ret_addr(bpu_ex_ret_addr    )
       );
 
   // IF stage
@@ -146,6 +155,9 @@ module mycpu_top(
              .bpu_pc         (bpu_id_pc      ),
              .bpu_real_taken (bpu_id_real_taken),
              .bpu_real_target(bpu_id_real_target),
+             .bpu_is_call    (bpu_id_is_call ),
+             .bpu_is_ret     (bpu_id_is_ret  ),
+             .bpu_ret_addr   (bpu_id_ret_addr),
              .es_allowin     (es_allowin     ),
              .es_fwd_bus     (es_fwd_bus     ),
              .ms_fwd_bus     (ms_fwd_bus     ),
@@ -248,7 +260,5 @@ module mycpu_top(
                   .inst_sram_data_ok(inst_sram_data_ok),
                   .inst_sram_rdata (inst_sram_rdata )
                 );
-
-
 
 endmodule
