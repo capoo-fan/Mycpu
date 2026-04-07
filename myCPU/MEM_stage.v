@@ -6,8 +6,6 @@ module MEM_stage(
     input  wire                         es_to_ms_valid,
     input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus,
     input  wire                         ws_allowin,
-    // 异常冲刷
-    input  wire                         ws_flush,
     output wire                         ms_allowin,
     output wire                         ms_to_ws_valid,
     output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus,
@@ -41,17 +39,6 @@ module MEM_stage(
   reg         ms_ld_sign_ext;
   reg         ms_st_byte;
   reg         ms_st_half;
-  reg         ms_inst_syscall;
-  reg         ms_inst_break;
-  reg         ms_inst_ertn;
-  reg         ms_csr_re;
-  reg         ms_csr_we;
-  reg  [13:0] ms_csr_num;
-  reg  [31:0] ms_csr_wmask;
-  reg         ms_has_adef;
-  reg         ms_has_ine;
-  reg         ms_is_rdcnt;
-  reg  [ 1:0] ms_rdcnt_sel;
 
   // 总线解包
   wire [31:0] es_pc;
@@ -66,35 +53,13 @@ module MEM_stage(
   wire        es_ld_sign_ext;
   wire        es_st_byte;
   wire        es_st_half;
-  wire        es_inst_syscall;
-  wire        es_inst_break;
-  wire        es_inst_ertn;
-  wire        es_csr_re;
-  wire        es_csr_we;
-  wire [13:0] es_csr_num;
-  wire [31:0] es_csr_wmask;
-  wire        es_has_adef;
-  wire        es_has_ine;
-  wire        es_is_rdcnt;
-  wire [ 1:0] es_rdcnt_sel;
 
   assign {es_pc, es_final_result, es_rkd_value,
           es_res_from_mem, es_gr_we, es_mem_we, es_dest,
           es_ld_byte, es_ld_half, es_ld_sign_ext,
-          es_st_byte, es_st_half,
-          es_inst_syscall, es_inst_break, es_inst_ertn,
-          es_csr_re, es_csr_we, es_csr_num, es_csr_wmask,
-          es_has_adef, es_has_ine, es_is_rdcnt, es_rdcnt_sel} = es_to_ms_bus;
+          es_st_byte, es_st_half} = es_to_ms_bus;
 
-
-  // ALE 检测 异常不允许访存
-  wire ms_ld_word = ms_res_from_mem && !ms_ld_byte && !ms_ld_half;
-  wire ms_st_word = ms_mem_we && !ms_st_byte && !ms_st_half;
-  wire ms_has_ale = (ms_ld_word || ms_st_word) ? (ms_alu_result[1:0] != 2'b00) :
-       (ms_ld_half || ms_st_half) ? (ms_alu_result[0] != 1'b0) :
-       1'b0;
-  wire ms_has_any_ex = ms_has_adef || ms_has_ine || ms_inst_syscall || ms_inst_break || ms_has_ale;
-  wire ms_has_mem_op = ms_valid && (ms_res_from_mem || ms_mem_we) && !ms_has_any_ex;
+  wire ms_has_mem_op = ms_valid && (ms_res_from_mem || ms_mem_we);
 
   // ms_addr_sent: 本条指令的请求是否已被接受
   reg  ms_addr_sent;
@@ -116,7 +81,7 @@ module MEM_stage(
   assign ms_allowin     = !ms_valid || (ms_ready_go && ws_allowin);
   assign ms_to_ws_valid = ms_valid && ms_ready_go;
 
-  assign ms_fwd_bus = {ms_valid, ms_gr_we, (ms_res_from_mem | ms_csr_re | ms_is_rdcnt), ms_dest, ms_alu_result};
+  assign ms_fwd_bus = {ms_valid, ms_gr_we, ms_res_from_mem, ms_dest, ms_alu_result};
 
   // Store 数据通道和写使能
   wire [31:0] ms_st_data = ms_st_byte ? {4{ms_rkd_value[7:0]}} :
@@ -129,8 +94,8 @@ module MEM_stage(
        (ms_ld_half || ms_st_half) ? 2'b01 :
        2'b10;
 
-  // 发请求条件: 有访存操作, 本条地址未被接受, 无旧数据未返, 未冲刷
-  assign data_sram_req   = ms_has_mem_op && !ms_addr_sent && !ms_data_pending && !ws_flush;
+  // 发请求条件: 有访存操作, 本条地址未被接受, 无旧数据未返
+  assign data_sram_req   = ms_has_mem_op && !ms_addr_sent && !ms_data_pending;
   assign data_sram_wr    = ms_mem_we;
   assign data_sram_size  = ms_mem_size;
   assign data_sram_wstrb = ms_mem_we ? ms_st_strb : 4'b0;
@@ -148,20 +113,7 @@ module MEM_stage(
                          ms_ld_byte,
                          ms_ld_half,
                          ms_ld_sign_ext,
-                         ms_inst_syscall,
-                         ms_inst_break,
-                         ms_inst_ertn,
-                         ms_csr_re,
-                         ms_csr_we,
-                         ms_csr_num,
-                         ms_csr_wmask,
-                         ms_rkd_value,
-                         ms_final_rdata,
-                         ms_has_adef,
-                         ms_has_ine,
-                         ms_is_rdcnt,
-                         ms_rdcnt_sel,
-                         ms_has_ale
+                         ms_final_rdata
                         };
 
 
@@ -169,8 +121,6 @@ module MEM_stage(
   always @(posedge clk)
   begin
     if (reset)
-      ms_valid <= 1'b0;
-    else if (ws_flush)
       ms_valid <= 1'b0;
     else if (ms_allowin)
       ms_valid <= es_to_ms_valid;
@@ -181,7 +131,7 @@ module MEM_stage(
   begin
     if (reset)
       ms_addr_sent <= 1'b0;
-    else if (ms_allowin || ws_flush)
+    else if (ms_allowin)
       ms_addr_sent <= 1'b0;
     else if (got_addr_ok)
       ms_addr_sent <= 1'b1;
@@ -204,7 +154,7 @@ module MEM_stage(
   begin
     if (reset)
       ms_rdata_buf_valid <= 1'b0;
-    else if (ms_allowin || ws_flush)
+    else if (ms_allowin)
       ms_rdata_buf_valid <= 1'b0;
     else if (ms_data_ok)
       ms_rdata_buf_valid <= 1'b1;
@@ -234,17 +184,6 @@ module MEM_stage(
       ms_ld_sign_ext  <= 1'b0;
       ms_st_byte      <= 1'b0;
       ms_st_half      <= 1'b0;
-      ms_inst_syscall <= 1'b0;
-      ms_inst_break   <= 1'b0;
-      ms_inst_ertn    <= 1'b0;
-      ms_csr_re       <= 1'b0;
-      ms_csr_we       <= 1'b0;
-      ms_csr_num      <= 14'b0;
-      ms_csr_wmask    <= 32'b0;
-      ms_has_adef     <= 1'b0;
-      ms_has_ine      <= 1'b0;
-      ms_is_rdcnt     <= 1'b0;
-      ms_rdcnt_sel    <= 2'b0;
     end
     else if (ms_allowin)
     begin
@@ -262,30 +201,11 @@ module MEM_stage(
         ms_ld_sign_ext  <= es_ld_sign_ext;
         ms_st_byte      <= es_st_byte;
         ms_st_half      <= es_st_half;
-        ms_inst_syscall <= es_inst_syscall;
-        ms_inst_break   <= es_inst_break;
-        ms_inst_ertn    <= es_inst_ertn;
-        ms_csr_re       <= es_csr_re;
-        ms_csr_we       <= es_csr_we;
-        ms_csr_num      <= es_csr_num;
-        ms_csr_wmask    <= es_csr_wmask;
-        ms_has_adef     <= es_has_adef;
-        ms_has_ine      <= es_has_ine;
-        ms_is_rdcnt     <= es_is_rdcnt;
-        ms_rdcnt_sel    <= es_rdcnt_sel;
       end
       else
       begin
         ms_gr_we  <= 1'b0;
         ms_mem_we <= 1'b0;
-        ms_inst_syscall <= 1'b0;
-        ms_inst_break   <= 1'b0;
-        ms_inst_ertn    <= 1'b0;
-        ms_csr_re       <= 1'b0;
-        ms_csr_we       <= 1'b0;
-        ms_has_adef     <= 1'b0;
-        ms_has_ine      <= 1'b0;
-        ms_is_rdcnt     <= 1'b0;
         ms_res_from_mem <= 1'b0;
       end
     end

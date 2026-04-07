@@ -61,8 +61,6 @@ module mycpu_top(
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus;
 
-  wire [31:0] bpu_if_pc;
-
   // 前递总线
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus;
@@ -77,9 +75,6 @@ module mycpu_top(
 
   // BPU 预测与训练信号
   wire [31:0] bpu_pred_target;
-  wire        bpu_pred_error;
-  wire        bpu_pl_suspend;
-  wire        bpu_if_valid;
 
   wire        bpu_id_valid;
   wire        bpu_id_is_bj;
@@ -90,19 +85,6 @@ module mycpu_top(
   wire        bpu_id_is_ret;
   wire [31:0] bpu_id_ret_addr;
 
-  reg         bpu_ex_valid;
-  reg         bpu_ex_is_bj;
-  reg  [31:0] bpu_ex_pc;
-  reg         bpu_ex_real_taken;
-  reg  [31:0] bpu_ex_real_target;
-  reg         bpu_ex_is_call;
-  reg         bpu_ex_is_ret;
-  reg  [31:0] bpu_ex_ret_addr;
-
-  // 异常冲刷信号
-  wire        ws_flush;
-  wire [31:0] ws_flush_pc;
-
   BPU u_bpu(
         .clk        (clk              ),
         .resetn     (resetn            ),
@@ -111,15 +93,14 @@ module mycpu_top(
         .id_valid   (bpu_id_valid       ),
         .pl_suspend (!ds_allowin     ),
         .pred_target(bpu_pred_target    ),
-        .pred_error (bpu_pred_error     ),
-        .ex_valid   (bpu_ex_valid       ),
-        .ex_is_bj   (bpu_ex_is_bj       ),
-        .ex_pc      (bpu_ex_pc          ),
-        .real_taken (bpu_ex_real_taken  ),
-        .real_target(bpu_ex_real_target ),
-        .ex_is_call (bpu_ex_is_call     ),
-        .ex_is_ret  (bpu_ex_is_ret      ),
-        .ex_ret_addr(bpu_ex_ret_addr    )
+        .ex_valid   (bpu_id_valid       ),
+        .ex_is_bj   (bpu_id_is_bj       ),
+        .ex_pc      (bpu_id_pc          ),
+        .real_taken (bpu_id_real_taken  ),
+        .real_target(bpu_id_real_target ),
+        .ex_is_call (bpu_id_is_call     ),
+        .ex_is_ret  (bpu_id_is_ret      ),
+        .ex_ret_addr(bpu_id_ret_addr    )
       );
 
   // IF stage
@@ -129,8 +110,6 @@ module mycpu_top(
              .ds_allowin       (ds_allowin       ),
              .br_taken         (br_taken         ),
              .br_target        (br_target        ),
-             .ws_flush         (ws_flush         ),
-             .ws_flush_pc      (ws_flush_pc      ),
              .pred_target      (bpu_pred_target  ),
              .fs_to_ds_valid   (fs_to_ds_valid   ),
              .fs_to_ds_bus     (fs_to_ds_bus     ),
@@ -163,7 +142,6 @@ module mycpu_top(
              .ms_fwd_bus     (ms_fwd_bus     ),
              .ws_fwd_bus     (ws_fwd_bus     ),
              .ws_to_rf_bus   (ws_to_rf_bus   ),
-             .ws_flush       (ws_flush       ),
              .ds_to_es_valid (ds_to_es_valid ),
              .ds_to_es_bus   (ds_to_es_bus   )
            );
@@ -176,7 +154,6 @@ module mycpu_top(
               .ds_to_es_valid (ds_to_es_valid ),
               .ds_to_es_bus   (ds_to_es_bus   ),
               .ms_allowin     (ms_allowin     ),
-              .ws_flush       (ws_flush       ),
               .es_allowin     (es_allowin     ),
               .es_to_ms_valid (es_to_ms_valid ),
               .es_to_ms_bus   (es_to_ms_bus   ),
@@ -190,7 +167,6 @@ module mycpu_top(
               .es_to_ms_valid   (es_to_ms_valid   ),
               .es_to_ms_bus     (es_to_ms_bus     ),
               .ws_allowin       (ws_allowin       ),
-              .ws_flush         (ws_flush         ),
               .ms_allowin       (ms_allowin       ),
               .ms_to_ws_valid   (ms_to_ws_valid   ),
               .ms_to_ws_bus     (ms_to_ws_bus     ),
@@ -215,8 +191,6 @@ module mycpu_top(
              .ws_allowin      (ws_allowin      ),
              .ws_fwd_bus      (ws_fwd_bus      ),
              .ws_to_rf_bus    (ws_to_rf_bus    ),
-             .ws_flush        (ws_flush        ),
-             .ws_flush_pc     (ws_flush_pc     ),
              .debug_wb_pc     (debug_wb_pc     ),
              .debug_wb_rf_we  (debug_wb_rf_we  ),
              .debug_wb_rf_wnum(debug_wb_rf_wnum),

@@ -6,8 +6,6 @@ module IF_stage(
     input  wire        ds_allowin,
     input  wire        br_taken,     //跳转信号
     input  wire [31:0] br_target,    //跳转目标地址
-    input  wire        ws_flush,     //异常冲刷信号
-    input  wire [31:0] ws_flush_pc,
     input  wire [31:0] pred_target,
     output wire        fs_to_ds_valid,
     output wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus,
@@ -52,28 +50,20 @@ module IF_stage(
   wire fresh_inst_valid = got_data_ok && !fs_cancel; //指令返回且未被取消
   wire fs_valid    = fs_buf_valid || fresh_inst_valid;
   wire fs_ready_go = 1'b1;
-  assign fs_to_ds_valid = fs_valid && fs_ready_go && !br_taken && !ws_flush;
+  assign fs_to_ds_valid = fs_valid && fs_ready_go && !br_taken;
 
   wire [31:0] fs_pc_out   = fs_buf_valid ? fs_buf_pc   : fs_pc_r;
   wire [31:0] fs_inst_out = fs_buf_valid ? fs_buf_inst  : inst_sram_rdata;
   wire [31:0] fs_pred_target_out = fs_buf_valid ? fs_buf_pred_target : fs_pred_target_r;
 
-  // ADEF 检测: PC 未对齐 (PC[1:0] != 0)
-  wire fs_has_adef = (fs_pc_out[1:0] != 2'b00);
-
-  // ADEF 时使用安全指令, 防止 X 值从未初始化内存进入流水线
-  wire [31:0] fs_inst_safe = fs_has_adef ? 32'b0 : fs_inst_out;
-
-  // 输出总线: {fs_pc[31:0], fs_inst[31:0], has_adef, pred_target[31:0]}
-  assign fs_to_ds_bus = {fs_pc_out, fs_inst_safe, fs_has_adef, fs_pred_target_out};
+  // 输出总线: {fs_pc[31:0], fs_inst[31:0], pred_target[31:0]}
+  assign fs_to_ds_bus = {fs_pc_out, fs_inst_out, fs_pred_target_out};
 
   // PC 更新逻辑
   always @(posedge clk)
   begin
     if (reset)
       pc <= 32'h1c000000;
-    else if (ws_flush)
-      pc <= ws_flush_pc;
     else if (br_taken)
       pc <= br_target;
     else if (got_addr_ok)
@@ -115,7 +105,7 @@ module IF_stage(
       fs_cancel <= 1'b0;
     else if (got_data_ok)
       fs_cancel <= 1'b0;
-    else if ((got_addr_ok || fs_wait_data) && (br_taken || ws_flush))
+    else if ((got_addr_ok || fs_wait_data) && br_taken)
       fs_cancel <= 1'b1;
   end
 
@@ -129,7 +119,7 @@ module IF_stage(
       fs_buf_inst  <= 32'b0;
       fs_buf_pred_target <= 32'b0;
     end
-    else if (br_taken || ws_flush)
+    else if (br_taken)
     begin
       fs_buf_valid <= 1'b0;           // 冲刷缓冲
     end

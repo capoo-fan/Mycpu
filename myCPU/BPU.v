@@ -7,10 +7,7 @@ module BPU (
     input  wire         if_valid   ,    // IF阶段的有效信号
     input  wire         id_valid   ,    // ID阶段的有效信号
     input  wire         pl_suspend ,    // 流水线暂停信号
-    // predict branch direction and target
     output wire [31:0]  pred_target,    // 预测的下一条指令地址
-    output wire         pred_error ,    // 预测是否错误
-    // signals to correct BHT
     input  wire         ex_valid   ,    // EX阶段的有效信号
     input  wire         ex_is_bj   ,    // EX阶段是否是条件分支或直接跳转指令
     input  wire [31:0]  ex_pc      ,    // EX阶段的PC值
@@ -35,8 +32,17 @@ module BPU (
   reg [`RAS_PTR_W-1:0] ras_sp;
   reg [`RAS_CNT_W-1:0] ras_cnt;
 
+  reg         ex_valid_r;
+  reg         ex_is_bj_r;
+  reg  [31:0] ex_pc_r;
+  reg         real_taken_r;
+  reg  [31:0] real_target_r;
+  reg         ex_is_call_r;
+  reg         ex_is_ret_r;
+  reg  [31:0] ex_ret_addr_r;
+
   wire [`BHT_TAG_W-1:0] if_tag = if_pc[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // IF阶段指令地址标签
-  wire [`BHT_TAG_W-1:0] ex_tag = ex_pc[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // EX阶段指令地址标签
+  wire [`BHT_TAG_W-1:0] ex_tag = ex_pc_r[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // EX阶段指令地址标签
 
   // 增强地址折叠，让更多 if_pc 位参与异或，降低索引冲突概率
   wire [31:0] pc_hash = if_pc ^ (if_pc >> 2) ^ (if_pc >> 10)^ (if_pc >> 16) ^ (if_pc >> 24);
@@ -84,14 +90,37 @@ module BPU (
     end
   end
 
-  wire ex_is_bj_valid = ex_is_bj;
-  wire taken_error  = ex_is_bj_valid & (ex_pred_taken ^ !real_taken);       // 检测分支跳转方向是否预测错误
-  wire target_error = ex_is_bj_valid & real_taken & ex_pred_taken & (ex_pred_target != real_target);                 // 检测目标地址是否预测错误
-  assign pred_error = ex_valid & (taken_error | target_error);
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
+      ex_valid_r    <= 1'b0;
+      ex_is_bj_r    <= 1'b0;
+      ex_pc_r       <= 32'b0;
+      real_taken_r  <= 1'b0;
+      real_target_r <= 32'b0;
+      ex_is_call_r  <= 1'b0;
+      ex_is_ret_r   <= 1'b0;
+      ex_ret_addr_r <= 32'b0;
+    end
+    else
+    begin
+      ex_valid_r    <= ex_valid;
+      ex_is_bj_r    <= ex_is_bj;
+      ex_pc_r       <= ex_pc;
+      real_taken_r  <= real_taken;
+      real_target_r <= real_target;
+      ex_is_call_r  <= ex_is_call;
+      ex_is_ret_r   <= ex_is_ret;
+      ex_ret_addr_r <= ex_ret_addr;
+    end
+  end
 
-  wire add_entry     = ex_valid & ex_is_bj_valid & !valid[ex_index];     // 判断何种情形需要在BHT和BTB中新增表项
-  wire update_entry  = ex_valid & ex_is_bj_valid & valid[ex_index] & (tag[ex_index] == ex_tag);     // 判断何种情形需要更新BHT和BTB的现有表项
-  wire replace_entry = ex_valid & ex_is_bj_valid & valid[ex_index] & (tag[ex_index] != ex_tag);     // 判断何种情形需要替换BHT和BTB的现有表项
+  wire ex_is_bj_valid = ex_is_bj_r;
+
+  wire add_entry     = ex_valid_r & ex_is_bj_valid & !valid[ex_index];     // 判断何种情形需要在BHT和BTB中新增表项
+  wire update_entry  = ex_valid_r & ex_is_bj_valid & valid[ex_index] & (tag[ex_index] == ex_tag);     // 判断何种情形需要更新BHT和BTB的现有表项
+  wire replace_entry = ex_valid_r & ex_is_bj_valid & valid[ex_index] & (tag[ex_index] != ex_tag);     // 判断何种情形需要替换BHT和BTB的现有表项
 
   integer i;
   integer j;
@@ -114,21 +143,21 @@ module BPU (
       begin
         valid[ex_index]  <= 1'b1;
         tag[ex_index]    <= ex_tag;
-        is_ret_entry[ex_index] <= ex_is_ret;
-        if (real_taken)
+        is_ret_entry[ex_index] <= ex_is_ret_r;
+        if (real_taken_r)
         begin
-          target[ex_index] <= real_target;
+          target[ex_index] <= real_target_r;
         end
-        history[ex_index] <= real_taken ? 2'b10 : 2'b01;//跳了就是弱跳转，不跳就是弱不跳
+        history[ex_index] <= real_taken_r ? 2'b10 : 2'b01;//跳了就是弱跳转，不跳就是弱不跳
       end
       else if (update_entry)
       begin
-        is_ret_entry[ex_index] <= ex_is_ret;
-        if (real_taken)
+        is_ret_entry[ex_index] <= ex_is_ret_r;
+        if (real_taken_r)
         begin
-          target[ex_index] <= real_target;
+          target[ex_index] <= real_target_r;
         end
-        if (real_taken)
+        if (real_taken_r)
         begin
           if (history[ex_index] == 2'b00)
             history[ex_index] <= 2'b01;
@@ -153,11 +182,11 @@ module BPU (
 
       end
 
-      if (ex_valid && ex_is_bj_valid && real_taken)
+      if (ex_valid_r && ex_is_bj_valid && real_taken_r)
       begin
-        if (ex_is_call)
+        if (ex_is_call_r)
         begin
-          ras_stack[ras_sp] <= ex_ret_addr;
+          ras_stack[ras_sp] <= ex_ret_addr_r;
 
           if (ras_sp == (`RAS_DEPTH - 1))
             ras_sp <= {`RAS_PTR_W{1'b0}};
@@ -167,7 +196,7 @@ module BPU (
           if (ras_cnt != `RAS_DEPTH)
             ras_cnt <= ras_cnt + {{(`RAS_CNT_W-1){1'b0}}, 1'b1};
         end
-        else if (ex_is_ret)
+        else if (ex_is_ret_r)
         begin
           if (!ras_empty)
           begin
