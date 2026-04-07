@@ -2,6 +2,7 @@
 #include "regdef.h"
 #include "inst_test.h"
 
+#if TEST4
 LEAF(test4_init)
   csrwr     zero, csr_prmd 
   csrwr     zero, csr_era 
@@ -12,7 +13,9 @@ LEAF(test4_init)
    
   jirl zero, ra, 0x0
 END(test4_init)
+#endif
 
+#if TEST5
 LEAF(test5_init)
   csrwr     zero, csr_prmd 
   csrwr     zero, csr_era 
@@ -29,7 +32,9 @@ LEAF(test5_init)
 
   jirl zero, ra, 0x0
 END(test5_init)
+#endif
 
+#if (TEST6 || TEST7 || TEST8)
 LEAF(test6_init)
   csrwr     zero, csr_prmd 
   csrwr     zero, csr_era 
@@ -55,7 +60,9 @@ LEAF(test6_init)
 
   jirl zero, ra, 0x0
 END(test6_init)
+#endif
 
+#if TEST8
 LEAF(test8_init)
   csrwr     zero, csr_prmd 
   csrwr     zero, csr_era 
@@ -81,7 +88,9 @@ LEAF(test8_init)
 
   jirl zero, ra, 0x0
 END(test8_init)
+#endif
 
+#if TEST6
 LEAF(tlb_init)
     
 #    addi.w s0, s0 ,1
@@ -149,3 +158,4 @@ LEAF(tlb_init)
     jirl zero, ra, 0x0
 
 END(tlb_init)
+#endif

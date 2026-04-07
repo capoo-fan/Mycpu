@@ -60,7 +60,7 @@ test_finish:
     add.w     t3, t5, t6
     ld.w      t4, t0, 0
 
-#if (!SHORT_TEST1)
+#if (!SHORT_TEST1) && (TEST4 || TEST5 || TEST6 || TEST7 || TEST8 || TEST9)
 /*
  *  exception handle
  */
