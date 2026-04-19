@@ -309,7 +309,7 @@ module ID_stage(
   assign ds_allowin     = !ds_valid || (ds_ready_go && es_allowin);
   assign ds_to_es_valid = ds_valid && ds_ready_go;
 
-  // 分支判断
+  // 分支判断 (前移)
   wire rj_eq_rd          = (rj_value == rkd_value);
   wire rj_lt_rd_signed   = ($signed(rj_value) < $signed(rkd_value));
   wire rj_lt_rd_unsigned = (rj_value < rkd_value);

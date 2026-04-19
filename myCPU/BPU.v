@@ -1,8 +1,8 @@
 `include "mycpu.vh"
 
 module BPU (
-    input  wire         clk    ,
-    input  wire         resetn   ,
+    input  wire         clk        ,
+    input  wire         resetn     ,
     input  wire [31:0]  if_pc      ,    // IF阶段的PC值
     input  wire         if_valid   ,    // IF阶段的有效信号
     input  wire         id_valid   ,    // ID阶段的有效信号
@@ -13,9 +13,9 @@ module BPU (
     input  wire [31:0]  ex_pc      ,    // EX阶段的PC值
     input  wire         real_taken ,    // EX阶段指令实际是否发生跳转
     input  wire [31:0]  real_target,    // EX阶段指令发生跳转时的目标地址
-    input  wire         ex_is_call ,    // EX阶段是否为调用指令
+    input  wire         ex_is_call ,    // EX阶段是否为调用函数指令
     input  wire         ex_is_ret  ,    // EX阶段是否为返回指令
-    input  wire [31:0]  ex_ret_addr      // 调用指令的返回地址
+    input  wire [31:0]  ex_ret_addr     // 调用指令的返回地址
   );
   reg         reset;
   always @(posedge clk)
@@ -148,6 +148,7 @@ module BPU (
         begin
           target[ex_index] <= real_target_r;
         end
+        // 00代表强不跳转，10代表弱不跳转，11代表弱跳转，11代表强跳转
         history[ex_index] <= real_taken_r ? 2'b10 : 2'b01;//跳了就是弱跳转，不跳就是弱不跳
       end
       else if (update_entry)
