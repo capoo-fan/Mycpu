@@ -44,6 +44,10 @@ module BPU (
   wire [`BHT_TAG_W-1:0] if_tag = if_pc[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // IF阶段指令地址标签
   wire [`BHT_TAG_W-1:0] ex_tag = ex_pc_r[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // EX阶段指令地址标签
 
+  // 从 EX 阶段 PC 重新计算 BHT 索引, 避免使用被后续指令覆盖的 ex_index
+  wire [31:0] ex_pc_hash = ex_pc_r ^ (ex_pc_r >> 2) ^ (ex_pc_r >> 10) ^ (ex_pc_r >> 16) ^ (ex_pc_r >> 24);
+  wire [`BHT_IDX_W-1:0] ex_bht_idx = ex_pc_hash[`BHT_IDX_W+1:2];
+
   // 增强地址折叠，让更多 if_pc 位参与异或，降低索引冲突概率
   wire [31:0] pc_hash = if_pc ^ (if_pc >> 2) ^ (if_pc >> 10)^ (if_pc >> 16) ^ (if_pc >> 24);
   wire [`BHT_IDX_W-1:0] index   = pc_hash[`BHT_IDX_W+1:2];    // 表索引
@@ -118,9 +122,9 @@ module BPU (
 
   wire ex_is_bj_valid = ex_is_bj_r;
 
-  wire add_entry     = ex_valid_r & ex_is_bj_valid & !valid[ex_index];     // 判断何种情形需要在BHT和BTB中新增表项
-  wire update_entry  = ex_valid_r & ex_is_bj_valid & valid[ex_index] & (tag[ex_index] == ex_tag);     // 判断何种情形需要更新BHT和BTB的现有表项
-  wire replace_entry = ex_valid_r & ex_is_bj_valid & valid[ex_index] & (tag[ex_index] != ex_tag);     // 判断何种情形需要替换BHT和BTB的现有表项
+  wire add_entry     = ex_valid_r & ex_is_bj_valid & !valid[ex_bht_idx];     // 判断何种情形需要在BHT和BTB中新增表项
+  wire update_entry  = ex_valid_r & ex_is_bj_valid & valid[ex_bht_idx] & (tag[ex_bht_idx] == ex_tag);     // 判断何种情形需要更新BHT和BTB的现有表项
+  wire replace_entry = ex_valid_r & ex_is_bj_valid & valid[ex_bht_idx] & (tag[ex_bht_idx] != ex_tag);     // 判断何种情形需要替换BHT和BTB的现有表项
 
   integer i;
   integer j;
@@ -141,44 +145,44 @@ module BPU (
     begin
       if (add_entry || replace_entry)
       begin
-        valid[ex_index]  <= 1'b1;
-        tag[ex_index]    <= ex_tag;
-        is_ret_entry[ex_index] <= ex_is_ret_r;
+        valid[ex_bht_idx]  <= 1'b1;
+        tag[ex_bht_idx]    <= ex_tag;
+        is_ret_entry[ex_bht_idx] <= ex_is_ret_r;
         if (real_taken_r)
         begin
-          target[ex_index] <= real_target_r;
+          target[ex_bht_idx] <= real_target_r;
         end
         // 00代表强不跳转，10代表弱不跳转，11代表弱跳转，11代表强跳转
-        history[ex_index] <= real_taken_r ? 2'b10 : 2'b01;//跳了就是弱跳转，不跳就是弱不跳
+        history[ex_bht_idx] <= real_taken_r ? 2'b10 : 2'b01;//跳了就是弱跳转，不跳就是弱不跳
       end
       else if (update_entry)
       begin
-        is_ret_entry[ex_index] <= ex_is_ret_r;
+        is_ret_entry[ex_bht_idx] <= ex_is_ret_r;
         if (real_taken_r)
         begin
-          target[ex_index] <= real_target_r;
+          target[ex_bht_idx] <= real_target_r;
         end
         if (real_taken_r)
         begin
-          if (history[ex_index] == 2'b00)
-            history[ex_index] <= 2'b01;
-          else if (history[ex_index] == 2'b01)
-            history[ex_index] <= 2'b10;
-          else if (history[ex_index] == 2'b10)
-            history[ex_index] <= 2'b11;
+          if (history[ex_bht_idx] == 2'b00)
+            history[ex_bht_idx] <= 2'b01;
+          else if (history[ex_bht_idx] == 2'b01)
+            history[ex_bht_idx] <= 2'b10;
+          else if (history[ex_bht_idx] == 2'b10)
+            history[ex_bht_idx] <= 2'b11;
           else
-            history[ex_index] <= 2'b11;
+            history[ex_bht_idx] <= 2'b11;
         end
         else
         begin
-          if (history[ex_index] == 2'b11)
-            history[ex_index] <= 2'b10;
-          else if (history[ex_index] == 2'b10)
-            history[ex_index] <= 2'b01;
-          else if (history[ex_index] == 2'b01)
-            history[ex_index] <= 2'b00;
+          if (history[ex_bht_idx] == 2'b11)
+            history[ex_bht_idx] <= 2'b10;
+          else if (history[ex_bht_idx] == 2'b10)
+            history[ex_bht_idx] <= 2'b01;
+          else if (history[ex_bht_idx] == 2'b01)
+            history[ex_bht_idx] <= 2'b00;
           else
-            history[ex_index] <= 2'b00;
+            history[ex_bht_idx] <= 2'b00;
         end
 
       end

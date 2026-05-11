@@ -3,10 +3,9 @@
 ## 构建与运行指令
 
 - 每次修改代码后，运行以下命令验证代码正确性：
-
 ```bash
 cd ~/MYCPU/test/soc_verify/soc_hs_bram/testbench
-make clean && make
+make clean && timeout 3m make
 ```
 
 ## 🏗 架构上下文
