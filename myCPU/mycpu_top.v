@@ -81,7 +81,7 @@ module mycpu_top(
   // PC 模块信号
   wire [31:0] pc_out;
   wire        pc_inst_req;
-  wire        if_full;
+  wire        if_suspend;
 
   // PC 实例
   PC u_pc(
@@ -89,7 +89,7 @@ module mycpu_top(
        .resetn   (resetn),
        .flush    (br_taken),
        .flush_pc (br_target),
-       .suspend  (if_full),
+       .suspend  (if_suspend),
        .din      (bpu_pred_target),
        .pc       (pc_out),
        .inst_req (pc_inst_req)
@@ -99,7 +99,7 @@ module mycpu_top(
         .clk         (clk),
         .resetn      (resetn),
         .if_pc       (pc_out),
-        .if_valid    (pc_inst_req && !if_full),
+        .if_valid    (pc_inst_req && !if_suspend),
         .id_valid    (bpu_id_valid),
         .pl_suspend  (!ds_allowin),
         .pred_target (bpu_pred_target),
@@ -124,7 +124,7 @@ module mycpu_top(
              .ds_allowin       (ds_allowin),
              .fs_to_ds_valid   (fs_to_ds_valid),
              .fs_to_ds_bus     (fs_to_ds_bus),
-             .full             (if_full),
+             .if_suspend       (if_suspend),
              .rd_req           (icache_rd_req),
              .rd_addr          (icache_rd_addr),
              .rd_rdy           (icache_rd_rdy),
