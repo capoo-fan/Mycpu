@@ -1,5 +1,4 @@
 `include "mycpu.vh"
-
 module IF_stage(
     input  wire        clk,
     input  wire        resetn,
