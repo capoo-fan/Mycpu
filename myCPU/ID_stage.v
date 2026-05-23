@@ -34,13 +34,15 @@ module ID_stage(
   reg         ds_valid;
   reg  [31:0] ds_pc;
   reg  [31:0] ds_inst;
+  reg         ds_pred_taken;
   reg  [31:0] ds_pred_target;
 
   wire [31:0] fs_pc;
   wire [31:0] fs_inst;
+  wire        fs_pred_taken;
   wire [31:0] fs_pred_target;
 
-  assign {fs_pc, fs_inst, fs_pred_target} = fs_to_ds_bus;
+  assign {fs_pc, fs_inst, fs_pred_taken, fs_pred_target} = fs_to_ds_bus;
 
 
   //  EXE MEM WB 前递逻辑
@@ -334,7 +336,6 @@ module ID_stage(
                                 inst_bltu || inst_bgeu || inst_bl || inst_b)
        ? (ds_pc + br_offs) : (rj_value + jirl_offs);
 
-  wire ds_pred_taken = (ds_pred_target != (ds_pc + 32'h4));
   wire ds_br_resolve = ds_valid && ds_ready_go && es_allowin && ds_is_bj;
   wire ds_taken_miss = ds_real_taken ^ ds_pred_taken;
   wire ds_target_miss = ds_real_taken && ds_pred_taken && (ds_real_target != ds_pred_target);
@@ -395,12 +396,14 @@ module ID_stage(
     begin
       ds_pc       <= 32'b0;
       ds_inst     <= 32'b0;
+      ds_pred_taken <= 1'b0;
       ds_pred_target <= 32'b0;
     end
     else if (ds_allowin && fs_to_ds_valid)
     begin
       ds_pc       <= fs_pc;
       ds_inst     <= fs_inst;
+      ds_pred_taken <= fs_pred_taken;
       ds_pred_target <= fs_pred_target;
     end
   end

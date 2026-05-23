@@ -1,7 +1,7 @@
 `ifndef MYCPU_H
 `define MYCPU_H
 
-        // BPU 相关定义
+// BPU 相关定义
 
 `define BHT_IDX_W 10                    // 表索引位宽
 `define BHT_ENTRY (1 << `BHT_IDX_W)     // 表项个数
@@ -12,7 +12,7 @@
 
         // 级间总线宽度定义
 
-`define FS_TO_DS_BUS_WD 96
+`define FS_TO_DS_BUS_WD 97
 
 `define DS_TO_ES_BUS_WD 159
 

@@ -61,7 +61,7 @@ module icache_refill(
           if (icache_rd_fire)
           begin
             ic_refill_state     <= IC_REFILL_REQ;
-            ic_refill_base_addr <= icache_rd_addr;
+            ic_refill_base_addr <= {icache_rd_addr[31:4], 4'b0000};
             ic_refill_beat      <= 2'b0;
           end
         end

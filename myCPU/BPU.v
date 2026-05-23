@@ -7,6 +7,7 @@ module BPU (
     input  wire         if_valid   ,    // IF阶段的有效信号
     input  wire         id_valid   ,    // ID阶段的有效信号
     input  wire         pl_suspend ,    // 流水线暂停信号
+    output wire         pred_taken ,    // 预测是否跳转
     output wire [31:0]  pred_target,    // 预测的下一条指令地址
     input  wire         ex_valid   ,    // EX阶段的有效信号
     input  wire         ex_is_bj   ,    // EX阶段是否是条件分支或直接跳转指令
@@ -57,7 +58,7 @@ module BPU (
   wire [31:0] ras_top = ras_stack[ras_top_ptr];
 
   wire pred_btb_hit  = valid[index] && (tag[index] == if_tag);
-  wire pred_taken    = pred_btb_hit && history[index][1];        // 生成预测跳转方向
+  assign pred_taken  = pred_btb_hit && history[index][1];        // 生成预测跳转方向
   wire pred_use_ras  = pred_taken && is_ret_entry[index] && !ras_empty;
   assign pred_target = pred_taken ? (pred_use_ras ? ras_top : target[index]) : (if_pc + 32'h4);        // 生成预测跳转的目标地址
 

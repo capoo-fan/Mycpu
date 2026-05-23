@@ -67,6 +67,7 @@ module mycpu_top(
   wire [31:0] br_target;
 
   // BPU 预测与训练信号
+  wire        bpu_pred_taken;
   wire [31:0] bpu_pred_target;
 
   wire        bpu_id_valid;
@@ -102,6 +103,7 @@ module mycpu_top(
         .if_valid    (pc_inst_req && !if_suspend),
         .id_valid    (bpu_id_valid),
         .pl_suspend  (!ds_allowin),
+        .pred_taken  (bpu_pred_taken),
         .pred_target (bpu_pred_target),
         .ex_valid    (bpu_id_valid),
         .ex_is_bj    (bpu_id_is_bj),
@@ -119,6 +121,7 @@ module mycpu_top(
              .resetn           (resetn),
              .pc_inst_req      (pc_inst_req),
              .pc               (pc_out),
+             .bpu_pred_taken   (bpu_pred_taken),
              .bpu_pred_target  (bpu_pred_target),
              .br_taken         (br_taken),
              .ds_allowin       (ds_allowin),

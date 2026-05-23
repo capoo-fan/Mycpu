@@ -6,6 +6,7 @@ module IF_stage(
     input  wire        pc_inst_req,
     input  wire [31:0] pc,
     // BPU 预测
+    input  wire        bpu_pred_taken,
     input  wire [31:0] bpu_pred_target,
     // 分支冲刷
     input  wire        br_taken,
@@ -31,6 +32,7 @@ module IF_stage(
   // IF0 分支预测并取指
   wire        s0_valid        = pc_inst_req;
   wire [31:0] s0_addr         = pc;
+  wire        s0_pred_taken   = bpu_pred_taken;
   wire [31:0] s0_pred_target  = bpu_pred_target;
   wire [7:0]  s0_index        = s0_addr[11:4];
   wire [19:0] s0_tag          = s0_addr[31:12];
@@ -40,6 +42,7 @@ module IF_stage(
   // S1 本周期返回缓存行数据和存储的 Tag 并判断是否命中
   reg         s1_valid;
   reg [31:0]  s1_addr;
+  reg         s1_pred_taken;
   reg [31:0]  s1_pred_target;
   reg [7:0]   s1_index;
   reg [19:0]  s1_tag;
@@ -63,6 +66,7 @@ module IF_stage(
   reg         s2_hit_way;
   reg [127:0] s2_line_data;
   reg [31:0]  s2_addr;
+  reg         s2_pred_taken;
   reg [31:0]  s2_pred_target;
   reg [1:0]   s2_offset_word;
 
@@ -92,10 +96,11 @@ module IF_stage(
   reg         s3_valid;
   reg [31:0]  s3_inst;
   reg [31:0]  s3_pc;
+  reg         s3_pred_taken;
   reg [31:0]  s3_pred_target;
 
   assign fs_to_ds_valid = s3_valid && !br_taken;
-  assign fs_to_ds_bus   = {s3_pc, s3_inst, s3_pred_target};
+  assign fs_to_ds_bus   = {s3_pc, s3_inst, s3_pred_taken, s3_pred_target};
 
   // Miss FSM
   localparam FSM_IDLE        = 3'd0;
@@ -139,11 +144,15 @@ module IF_stage(
 
   always @(posedge clk)
   begin
-    if (s2_valid && !s2_hit && state == FSM_IDLE)
+    if (!resetn || br_taken)
     begin
-      if (!cache_valid[0][s1_index])
+      miss_replace_way <= 1'b0;
+    end
+    else if (s2_valid && !s2_hit && state == FSM_IDLE)
+    begin
+      if (!cache_valid[0][s2_addr[11:4]])
         miss_replace_way <= 1'b0;
-      else if (!cache_valid[1][s1_index])
+      else if (!cache_valid[1][s2_addr[11:4]])
         miss_replace_way <= 1'b1;
       else
         miss_replace_way <= lfsr[0];
@@ -165,6 +174,7 @@ module IF_stage(
     begin
       s1_valid        <= 1'b0;
       s1_addr         <= 32'b0;
+      s1_pred_taken   <= 1'b0;
       s1_pred_target  <= 32'b0;
       s1_index        <= 8'b0;
       s1_tag          <= 20'b0;
@@ -173,11 +183,13 @@ module IF_stage(
     else if (br_taken)
     begin
       s1_valid        <= 1'b0;
+      s1_pred_taken   <= 1'b0;
     end
     else if (!s1_stall)
     begin
       s1_valid        <= s0_valid;
       s1_addr         <= s0_addr;
+      s1_pred_taken   <= s0_pred_taken;
       s1_pred_target  <= s0_pred_target;
       s1_index        <= s0_index;
       s1_tag          <= s0_tag;
@@ -195,12 +207,14 @@ module IF_stage(
       s2_hit_way      <= 1'b0;
       s2_line_data    <= 128'b0;
       s2_addr         <= 32'b0;
+      s2_pred_taken   <= 1'b0;
       s2_pred_target  <= 32'b0;
       s2_offset_word  <= 2'b0;
     end
     else if (br_taken)
     begin
       s2_valid        <= 1'b0;
+      s2_pred_taken   <= 1'b0;
     end
     else if (!s2_stall)
     begin
@@ -209,6 +223,7 @@ module IF_stage(
       s2_hit_way      <= s1_hit_way;
       s2_line_data    <= s1_hit_line;
       s2_addr         <= s1_addr;
+      s2_pred_taken   <= s1_pred_taken;
       s2_pred_target  <= s1_pred_target;
       s2_offset_word  <= s1_offset_word;
     end
@@ -225,17 +240,20 @@ module IF_stage(
       s3_valid       <= 1'b0;
       s3_inst        <= 32'b0;
       s3_pc          <= 32'b0;
+      s3_pred_taken  <= 1'b0;
       s3_pred_target <= 32'b0;
     end
     else if (br_taken)
     begin
       s3_valid       <= 1'b0;
+      s3_pred_taken  <= 1'b0;
     end
     else if (!s3_stall)
     begin
       s3_valid       <= s2_valid && s2_data_ready;
       s3_inst        <= s2_effective_inst;
       s3_pc          <= s2_addr;
+      s3_pred_taken  <= s2_pred_taken;
       s3_pred_target <= s2_pred_target;
     end
   end
