@@ -1,218 +1,258 @@
 `include "mycpu.vh"
 
 module BPU (
-    input  wire         clk        ,
-    input  wire         resetn     ,
-    input  wire [31:0]  if_pc      ,    // IF阶段的PC值
-    input  wire         if_valid   ,    // IF阶段的有效信号
-    input  wire         id_valid   ,    // ID阶段的有效信号
-    input  wire         pl_suspend ,    // 流水线暂停信号
-    output wire         pred_taken ,    // 预测是否跳转
-    output wire [31:0]  pred_target,    // 预测的下一条指令地址
-    input  wire         ex_valid   ,    // EX阶段的有效信号
-    input  wire         ex_is_bj   ,    // EX阶段是否是条件分支或直接跳转指令
-    input  wire [31:0]  ex_pc      ,    // EX阶段的PC值
-    input  wire         real_taken ,    // EX阶段指令实际是否发生跳转
-    input  wire [31:0]  real_target,    // EX阶段指令发生跳转时的目标地址
-    input  wire         ex_is_call ,    // EX阶段是否为调用函数指令
-    input  wire         ex_is_ret  ,    // EX阶段是否为返回指令
-    input  wire [31:0]  ex_ret_addr     // 调用指令的返回地址
+    input  wire         clk,
+    input  wire         resetn,
+    // 预测接口
+    input  wire [31:0]  if_pc,
+    input  wire         if_valid,
+    input  wire         id_valid,
+    input  wire         pl_suspend,
+    output wire         pred_taken,
+    output wire [31:0]  pred_target,
+    // 更新接口
+    input  wire         ex_valid,
+    input  wire         ex_is_bj,
+    input  wire [31:0]  ex_pc,
+    input  wire         real_taken,
+    input  wire [31:0]  real_target,
+    // RAS 信号
+    input  wire         ex_is_call,
+    input  wire         ex_is_ret,
+    input  wire [31:0]  ex_ret_addr
   );
-  reg         reset;
+  localparam BPU_ROW_W     = 2;   // bank 行数
+  localparam BPU_BANKS     = 2;   // 两个 banke
+  localparam BPU_ENTRY_NUM = BPU_BANKS * (1 << BPU_ROW_W); //总项数 8项
+  localparam BPU_INDEX_W   = BPU_ROW_W + 1;     // 索引宽度
+  localparam BPU_TAG_W     = 18;                // tag 位宽
+
+  localparam BTB_ENTRY_W   = 1 + 1 + BPU_TAG_W + 2 + 32; // {valid, is_ret, tag, counter, target}
+
+  localparam RAS_DEPTH     = 8;  // RAS 深度
+  localparam RAS_PTR_W     = 3;  // 指针宽度
+  localparam RAS_CNT_W     = 4;  // 计数器宽度
+
+  reg reset;
   always @(posedge clk)
     reset <= ~resetn;
 
-  // BHT
-  reg  [`BHT_TAG_W-1:0] tag     [`BHT_ENTRY-1:0];
-  reg  [`BHT_ENTRY-1:0] valid;
-  reg  [           1:0] history [`BHT_ENTRY-1:0];
-  reg  [          31:0] target  [`BHT_ENTRY-1:0];
-  reg  [`BHT_ENTRY-1:0] is_ret_entry;
+  function [BPU_INDEX_W-1:0] btb_index;
+    input [31:0] pc;
+    begin
+      btb_index = {pc[2], pc[4:3]};
+    end
+  endfunction
 
-  reg [31:0]           ras_stack [0:`RAS_DEPTH-1]; // 返回地址栈
-  reg [`RAS_PTR_W-1:0] ras_sp;
-  reg [`RAS_CNT_W-1:0] ras_cnt;
+  function [BPU_TAG_W-1:0] btb_tag;
+    input [31:0] pc;
+    begin
+      btb_tag = pc[22:5];
+    end
+  endfunction
 
-  reg         ex_valid_r;
-  reg         ex_is_bj_r;
-  reg  [31:0] ex_pc_r;
-  reg         real_taken_r;
-  reg  [31:0] real_target_r;
-  reg         ex_is_call_r;
-  reg         ex_is_ret_r;
-  reg  [31:0] ex_ret_addr_r;
+  // counter 更新函数
+  function [1:0] train_counter;
+    input [1:0] old_counter;
+    input       taken;
+    begin
+      if (taken)
+        train_counter = (old_counter == 2'b11) ? 2'b11 : old_counter + 2'b01;
+      else
+        train_counter = (old_counter == 2'b00) ? 2'b00 : old_counter - 2'b01;
+    end
+  endfunction
 
-  wire [`BHT_TAG_W-1:0] if_tag = if_pc[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // IF阶段指令地址标签
-  wire [`BHT_TAG_W-1:0] ex_tag = ex_pc_r[`BHT_IDX_W + `BHT_TAG_W + 1 : `BHT_IDX_W + 2];      // EX阶段指令地址标签
+  // 生成 BTB 表项的函数
+  function [BTB_ENTRY_W-1:0] make_btb_entry;
+    input                 entry_valid;
+    input                 entry_is_ret;
+    input [BPU_TAG_W-1:0] entry_tag;
+    input [1:0]           entry_counter;
+    input [31:0]          entry_target;
+    begin
+      make_btb_entry = {entry_valid, entry_is_ret, entry_tag, entry_counter, entry_target};
+    end
+  endfunction
 
-  // 从 EX 阶段 PC 重新计算 BHT 索引, 避免使用被后续指令覆盖的 ex_index
-  wire [31:0] ex_pc_hash = ex_pc_r ^ (ex_pc_r >> 2) ^ (ex_pc_r >> 10) ^ (ex_pc_r >> 16) ^ (ex_pc_r >> 24);
-  wire [`BHT_IDX_W-1:0] ex_bht_idx = ex_pc_hash[`BHT_IDX_W+1:2];
+  // BTB 表
+  reg [BTB_ENTRY_W-1:0] btb_entry [0:BPU_ENTRY_NUM-1]; //  valid | is_ret | tag | counter | target -> 有效 | 返回 | tag | counter | 目标地址
 
-  // 增强地址折叠，让更多 if_pc 位参与异或，降低索引冲突概率
-  wire [31:0] pc_hash = if_pc ^ (if_pc >> 2) ^ (if_pc >> 10)^ (if_pc >> 16) ^ (if_pc >> 24);
-  wire [`BHT_IDX_W-1:0] index   = pc_hash[`BHT_IDX_W+1:2];    // 表索引
+  wire [BPU_TAG_W-1:0]   if_tag       = btb_tag(if_pc);
+  wire [BPU_INDEX_W-1:0] if_index     = btb_index(if_pc);
+  wire [BTB_ENTRY_W-1:0] if_btb_entry = btb_entry[if_index];
 
-  wire ras_empty = (ras_cnt == {`RAS_CNT_W{1'b0}});
-  wire [`RAS_PTR_W-1:0] ras_top_ptr = (ras_sp == {`RAS_PTR_W{1'b0}}) ? (`RAS_DEPTH - 1) : (ras_sp - {{(`RAS_PTR_W-1){1'b0}}, 1'b1});
-  wire [31:0] ras_top = ras_stack[ras_top_ptr];
+  wire                 if_entry_valid;
+  wire                 if_entry_is_ret;
+  wire [BPU_TAG_W-1:0] if_entry_tag;
+  wire [1:0]           if_entry_counter;
+  wire [31:0]          if_entry_target;
 
-  wire pred_btb_hit  = valid[index] && (tag[index] == if_tag);
-  assign pred_taken  = pred_btb_hit && history[index][1];        // 生成预测跳转方向
-  wire pred_use_ras  = pred_taken && is_ret_entry[index] && !ras_empty;
-  assign pred_target = pred_taken ? (pred_use_ras ? ras_top : target[index]) : (if_pc + 32'h4);        // 生成预测跳转的目标地址
+  assign {if_entry_valid,
+          if_entry_is_ret,
+          if_entry_tag,
+          if_entry_counter,
+          if_entry_target} = if_btb_entry;
 
-  reg  [`BHT_IDX_W-1:0] id_index      , ex_index      ;
-  reg                   id_pred_taken , ex_pred_taken ;
-  reg  [          31:0] id_pred_target, ex_pred_target;
+  wire   pred_btb_hit = if_entry_valid && (if_entry_tag == if_tag);   // BTB 命中
+  assign pred_taken   = pred_btb_hit && if_entry_counter[1];
+
+  // 第一个周期读，第二个周期更新
+  wire                   update_valid_s1 = ex_valid && ex_is_bj;
+  wire [BPU_TAG_W-1:0]   update_tag_s1   = btb_tag(ex_pc);
+  wire [BPU_INDEX_W-1:0] update_index_s1 = btb_index(ex_pc);
+  wire [BTB_ENTRY_W-1:0] update_entry_s1 = btb_entry[update_index_s1];
+
+  wire                 read_valid_s1;
+  wire                 read_is_ret_s1;
+  wire [BPU_TAG_W-1:0] read_tag_s1;
+  wire [1:0]           read_counter_s1;
+  wire [31:0]          read_target_s1;
+
+  assign {read_valid_s1,
+          read_is_ret_s1,
+          read_tag_s1,
+          read_counter_s1,
+          read_target_s1} = update_entry_s1;
+
+  // 第二个周期的寄存器
+  reg                   update_valid_s2;
+  reg [BPU_TAG_W-1:0]   update_tag_s2;
+  reg [BPU_INDEX_W-1:0] update_index_s2;
+
+  reg                   real_taken_s2;
+  reg [31:0]            real_target_s2;
+
+  reg                   ex_is_call_s2;
+  reg                   ex_is_ret_s2;
+  reg [31:0]            ex_ret_addr_s2;
+
+  reg                   read_valid_s2;
+  reg [BPU_TAG_W-1:0]   read_tag_s2;
+  reg [1:0]             read_counter_s2;
+  reg [31:0]            read_target_s2;
 
   always @(posedge clk)
   begin
     if (reset)
     begin
-      id_index       <= 'h0;
-      id_pred_taken  <= 1'b0;
-      id_pred_target <= 32'b0;
-      ex_index       <= 'h0;
-      ex_pred_taken  <= 1'b0;
-      ex_pred_target <= 32'b0;
+      update_valid_s2 <= 1'b0;
+      update_tag_s2   <= {BPU_TAG_W{1'b0}};
+      update_index_s2 <= {BPU_INDEX_W{1'b0}};
+      real_taken_s2   <= 1'b0;
+      real_target_s2  <= 32'b0;
+      ex_is_call_s2   <= 1'b0;
+      ex_is_ret_s2    <= 1'b0;
+      ex_ret_addr_s2  <= 32'b0;
+      read_valid_s2   <= 1'b0;
+      read_tag_s2     <= {BPU_TAG_W{1'b0}};
+      read_counter_s2 <= 2'b01;
+      read_target_s2  <= 32'b0;
     end
     else
     begin
-      if (if_valid && !pl_suspend)
+      update_valid_s2 <= update_valid_s1;
+      if (update_valid_s1)
       begin
-        id_index       <= index;
-        id_pred_taken  <= pred_taken;
-        id_pred_target <= pred_target;
-      end
+        update_tag_s2   <= update_tag_s1;
+        update_index_s2 <= update_index_s1;
+        // 真实分支结果和相关信息
+        real_taken_s2   <= real_taken;
+        real_target_s2  <= real_target;
 
-      if (id_valid && !pl_suspend)
-      begin
-        ex_index       <= id_index;
-        ex_pred_taken  <= id_pred_taken;
-        ex_pred_target <= id_pred_target;
+        ex_is_call_s2   <= ex_is_call;
+        ex_is_ret_s2    <= ex_is_ret;
+        ex_ret_addr_s2  <= ex_ret_addr;
+
+        read_valid_s2   <= read_valid_s1;
+        read_tag_s2     <= read_tag_s1;
+        read_counter_s2 <= read_counter_s1;
+        read_target_s2  <= read_target_s1;
       end
     end
   end
 
-  always @(posedge clk)
-  begin
-    if (reset)
-    begin
-      ex_valid_r    <= 1'b0;
-      ex_is_bj_r    <= 1'b0;
-      ex_pc_r       <= 32'b0;
-      real_taken_r  <= 1'b0;
-      real_target_r <= 32'b0;
-      ex_is_call_r  <= 1'b0;
-      ex_is_ret_r   <= 1'b0;
-      ex_ret_addr_r <= 32'b0;
-    end
-    else
-    begin
-      ex_valid_r    <= ex_valid;
-      ex_is_bj_r    <= ex_is_bj;
-      ex_pc_r       <= ex_pc;
-      real_taken_r  <= real_taken;
-      real_target_r <= real_target;
-      ex_is_call_r  <= ex_is_call;
-      ex_is_ret_r   <= ex_is_ret;
-      ex_ret_addr_r <= ex_ret_addr;
-    end
-  end
-
-  wire ex_is_bj_valid = ex_is_bj_r;
-
-  wire add_entry     = ex_valid_r & ex_is_bj_valid & !valid[ex_bht_idx];     // 判断何种情形需要在BHT和BTB中新增表项
-  wire update_entry  = ex_valid_r & ex_is_bj_valid & valid[ex_bht_idx] & (tag[ex_bht_idx] == ex_tag);     // 判断何种情形需要更新BHT和BTB的现有表项
-  wire replace_entry = ex_valid_r & ex_is_bj_valid & valid[ex_bht_idx] & (tag[ex_bht_idx] != ex_tag);     // 判断何种情形需要替换BHT和BTB的现有表项
+  // BTB表 更新
+  wire update_hit_s2 = read_valid_s2 && (read_tag_s2 == update_tag_s2);
+  wire [1:0] next_counter_s2 = train_counter(read_counter_s2, real_taken_s2);
 
   integer i;
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
+      for (i = 0; i < BPU_ENTRY_NUM; i = i + 1)
+        btb_entry[i] <= make_btb_entry(1'b0, 1'b0, {BPU_TAG_W{1'b0}}, 2'b01, 32'b0);
+    end
+    else if (update_valid_s2)
+    begin
+      if (update_hit_s2)
+      begin
+        btb_entry[update_index_s2] <= make_btb_entry(1'b1,
+                 ex_is_ret_s2,
+                 update_tag_s2,
+                 next_counter_s2,
+                 real_taken_s2 ? real_target_s2 : read_target_s2);
+      end
+      else if (real_taken_s2)  // 未命中且分支被执行，更新表项
+      begin
+        btb_entry[update_index_s2] <= make_btb_entry(1'b1,
+                 ex_is_ret_s2,
+                 update_tag_s2,
+                 2'b10,
+                 real_target_s2);
+      end
+    end
+  end
+
+  // RAS 栈
+  reg [31:0]          ras_stack [0:RAS_DEPTH-1];
+  reg [RAS_PTR_W-1:0] ras_sp;
+  reg [RAS_CNT_W-1:0] ras_cnt;
+
+  wire ras_empty = (ras_cnt == {RAS_CNT_W{1'b0}});
+  wire [RAS_PTR_W-1:0] ras_top_ptr = (ras_sp == {RAS_PTR_W{1'b0}}) ?
+       (RAS_DEPTH - 1) :
+       (ras_sp - {{(RAS_PTR_W-1){1'b0}}, 1'b1});
+  wire [31:0] ras_top = ras_stack[ras_top_ptr];
+
+  wire   pred_use_ras = pred_taken && if_entry_is_ret && !ras_empty;
+  assign pred_target  = pred_taken ?
+         (pred_use_ras ? ras_top : if_entry_target) :
+         (if_pc + 32'h4);
+
+  // RAS update
   integer j;
   always @(posedge clk)
   begin
     if (reset)
     begin
-      valid <= {`BHT_ENTRY{1'b0}};
-      is_ret_entry <= {`BHT_ENTRY{1'b0}};
-      ras_sp <= {`RAS_PTR_W{1'b0}};
-      ras_cnt <= {`RAS_CNT_W{1'b0}};
-      for (i = 0; i < `BHT_ENTRY; i = i + 1)
-        history[i] <= 2'b10;
-      for (j = 0; j < `RAS_DEPTH; j = j + 1)
+      ras_sp  <= {RAS_PTR_W{1'b0}};
+      ras_cnt <= {RAS_CNT_W{1'b0}};
+      for (j = 0; j < RAS_DEPTH; j = j + 1)
         ras_stack[j] <= 32'b0;
     end
-    else
+    else if (update_valid_s2 && real_taken_s2)  // 有效且跳转才更新
     begin
-      if (add_entry || replace_entry)
+      if (ex_is_call_s2)
       begin
-        valid[ex_bht_idx]  <= 1'b1;
-        tag[ex_bht_idx]    <= ex_tag;
-        is_ret_entry[ex_bht_idx] <= ex_is_ret_r;
-        if (real_taken_r)
-        begin
-          target[ex_bht_idx] <= real_target_r;
-        end
-        // 00代表强不跳转，10代表弱不跳转，11代表弱跳转，11代表强跳转
-        history[ex_bht_idx] <= real_taken_r ? 2'b10 : 2'b01;//跳了就是弱跳转，不跳就是弱不跳
+        ras_stack[ras_sp] <= ex_ret_addr_s2;
+        if (ras_sp == (RAS_DEPTH - 1))
+          ras_sp <= {RAS_PTR_W{1'b0}};
+        else
+          ras_sp <= ras_sp + {{(RAS_PTR_W-1){1'b0}}, 1'b1};
+        if (ras_cnt != RAS_DEPTH)
+          ras_cnt <= ras_cnt + {{(RAS_CNT_W-1){1'b0}}, 1'b1};
       end
-      else if (update_entry)
+      else if (ex_is_ret_s2 && !ras_empty)
       begin
-        is_ret_entry[ex_bht_idx] <= ex_is_ret_r;
-        if (real_taken_r)
-        begin
-          target[ex_bht_idx] <= real_target_r;
-        end
-        if (real_taken_r)
-        begin
-          if (history[ex_bht_idx] == 2'b00)
-            history[ex_bht_idx] <= 2'b01;
-          else if (history[ex_bht_idx] == 2'b01)
-            history[ex_bht_idx] <= 2'b10;
-          else if (history[ex_bht_idx] == 2'b10)
-            history[ex_bht_idx] <= 2'b11;
-          else
-            history[ex_bht_idx] <= 2'b11;
-        end
+        if (ras_sp == {RAS_PTR_W{1'b0}})
+          ras_sp <= (RAS_DEPTH - 1);
         else
         begin
-          if (history[ex_bht_idx] == 2'b11)
-            history[ex_bht_idx] <= 2'b10;
-          else if (history[ex_bht_idx] == 2'b10)
-            history[ex_bht_idx] <= 2'b01;
-          else if (history[ex_bht_idx] == 2'b01)
-            history[ex_bht_idx] <= 2'b00;
-          else
-            history[ex_bht_idx] <= 2'b00;
+          ras_sp  <= ras_sp - {{(RAS_PTR_W-1){1'b0}}, 1'b1};
         end
-
-      end
-
-      if (ex_valid_r && ex_is_bj_valid && real_taken_r)
-      begin
-        if (ex_is_call_r)
-        begin
-          ras_stack[ras_sp] <= ex_ret_addr_r;
-
-          if (ras_sp == (`RAS_DEPTH - 1))
-            ras_sp <= {`RAS_PTR_W{1'b0}};
-          else
-            ras_sp <= ras_sp + {{(`RAS_PTR_W-1){1'b0}}, 1'b1};
-
-          if (ras_cnt != `RAS_DEPTH)
-            ras_cnt <= ras_cnt + {{(`RAS_CNT_W-1){1'b0}}, 1'b1};
-        end
-        else if (ex_is_ret_r)
-        begin
-          if (!ras_empty)
-          begin
-            if (ras_sp == {`RAS_PTR_W{1'b0}})
-              ras_sp <= (`RAS_DEPTH - 1);
-            else
-              ras_sp <= ras_sp - {{(`RAS_PTR_W-1){1'b0}}, 1'b1};
-            ras_cnt <= ras_cnt - {{(`RAS_CNT_W-1){1'b0}}, 1'b1};
-          end
-        end
+        ras_cnt <= ras_cnt - {{(RAS_CNT_W-1){1'b0}}, 1'b1};
       end
     end
   end
