@@ -28,14 +28,13 @@ module IF_stage(
   always @(posedge clk)
     reset <= ~resetn;
 
-
   // IF0 分支预测并取指
   wire        s0_valid        = pc_inst_req;
   wire [31:0] s0_addr         = pc;
   wire        s0_pred_taken   = bpu_pred_taken;
   wire [31:0] s0_pred_target  = bpu_pred_target;
-  wire [7:0]  s0_index        = s0_addr[11:4];
-  wire [19:0] s0_tag          = s0_addr[31:12];
+  wire [2:0]  s0_index        = s0_addr[6:4];
+  wire [24:0] s0_tag          = s0_addr[31:7];
   wire [1:0]  s0_offset_word  = s0_addr[3:2];
 
 
@@ -44,14 +43,14 @@ module IF_stage(
   reg [31:0]  s1_addr;
   reg         s1_pred_taken;
   reg [31:0]  s1_pred_target;
-  reg [7:0]   s1_index;
-  reg [19:0]  s1_tag;
+  reg [2:0]   s1_index;
+  reg [24:0]  s1_tag;
   reg [1:0]   s1_offset_word;
 
-  // Cache 存储 (2-way 组相联, 256 组, 128-bit 行)
-  reg         cache_valid [0:1][0:255];
-  reg [19:0]  cache_tag   [0:1][0:255];
-  reg [127:0] cache_data  [0:1][0:255];
+  // Cache 存储 (2-way 组相联, 8 组, 128-bit 行, 256B 总容量)
+  reg         cache_valid [0:1][0:7];
+  reg [24:0]  cache_tag   [0:1][0:7];
+  reg [127:0] cache_data  [0:1][0:7];
 
   // Tag 比较 (组合逻辑, 在 S1 周期内完成)
   wire        s1_tag_match_way0 = cache_valid[0][s1_index] && (cache_tag[0][s1_index] == s1_tag);
@@ -69,6 +68,9 @@ module IF_stage(
   reg         s2_pred_taken;
   reg [31:0]  s2_pred_target;
   reg [1:0]   s2_offset_word;
+
+  wire [2:0]  s2_index = s2_addr[6:4];
+  wire [24:0] s2_tag   = s2_addr[31:7];
 
   // 从 128bit 行中提取 32bit 字
   function [31:0] extract_word;
@@ -150,9 +152,9 @@ module IF_stage(
     end
     else if (s2_valid && !s2_hit && state == FSM_IDLE)
     begin
-      if (!cache_valid[0][s2_addr[11:4]])
+      if (!cache_valid[0][s2_index])
         miss_replace_way <= 1'b0;
-      else if (!cache_valid[1][s2_addr[11:4]])
+      else if (!cache_valid[1][s2_index])
         miss_replace_way <= 1'b1;
       else
         miss_replace_way <= lfsr[0];
@@ -176,8 +178,8 @@ module IF_stage(
       s1_addr         <= 32'b0;
       s1_pred_taken   <= 1'b0;
       s1_pred_target  <= 32'b0;
-      s1_index        <= 8'b0;
-      s1_tag          <= 20'b0;
+      s1_index        <= 3'b0;
+      s1_tag          <= 25'b0;
       s1_offset_word  <= 2'b0;
     end
     else if (br_taken)
@@ -278,10 +280,10 @@ module IF_stage(
       refill_beat     <= 2'b0;
       for (i = 0; i < 2; i = i + 1)
       begin
-        for (j = 0; j < 256; j = j + 1)
+        for (j = 0; j < 8; j = j + 1)
         begin
           cache_valid[i][j] <= 1'b0;
-          cache_tag[i][j]   <= 20'b0;
+          cache_tag[i][j]   <= 25'b0;
           cache_data[i][j]  <= 128'b0;
         end
       end
@@ -321,9 +323,9 @@ module IF_stage(
       // RECOVERY: 写入 Cache + 锁存 refill_data_reg
       if (state == FSM_RECOVERY)
       begin
-        cache_valid[miss_replace_way][s2_addr[11:4]] <= 1'b1;
-        cache_tag[miss_replace_way][s2_addr[11:4]]   <= s2_addr[31:12];
-        cache_data[miss_replace_way][s2_addr[11:4]]  <= refill_line;
+        cache_valid[miss_replace_way][s2_index] <= 1'b1;
+        cache_tag[miss_replace_way][s2_index]   <= s2_tag;
+        cache_data[miss_replace_way][s2_index]  <= refill_line;
         refill_data_reg <= refill_line;
       end
     end
