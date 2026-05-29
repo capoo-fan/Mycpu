@@ -92,30 +92,13 @@ module alu(
   assign sr_result   = sr64_result[31:0];
 
   // 综合时使用 Xilinx 乘法 IP，仿真时保留行为级模型以避免依赖 IP 仿真库
-`ifdef SYNTHESIS
   mult_gen_0 u_mult_gen_0 (
                .CLK (clk     ),
                .A   (alu_src1),
                .B   (alu_src2),
                .P   (mul_ss_result)
              );
-`else
-  reg [63:0] mul_pipe_s0;
 
-  always @(posedge clk)
-  begin
-    if (!resetn)
-    begin
-      mul_pipe_s0 <= 64'd0;
-    end
-    else
-    begin
-      mul_pipe_s0 <= $signed(alu_src1) * $signed(alu_src2);
-    end
-  end
-
-  assign mul_ss_result = mul_pipe_s0;
-`endif
 
   assign mul_unsigned_fix = (alu_src1[31] ? {alu_src2, 32'b0} : 64'd0)
          + (alu_src2[31] ? {alu_src1, 32'b0} : 64'd0);
