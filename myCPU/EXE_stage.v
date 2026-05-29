@@ -27,11 +27,8 @@ module EXE_stage(
   reg         es_mem_we;
   reg  [ 4:0] es_dest;
   reg         es_is_mul;
-  reg         es_is_div;
   reg         es_mul_signed;
   reg         es_mul_hi;
-  reg         es_div_signed;
-  reg         es_is_mod;
   reg  [2:0]  mul_cnt;
   reg         es_ld_byte;
   reg         es_ld_half;
@@ -50,11 +47,8 @@ module EXE_stage(
   wire        ds_mem_we;
   wire [ 4:0] ds_dest;
   wire        ds_is_mul;
-  wire        ds_is_div;
   wire        ds_mul_signed;
   wire        ds_mul_hi;
-  wire        ds_div_signed;
-  wire        ds_is_mod;
   wire        ds_ld_byte;
   wire        ds_ld_half;
   wire        ds_ld_sign_ext;
@@ -62,39 +56,32 @@ module EXE_stage(
   wire        ds_st_half;
   assign {ds_pc, ds_alu_op, ds_alu_src1, ds_alu_src2, ds_rkd_value,
           ds_res_from_mem, ds_gr_we, ds_mem_we, ds_dest,
-          ds_is_mul, ds_is_div, ds_mul_signed, ds_mul_hi,
-          ds_div_signed, ds_is_mod,
+          ds_is_mul, ds_mul_signed, ds_mul_hi,
           ds_ld_byte, ds_ld_half, ds_ld_sign_ext,
           ds_st_byte, ds_st_half} = ds_to_es_bus;
 
 
   wire [31:0] alu_result;
 
-  // 乘除法
+  // 乘法
   wire [63:0] mul_product;
-  wire [31:0] div_quotient;
-  wire [31:0] div_remainder;
-  wire        div_complete;
-  wire        div_en;
 
   localparam [2:0] MUL_LATENCY = 3'd1;
 
 
   // 流水线控制
   wire   mul_result_ready = !es_is_mul       || (mul_cnt == MUL_LATENCY);
-  wire   div_result_ready = !es_is_div       || div_complete;
-  wire   es_ready_go      = mul_result_ready && div_result_ready;
+  wire   es_ready_go      = mul_result_ready;
   assign es_allowin       = !es_valid        || (es_ready_go && ms_allowin);
   assign es_to_ms_valid   = es_valid         && es_ready_go;
 
   // EXE 的结果
   wire [31:0] es_final_result = es_is_mul ? (es_mul_hi ? mul_product[63:32] : mul_product[31:0]) :
-       es_is_div ? (es_is_mod ? div_remainder : div_quotient) :
        alu_result;
 
   // 前递信号
   wire es_fwd_valid = !es_res_from_mem &&
-       !(es_is_mul && (mul_cnt != MUL_LATENCY)) && !(es_is_div && !div_complete);
+       !(es_is_mul && (mul_cnt != MUL_LATENCY));
   assign es_fwd_bus = {es_valid, es_gr_we, es_fwd_valid,
                        es_res_from_mem, es_dest, es_final_result};
   assign es_to_ms_bus = {es_pc,
@@ -110,10 +97,6 @@ module EXE_stage(
                          es_st_byte,
                          es_st_half
                         };
-
-  // 除法器使能
-  assign div_en = es_valid && es_is_div && !div_complete;
-
 
   always @(posedge clk)
   begin
@@ -137,11 +120,8 @@ module EXE_stage(
       es_alu_src2     <= 32'b0;
       es_rkd_value    <= 32'b0;
       es_is_mul       <= 1'b0;
-      es_is_div       <= 1'b0;
       es_mul_signed   <= 1'b0;
       es_mul_hi       <= 1'b0;
-      es_div_signed   <= 1'b0;
-      es_is_mod       <= 1'b0;
       es_ld_byte      <= 1'b0;
       es_ld_half      <= 1'b0;
       es_ld_sign_ext  <= 1'b0;
@@ -162,11 +142,8 @@ module EXE_stage(
         es_mem_we       <= ds_mem_we;
         es_dest         <= ds_dest;
         es_is_mul       <= ds_is_mul;
-        es_is_div       <= ds_is_div;
         es_mul_signed   <= ds_mul_signed;
         es_mul_hi       <= ds_mul_hi;
-        es_div_signed   <= ds_div_signed;
-        es_is_mod       <= ds_is_mod;
         es_ld_byte      <= ds_ld_byte;
         es_ld_half      <= ds_ld_half;
         es_ld_sign_ext  <= ds_ld_sign_ext;
@@ -178,7 +155,6 @@ module EXE_stage(
         es_gr_we        <= 1'b0;
         es_mem_we       <= 1'b0;
         es_is_mul       <= 1'b0;
-        es_is_div       <= 1'b0;
       end
     end
   end
@@ -204,17 +180,5 @@ module EXE_stage(
         .alu_result (alu_result ),
         .mul_result (mul_product)
       );
-
-  divider u_div(
-            .div_clk   (clk          ),
-            .resetn    (resetn       ),
-            .div       (div_en       ),
-            .div_signed(es_div_signed),
-            .x         (es_alu_src1  ),
-            .y         (es_alu_src2  ),
-            .s         (div_quotient ),
-            .r         (div_remainder),
-            .complete  (div_complete )
-          );
 
 endmodule

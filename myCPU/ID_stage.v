@@ -114,7 +114,6 @@ module ID_stage(
   wire inst_ld_b, inst_ld_h, inst_ld_bu, inst_ld_hu;
   wire inst_st_b, inst_st_h;
   wire inst_mul_w, inst_mulh_w, inst_mulh_wu;
-  wire inst_div_w, inst_mod_w, inst_div_wu, inst_mod_wu;
 
 
   // ALU 指令译码
@@ -150,10 +149,6 @@ module ID_stage(
   assign inst_mul_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h18];
   assign inst_mulh_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h19];
   assign inst_mulh_wu = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h1a];
-  assign inst_div_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h00];
-  assign inst_mod_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h01];
-  assign inst_div_wu  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h02];
-  assign inst_mod_wu  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h03];
   assign inst_blt  = op_31_26_d[6'h18];
   assign inst_bge  = op_31_26_d[6'h19];
   assign inst_bltu = op_31_26_d[6'h1a];
@@ -177,13 +172,11 @@ module ID_stage(
        inst_blt | inst_bge | inst_bltu | inst_bgeu |
        inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
        inst_st_b | inst_st_h |
-       inst_mul_w | inst_mulh_w | inst_mulh_wu |
-       inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
+       inst_mul_w | inst_mulh_w | inst_mulh_wu;
 
 
 
   wire is_mul      = inst_mul_w | inst_mulh_w | inst_mulh_wu;
-  wire is_div      = inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
   wire ld_byte     = inst_ld_b | inst_ld_bu;
   wire ld_half     = inst_ld_h | inst_ld_hu;
   wire ld_sign_ext = inst_ld_b | inst_ld_h;
@@ -277,8 +270,7 @@ module ID_stage(
        inst_add_w | inst_sub_w | inst_slt | inst_sltu |
        inst_nor | inst_and | inst_or | inst_xor |
        inst_sll_w | inst_srl_w | inst_sra_w |
-       inst_mul_w | inst_mulh_w | inst_mulh_wu |
-       inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
+       inst_mul_w | inst_mulh_w | inst_mulh_wu;
   wire ds_rf_raddr1_valid = ds_need_rj  && (rf_raddr1 != 5'b0);
   wire ds_rf_raddr2_valid = ds_need_rkd && (rf_raddr2 != 5'b0);
 
@@ -296,7 +288,7 @@ module ID_stage(
        load_stall_rj_ms || load_stall_rkd_ms ||
        multicycle_stall_rj || multicycle_stall_rkd;
 
-  // 乘除法多周期阻塞
+  // 乘法多周期阻塞
   wire es_multicycle_busy = es_fwd_es_valid && es_fwd_gr_we &&
        !es_fwd_fwd_valid && !es_fwd_res_from_mem;
   wire multicycle_stall_rj  = es_multicycle_busy &&
@@ -368,11 +360,8 @@ module ID_stage(
                          mem_we,
                          dest,
                          is_mul,
-                         is_div,
                          inst_mul_w | inst_mulh_w,
                          inst_mulh_w | inst_mulh_wu,
-                         inst_div_w | inst_mod_w,
-                         inst_mod_w | inst_mod_wu,
                          ld_byte,
                          ld_half,
                          ld_sign_ext,
