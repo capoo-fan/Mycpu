@@ -91,9 +91,8 @@ module alu(
 
   assign sr_result   = sr64_result[31:0];
 
-  // 乘法器的开关，如果使用Xilinx的乘法IP核，则定义USE_XILINX_MULT_IP宏，否则使用自己写的乘法器
-`ifdef USE_XILINX_MULT_IP
-
+  // 综合时使用 Xilinx 乘法 IP，仿真时保留行为级模型以避免依赖 IP 仿真库
+`ifdef SYNTHESIS
   mult_gen_0 u_mult_gen_0 (
                .CLK (clk     ),
                .A   (alu_src1),
