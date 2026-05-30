@@ -37,7 +37,7 @@ module ID_stage(
   reg         ds_pred_taken;
   reg  [31:0] ds_pred_target;
 
-  // 分支纠错打一拍，避免 ID 组合分支结果直接扇出到 IF/PC。
+  // 分支纠错打一拍，避免 ID 组合分支结果直接输出到 IF/PC。
   reg         br_taken_r;
   reg  [31:0] br_target_r;
 
@@ -326,7 +326,7 @@ module ID_stage(
 
   // 流水线控制
   wire   ds_ready_go    = !load_use_stall;
-  wire   ds_fire        = ds_valid && ds_ready_go && es_allowin && !br_taken;
+  wire   ds_fire        = ds_valid && ds_ready_go && es_allowin && !br_taken; // 表示 ID 当前指令可以进入 EXE 阶段，且不发生分支跳转
   assign ds_allowin     = br_taken || !ds_valid || (ds_ready_go && es_allowin);
   assign ds_to_es_valid = ds_valid && ds_ready_go && !br_taken;
 

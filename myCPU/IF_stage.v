@@ -10,8 +10,8 @@ module IF_stage(
     input  wire [31:0] bpu_pred_target,
     // 分支冲刷
     input  wire        br_taken,
-    // ID 级握手
-    input  wire        ds_allowin,
+    // IBUF 接收握手
+    input  wire        ibuf_allowin,
     output wire        fs_to_ds_valid,
     output wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus,
     output wire        if_suspend, // 阻塞信号，用于指示PC停止发送新请求
@@ -142,7 +142,7 @@ module IF_stage(
 
 
   // 阻塞链
-  wire s3_stall = !ds_allowin && s3_valid;
+  wire s3_stall = !ibuf_allowin && s3_valid;
   wire s2_stall = s3_stall || (s2_valid && !s2_hit && state != FSM_DONE);
   wire s1_stall = s2_stall;
   assign if_suspend   = s1_stall; 

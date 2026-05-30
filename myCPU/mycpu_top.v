@@ -50,6 +50,10 @@ module mycpu_top(
   wire        ms_to_ws_valid;
 
   wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus;
+  wire        if_to_ibuf_valid;
+  wire [`FS_TO_DS_BUS_WD-1:0] if_to_ibuf_bus;
+  wire        ibuf_push_ready;
+  wire        ibuf_full;
   wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus;
@@ -102,7 +106,7 @@ module mycpu_top(
         .if_pc       (pc_out),
         .if_valid    (pc_inst_req && !if_suspend),
         .id_valid    (bpu_id_valid),
-        .pl_suspend  (!ds_allowin),
+        .pl_suspend  (if_suspend),
         .pred_taken  (bpu_pred_taken),
         .pred_target (bpu_pred_target),
         .ex_valid    (bpu_id_valid),
@@ -124,9 +128,9 @@ module mycpu_top(
              .bpu_pred_taken   (bpu_pred_taken),
              .bpu_pred_target  (bpu_pred_target),
              .br_taken         (br_taken),
-             .ds_allowin       (ds_allowin),
-             .fs_to_ds_valid   (fs_to_ds_valid),
-             .fs_to_ds_bus     (fs_to_ds_bus),
+             .ibuf_allowin     (ibuf_push_ready),
+             .fs_to_ds_valid   (if_to_ibuf_valid),
+             .fs_to_ds_bus     (if_to_ibuf_bus),
              .if_suspend       (if_suspend),
              .rd_req           (icache_rd_req),
              .rd_addr          (icache_rd_addr),
@@ -135,6 +139,19 @@ module mycpu_top(
              .ret_last         (icache_ret_last),
              .ret_data         (icache_ret_data)
            );
+
+  inst_buffer u_inst_buffer(
+                .clk         (clk),
+                .resetn      (resetn),
+                .flush       (br_taken),
+                .push_valid  (if_to_ibuf_valid),
+                .push_bus    (if_to_ibuf_bus),
+                .push_ready  (ibuf_push_ready),
+                .full        (ibuf_full),
+                .pop_ready   (ds_allowin),
+                .front_valid (fs_to_ds_valid),
+                .front_bus   (fs_to_ds_bus)
+              );
 
   // ID stage
   ID_stage u_id(
