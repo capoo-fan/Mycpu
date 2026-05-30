@@ -98,14 +98,8 @@ module alu(
                .B   (alu_src2),
                .P   (mul_ss_result)
              );
-/*`ifdef SYNTHESIS
-  mult_gen_0 u_mult_gen_0 (
-               .CLK (clk     ),
-               .A   (alu_src1),
-               .B   (alu_src2),
-               .P   (mul_ss_result)
-             );
-`else
+
+/* 乘法仿真模型
   reg [63:0] sim_mul_ss_result;
 
   always @(posedge clk)
@@ -115,7 +109,7 @@ module alu(
   end
 
   assign mul_ss_result = sim_mul_ss_result;
-`endif*/
+*/
 
 
   assign mul_unsigned_fix = (alu_src1[31] ? {alu_src2, 32'b0} : 64'd0)
