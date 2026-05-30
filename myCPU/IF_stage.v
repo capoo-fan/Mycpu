@@ -90,20 +90,6 @@ module IF_stage(
     end
   endfunction
 
-  wire [127:0] s2_effective_line = (state == FSM_DONE) ? refill_data_reg : s2_line_data;
-  wire [31:0]  s2_effective_inst = extract_word(s2_effective_line, s2_offset_word);
-
-
-  // S3 缓存行数据进行对齐，根据PC和预测结果发送数据
-  reg         s3_valid;
-  reg [31:0]  s3_inst;
-  reg [31:0]  s3_pc;
-  reg         s3_pred_taken;
-  reg [31:0]  s3_pred_target;
-
-  assign fs_to_ds_valid = s3_valid && !br_taken;
-  assign fs_to_ds_bus   = {s3_pc, s3_inst, s3_pred_taken, s3_pred_target};
-
   // Miss FSM
   localparam FSM_IDLE        = 3'd0;
   localparam FSM_MISS_REQ    = 3'd1;
@@ -119,6 +105,47 @@ module IF_stage(
   reg [1:0]   refill_beat;        // 当前重填拍号 0-3
 
   reg [7:0] lfsr;                 // 随机替换策略
+
+  wire [127:0] s2_effective_line = (state == FSM_DONE) ? refill_data_reg : s2_line_data;
+  wire [31:0]  s2_effective_inst = extract_word(s2_effective_line, s2_offset_word);
+
+
+  // S3 缓存行数据进行对齐，根据PC和预测结果发送数据
+  reg         s3_valid;
+  reg [31:0]  s3_inst;
+  reg [31:0]  s3_pc;
+  reg         s3_pred_taken;
+  reg [31:0]  s3_pred_target;
+
+  assign fs_to_ds_valid = s3_valid && !br_taken;
+  assign fs_to_ds_bus   = {s3_pc, s3_inst, s3_pred_taken, s3_pred_target};
+
+  // 替换路选择: 优先填无效路, 都有效则 LFSR 随机
+  reg miss_replace_way;
+
+  always @(posedge clk)
+  begin
+    if (!resetn)
+    begin
+      miss_replace_way <= 1'b0;
+    end
+    else if (s2_valid && !s2_hit && state == FSM_IDLE)
+    begin
+      if (!cache_valid[0][s2_index])
+        miss_replace_way <= 1'b0;
+      else if (!cache_valid[1][s2_index])
+        miss_replace_way <= 1'b1;
+      else
+        miss_replace_way <= lfsr[0];
+    end
+  end
+
+
+  // 阻塞链
+  wire s3_stall = !ds_allowin && s3_valid;
+  wire s2_stall = s3_stall || (s2_valid && !s2_hit && state != FSM_DONE);
+  wire s1_stall = s2_stall;
+  assign if_suspend   = s1_stall; 
 
   wire trigger_miss = s2_valid && !s2_hit && (state != FSM_DONE);
 
@@ -141,40 +168,22 @@ module IF_stage(
     endcase
   end
 
-  // 替换路选择: 优先填无效路, 都有效则 LFSR 随机
-  reg miss_replace_way;
-
-  always @(posedge clk)
-  begin
-    if (!resetn || br_taken)
-    begin
-      miss_replace_way <= 1'b0;
-    end
-    else if (s2_valid && !s2_hit && state == FSM_IDLE)
-    begin
-      if (!cache_valid[0][s2_index])
-        miss_replace_way <= 1'b0;
-      else if (!cache_valid[1][s2_index])
-        miss_replace_way <= 1'b1;
-      else
-        miss_replace_way <= lfsr[0];
-    end
-  end
-
-
-  // 阻塞链
-  wire s3_stall = !ds_allowin && s3_valid;
-  wire s2_stall = s3_stall || (s2_valid && !s2_hit && state != FSM_DONE);
-  wire s1_stall = s2_stall;
-  assign if_suspend   = s1_stall; 
-
 
   // S1 寄存器更新
   always @(posedge clk)
   begin
     if (reset)
-    begin
       s1_valid        <= 1'b0;
+    else if (br_taken)
+      s1_valid        <= 1'b0;
+    else if (!s1_stall)
+      s1_valid        <= s0_valid;
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
       s1_addr         <= 32'b0;
       s1_pred_taken   <= 1'b0;
       s1_pred_target  <= 32'b0;
@@ -182,14 +191,8 @@ module IF_stage(
       s1_tag          <= 25'b0;
       s1_offset_word  <= 2'b0;
     end
-    else if (br_taken)
-    begin
-      s1_valid        <= 1'b0;
-      s1_pred_taken   <= 1'b0;
-    end
     else if (!s1_stall)
     begin
-      s1_valid        <= s0_valid;
       s1_addr         <= s0_addr;
       s1_pred_taken   <= s0_pred_taken;
       s1_pred_target  <= s0_pred_target;
@@ -203,8 +206,17 @@ module IF_stage(
   always @(posedge clk)
   begin
     if (reset)
-    begin
       s2_valid        <= 1'b0;
+    else if (br_taken)
+      s2_valid        <= 1'b0;
+    else if (!s2_stall)
+      s2_valid        <= s1_valid;
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
       s2_hit          <= 1'b0;
       s2_hit_way      <= 1'b0;
       s2_line_data    <= 128'b0;
@@ -213,14 +225,8 @@ module IF_stage(
       s2_pred_target  <= 32'b0;
       s2_offset_word  <= 2'b0;
     end
-    else if (br_taken)
-    begin
-      s2_valid        <= 1'b0;
-      s2_pred_taken   <= 1'b0;
-    end
     else if (!s2_stall)
     begin
-      s2_valid        <= s1_valid;
       s2_hit          <= s1_hit;
       s2_hit_way      <= s1_hit_way;
       s2_line_data    <= s1_hit_line;
@@ -238,21 +244,24 @@ module IF_stage(
   always @(posedge clk)
   begin
     if (reset)
-    begin
       s3_valid       <= 1'b0;
+    else if (br_taken)
+      s3_valid       <= 1'b0;
+    else if (!s3_stall)
+      s3_valid       <= s2_valid && s2_data_ready;
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
       s3_inst        <= 32'b0;
       s3_pc          <= 32'b0;
       s3_pred_taken  <= 1'b0;
       s3_pred_target <= 32'b0;
     end
-    else if (br_taken)
-    begin
-      s3_valid       <= 1'b0;
-      s3_pred_taken  <= 1'b0;
-    end
     else if (!s3_stall)
     begin
-      s3_valid       <= s2_valid && s2_data_ready;
       s3_inst        <= s2_effective_inst;
       s3_pc          <= s2_addr;
       s3_pred_taken  <= s2_pred_taken;
@@ -268,12 +277,21 @@ module IF_stage(
   // LFSR
   wire lfsr_feedback = lfsr[7] ^ lfsr[5] ^ lfsr[4] ^ lfsr[3];
 
+  always @(posedge clk)
+  begin
+    if (!resetn)
+      state <= FSM_IDLE;
+    else if (br_taken)
+      state <= FSM_IDLE;
+    else
+      state <= next_state;
+  end
+
   integer i, j;
   always @(posedge clk)
   begin
     if (!resetn)
     begin
-      state       <= FSM_IDLE;
       lfsr        <= 8'hFF;
       refill_data_reg <= 128'b0;
       refill_line     <= 128'b0;
@@ -288,13 +306,8 @@ module IF_stage(
         end
       end
     end
-    else if (br_taken)
-    begin
-      state <= FSM_IDLE;
-    end
     else
     begin
-      state <= next_state;
       lfsr <= {lfsr[6:0], lfsr_feedback};
 
       // MISS_REQ -> MISS_REFILL: 初始化重填
