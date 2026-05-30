@@ -4,7 +4,11 @@
 #include "test_define.h"
 #include "test_config.h"
 
-#define TEST_NUM (TEST1*20 + TEST2*16 + TEST3*10 + TEST4*1 + TEST5*11 + TEST6*12 + TEST7*2 + TEST8*7 + TEST9*2)
+#ifndef SKIP_DIV
+#define SKIP_DIV 0
+#endif
+
+#define TEST_NUM (TEST1*20 + TEST2*(16 - SKIP_DIV*4) + TEST3*10 + TEST4*1 + TEST5*11 + TEST6*12 + TEST7*2 + TEST8*7 + TEST9*2)
 
 
 #if TEST8
@@ -596,11 +600,13 @@ inst_test:
     bl n29_srl_w_test   #srl.w
     bl idle_1s
     
+#if !SKIP_DIV
     bl n30_div_w_test    #div.w
     bl idle_1s
     
     bl n31_div_wu_test   #div.wu
     bl idle_1s
+#endif
     
     bl n32_mul_w_test   #mul.w
     bl idle_1s
@@ -611,11 +617,13 @@ inst_test:
     bl n34_mulh_wu_test   #mulh.wu
     bl idle_1s
     
+#if !SKIP_DIV
     bl n35_mod_w_test   #mod.w
     bl idle_1s
     
     bl n36_mod_wu_test   #mod.wu
     bl idle_1s
+#endif
     
 #endif
 ############################
