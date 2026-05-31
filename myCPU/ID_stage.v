@@ -289,6 +289,14 @@ module ID_stage(
        rkd_fwd_from_ws ? ws_fwd_data :
        rf_rdata2;
 
+  // 分支解析不直接使用 EXE 组合前递结果；若需要该结果，会先 stall 一拍。
+  wire [31:0] rj_br_value = rj_fwd_from_ms ? ms_fwd_data :
+       rj_fwd_from_ws ? ws_fwd_data :
+       rf_rdata1;
+  wire [31:0] rkd_br_value = rkd_fwd_from_ms ? ms_fwd_data :
+       rkd_fwd_from_ws ? ws_fwd_data :
+       rf_rdata2;
+
 
   wire ds_need_rj  = ~inst_b & ~inst_bl & ~inst_lu12i_w & ~inst_pcaddu12i;
   wire ds_need_rkd = inst_beq | inst_bne | inst_st_w |
@@ -299,6 +307,9 @@ module ID_stage(
        inst_mul_w | inst_mulh_w | inst_mulh_wu;
   wire ds_rf_raddr1_valid = ds_need_rj  && (rf_raddr1 != 5'b0);
   wire ds_rf_raddr2_valid = ds_need_rkd && (rf_raddr2 != 5'b0);
+
+  wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
+       inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
 
   // Load-Use 冒险检测
   wire load_stall_rj_es  = es_fwd_es_valid && es_fwd_res_from_mem && es_fwd_gr_we &&
@@ -322,21 +333,22 @@ module ID_stage(
        load_stall_rj_ms || load_stall_rkd_ms ||
        multicycle_stall_rj || multicycle_stall_rkd;
 
-
+  // 分支/JIRL 若依赖 EXE 当前组合结果，等待一拍从 MEM 注册结果前递，切断 EXE->ID 长路径。
+  wire branch_dep_stall_es = ds_valid && ds_is_bj &&
+       es_fwd_es_valid && es_fwd_gr_we && (es_fwd_dest != 5'b0) &&
+       ((ds_rf_raddr1_valid && (es_fwd_dest == rf_raddr1)) ||
+        (ds_rf_raddr2_valid && (es_fwd_dest == rf_raddr2)));
 
   // 流水线控制
-  wire   ds_ready_go    = !load_use_stall;
+  wire   ds_ready_go    = !load_use_stall && !branch_dep_stall_es;
   wire   ds_fire        = ds_valid && ds_ready_go && es_allowin && !br_taken; // 表示 ID 当前指令可以进入 EXE 阶段，且不发生分支跳转
   assign ds_allowin     = br_taken || !ds_valid || (ds_ready_go && es_allowin);
   assign ds_to_es_valid = ds_valid && ds_ready_go && !br_taken;
 
   // 分支判断 (前移)
-  wire rj_eq_rd          = (rj_value == rkd_value);
-  wire rj_lt_rd_signed   = ($signed(rj_value) < $signed(rkd_value));
-  wire rj_lt_rd_unsigned = (rj_value < rkd_value);
-
-  wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
-       inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
+  wire rj_eq_rd          = (rj_br_value == rkd_br_value);
+  wire rj_lt_rd_signed   = ($signed(rj_br_value) < $signed(rkd_br_value));
+  wire rj_lt_rd_unsigned = (rj_br_value < rkd_br_value);
 
   wire ds_is_call = inst_bl || (inst_jirl && (rd == 5'd1));   // 调用信号
   wire ds_is_ret  = inst_jirl && (rd == 5'd0) && (rj == 5'd1) && (i16 == 16'h0000); // 返回信号
@@ -353,7 +365,7 @@ module ID_stage(
 
   wire [31:0] ds_real_target = (inst_beq || inst_bne || inst_blt || inst_bge ||
                                 inst_bltu || inst_bgeu || inst_bl || inst_b)
-       ? (ds_pc + br_offs) : (rj_value + jirl_offs);
+       ? (ds_pc + br_offs) : (rj_br_value + jirl_offs);
 
   wire ds_br_resolve = ds_fire && ds_is_bj;
   wire ds_taken_miss = ds_real_taken ^ ds_pred_taken;
