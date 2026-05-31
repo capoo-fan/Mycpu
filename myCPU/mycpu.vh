@@ -7,7 +7,7 @@
 
 `define DS_DEC_BUS_WD   150
 
-`define DS_TO_ES_BUS_WD 156
+`define DS_TO_ES_BUS_WD 227
 
 `define ES_TO_MS_BUS_WD 109
 
@@ -20,5 +20,16 @@
 `define MS_FWD_BUS_WD   40
 
 `define WS_FWD_BUS_WD   39
+
+`define BR_NONE 4'd0
+`define BR_BEQ  4'd1
+`define BR_BNE  4'd2
+`define BR_BLT  4'd3
+`define BR_BGE  4'd4
+`define BR_BLTU 4'd5
+`define BR_BGEU 4'd6
+`define BR_JIRL 4'd7
+`define BR_BL   4'd8
+`define BR_B    4'd9
 
 `endif

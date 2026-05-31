@@ -6,17 +6,7 @@ module ID_stage(
     input  wire                           fs_to_ds_valid,
     input  wire [`FS_TO_DS_BUS_WD-1:0]    fs_to_ds_bus,
     output wire                           ds_allowin,
-    output wire                           br_taken,
-    output wire [31:0]                    br_target,
-    // BPU 接口
-    output wire                           bpu_valid,
-    output wire                           bpu_is_bj,
-    output wire [31:0]                    bpu_pc,
-    output wire                           bpu_real_taken,
-    output wire [31:0]                    bpu_real_target,
-    output wire                           bpu_is_call,
-    output wire                           bpu_is_ret,
-    output wire [31:0]                    bpu_ret_addr,
+    input  wire                           br_taken,
 
     input  wire                           es_allowin,
     input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus,
@@ -37,38 +27,12 @@ module ID_stage(
   reg         ds_pred_taken;
   reg  [31:0] ds_pred_target;
 
-  // 分支纠错打一拍，避免 ID 组合分支结果直接输出到 IF/PC。
-  reg         br_taken_r;
-  reg  [31:0] br_target_r;
-
-  // BPU 训练信息与分支纠错同拍延后，避免 flush 当拍训练错误路径。
-  reg         bpu_valid_r;
-  reg         bpu_is_bj_r;
-  reg  [31:0] bpu_pc_r;
-  reg         bpu_real_taken_r;
-  reg  [31:0] bpu_real_target_r;
-  reg         bpu_is_call_r;
-  reg         bpu_is_ret_r;
-  reg  [31:0] bpu_ret_addr_r;
-
   wire [31:0] fs_pc;
   wire [31:0] fs_inst;
   wire        fs_pred_taken;
   wire [31:0] fs_pred_target;
 
   assign {fs_pc, fs_inst, fs_pred_taken, fs_pred_target} = fs_to_ds_bus;
-
-  assign br_taken  = br_taken_r;
-  assign br_target = br_target_r;
-
-  assign bpu_valid       = bpu_valid_r;
-  assign bpu_is_bj       = bpu_is_bj_r;
-  assign bpu_pc          = bpu_pc_r;
-  assign bpu_real_taken  = bpu_real_taken_r;
-  assign bpu_real_target = bpu_real_target_r;
-  assign bpu_is_call     = bpu_is_call_r;
-  assign bpu_is_ret      = bpu_is_ret_r;
-  assign bpu_ret_addr    = bpu_ret_addr_r;
 
 
   //  EXE MEM WB 前递逻辑
@@ -180,14 +144,6 @@ module ID_stage(
        rkd_fwd_from_ws ? ws_fwd_data :
        rf_rdata2;
 
-  // 分支解析不直接使用 EXE 组合前递结果；若需要该结果，会先 stall 一拍。
-  wire [31:0] rj_br_value = rj_fwd_from_ms ? ms_fwd_data :
-       rj_fwd_from_ws ? ws_fwd_data :
-       rf_rdata1;
-  wire [31:0] rkd_br_value = rkd_fwd_from_ms ? ms_fwd_data :
-       rkd_fwd_from_ws ? ws_fwd_data :
-       rf_rdata2;
-
   wire ds_rf_raddr1_valid = ds_need_rj  && (rf_raddr1 != 5'b0);
   wire ds_rf_raddr2_valid = ds_need_rkd && (rf_raddr2 != 5'b0);
 
@@ -213,53 +169,35 @@ module ID_stage(
        load_stall_rj_ms || load_stall_rkd_ms ||
        multicycle_stall_rj || multicycle_stall_rkd;
 
-  // 分支指令若依赖 EXE 当前组合结果，等待一拍从 MEM 结果前递
-  wire branch_dep_stall_es = ds_valid && ds_is_bj &&
-       es_fwd_es_valid && es_fwd_gr_we && (es_fwd_dest != 5'b0) &&
-       ((ds_rf_raddr1_valid && (es_fwd_dest == rf_raddr1)) ||
-        (ds_rf_raddr2_valid && (es_fwd_dest == rf_raddr2)));
-
   // 流水线控制
-  wire   ds_ready_go    = !load_use_stall && !branch_dep_stall_es;
-  wire   ds_fire        = ds_valid && ds_ready_go && es_allowin && !br_taken; // 表示 ID 当前指令可以进入 EXE 阶段，且不发生分支跳转
+  wire   ds_ready_go    = !load_use_stall;
   assign ds_allowin     = br_taken || !ds_valid || (ds_ready_go && es_allowin);
   assign ds_to_es_valid = ds_valid && ds_ready_go && !br_taken;
-
-  // 分支判断 (前移)
-  wire rj_eq_rd          = (rj_br_value == rkd_br_value);
-  wire rj_lt_rd_signed   = ($signed(rj_br_value) < $signed(rkd_br_value));
-  wire rj_lt_rd_unsigned = (rj_br_value < rkd_br_value);
-
-  wire ds_real_taken = (inst_beq  &&  rj_eq_rd ||
-                        inst_bne  && !rj_eq_rd ||
-                        inst_blt  &&  rj_lt_rd_signed ||
-                        inst_bge  && !rj_lt_rd_signed ||
-                        inst_bltu &&  rj_lt_rd_unsigned ||
-                        inst_bgeu && !rj_lt_rd_unsigned ||
-                        inst_jirl ||
-                        inst_bl   ||
-                        inst_b) && ds_is_bj;
-
-  wire [31:0] ds_real_target = (inst_beq || inst_bne || inst_blt || inst_bge ||
-                                inst_bltu || inst_bgeu || inst_bl || inst_b)
-       ? (ds_pc + br_offs) : (rj_br_value + jirl_offs);
-
-  wire ds_br_resolve = ds_fire && ds_is_bj;
-  wire ds_taken_miss = ds_real_taken ^ ds_pred_taken;
-  wire ds_target_miss = ds_real_taken && ds_pred_taken && (ds_real_target != ds_pred_target);
-  wire ds_redirect = ds_br_resolve && (ds_taken_miss || ds_target_miss);
-  wire [31:0] ds_redirect_target = ds_real_taken ? ds_real_target : (ds_pc + 32'h4);
 
   // ALU 源操作数
   wire [31:0] ds_alu_src1 = src1_is_pc ? ds_pc : rj_value;
   wire [31:0] ds_alu_src2 = src2_is_imm ? imm : rkd_value;
+  wire [31:0] ds_rkd_value = inst_jirl ? rj_value : rkd_value;
+
+  // 分支指令信息
+  wire [ 3:0] ds_br_op = inst_beq  ? `BR_BEQ  :
+                         inst_bne  ? `BR_BNE  :
+                         inst_blt  ? `BR_BLT  :
+                         inst_bge  ? `BR_BGE  :
+                         inst_bltu ? `BR_BLTU :
+                         inst_bgeu ? `BR_BGEU :
+                         inst_jirl ? `BR_JIRL :
+                         inst_bl   ? `BR_BL   :
+                         inst_b    ? `BR_B    :
+                                      `BR_NONE;
+  wire [31:0] ds_br_offs = inst_jirl ? jirl_offs : br_offs;
 
   // 总线打包
   assign ds_to_es_bus = {ds_pc,
                          alu_op,
                          ds_alu_src1,
                          ds_alu_src2,
-                         rkd_value,
+                         ds_rkd_value,
                          res_from_mem,
                          gr_we,
                          mem_we,
@@ -271,7 +209,13 @@ module ID_stage(
                          ld_half,
                          ld_sign_ext,
                          st_byte,
-                         st_half
+                         st_half,
+                         ds_pred_taken,
+                         ds_pred_target,
+                         ds_br_op,
+                         ds_br_offs,
+                         ds_is_call,
+                         ds_is_ret
                         };
 
   always @(posedge clk)
@@ -299,58 +243,6 @@ module ID_stage(
       ds_inst     <= fs_inst;
       ds_pred_taken <= fs_pred_taken;
       ds_pred_target <= fs_pred_target;
-    end
-  end
-
-  always @(posedge clk)
-  begin
-    if (reset)
-    begin
-      br_taken_r  <= 1'b0;
-      br_target_r <= 32'b0;
-    end
-    else
-    begin
-      br_taken_r  <= ds_redirect;
-      br_target_r <= ds_redirect ? ds_redirect_target : 32'b0;
-    end
-  end
-
-  always @(posedge clk)
-  begin
-    if (reset)
-    begin
-      bpu_valid_r       <= 1'b0;
-      bpu_is_bj_r       <= 1'b0;
-      bpu_pc_r          <= 32'b0;
-      bpu_real_taken_r  <= 1'b0;
-      bpu_real_target_r <= 32'b0;
-      bpu_is_call_r     <= 1'b0;
-      bpu_is_ret_r      <= 1'b0;
-      bpu_ret_addr_r    <= 32'b0;
-    end
-    else
-    begin
-      bpu_valid_r <= ds_fire;
-      if (ds_fire)
-      begin
-        bpu_is_bj_r       <= ds_is_bj;
-        bpu_pc_r          <= ds_pc;
-        bpu_real_taken_r  <= ds_real_taken;
-        bpu_real_target_r <= ds_real_target;
-        bpu_is_call_r     <= ds_is_bj && ds_real_taken && ds_is_call;
-        bpu_is_ret_r      <= ds_is_bj && ds_real_taken && ds_is_ret;
-        bpu_ret_addr_r    <= ds_pc + 32'h4;
-      end
-      else
-      begin
-        bpu_is_bj_r       <= 1'b0;
-        bpu_real_taken_r  <= 1'b0;
-        bpu_real_target_r <= 32'b0;
-        bpu_is_call_r     <= 1'b0;
-        bpu_is_ret_r      <= 1'b0;
-        bpu_ret_addr_r    <= 32'b0;
-      end
     end
   end
 

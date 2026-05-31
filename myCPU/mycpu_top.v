@@ -74,14 +74,14 @@ module mycpu_top(
   wire        bpu_pred_taken;
   wire [31:0] bpu_pred_target;
 
-  wire        bpu_id_valid;
-  wire        bpu_id_is_bj;
-  wire [31:0] bpu_id_pc;
-  wire        bpu_id_real_taken;
-  wire [31:0] bpu_id_real_target;
-  wire        bpu_id_is_call;
-  wire        bpu_id_is_ret;
-  wire [31:0] bpu_id_ret_addr;
+  wire        bpu_ex_valid;
+  wire        bpu_ex_is_bj;
+  wire [31:0] bpu_ex_pc;
+  wire        bpu_ex_real_taken;
+  wire [31:0] bpu_ex_real_target;
+  wire        bpu_ex_is_call;
+  wire        bpu_ex_is_ret;
+  wire [31:0] bpu_ex_ret_addr;
 
   // PC 模块信号
   wire [31:0] pc_out;
@@ -105,18 +105,18 @@ module mycpu_top(
         .resetn      (resetn),
         .if_pc       (pc_out),
         .if_valid    (pc_inst_req && !if_suspend),
-        .id_valid    (bpu_id_valid),
+        .id_valid    (bpu_ex_valid),
         .pl_suspend  (if_suspend),
         .pred_taken  (bpu_pred_taken),
         .pred_target (bpu_pred_target),
-        .ex_valid    (bpu_id_valid),
-        .ex_is_bj    (bpu_id_is_bj),
-        .ex_pc       (bpu_id_pc),
-        .real_taken  (bpu_id_real_taken),
-        .real_target (bpu_id_real_target),
-        .ex_is_call  (bpu_id_is_call),
-        .ex_is_ret   (bpu_id_is_ret),
-        .ex_ret_addr (bpu_id_ret_addr)
+        .ex_valid    (bpu_ex_valid),
+        .ex_is_bj    (bpu_ex_is_bj),
+        .ex_pc       (bpu_ex_pc),
+        .real_taken  (bpu_ex_real_taken),
+        .real_target (bpu_ex_real_target),
+        .ex_is_call  (bpu_ex_is_call),
+        .ex_is_ret   (bpu_ex_is_ret),
+        .ex_ret_addr (bpu_ex_ret_addr)
       );
 
   // IF stage (四级流水线 + 集成 ICache)
@@ -161,15 +161,6 @@ module mycpu_top(
              .fs_to_ds_bus   (fs_to_ds_bus),
              .ds_allowin     (ds_allowin),
              .br_taken       (br_taken),
-             .br_target      (br_target),
-             .bpu_valid      (bpu_id_valid),
-             .bpu_is_bj      (bpu_id_is_bj),
-             .bpu_pc         (bpu_id_pc),
-             .bpu_real_taken (bpu_id_real_taken),
-             .bpu_real_target(bpu_id_real_target),
-             .bpu_is_call    (bpu_id_is_call),
-             .bpu_is_ret     (bpu_id_is_ret),
-             .bpu_ret_addr   (bpu_id_ret_addr),
              .es_allowin     (es_allowin),
              .es_fwd_bus     (es_fwd_bus),
              .ms_fwd_bus     (ms_fwd_bus),
@@ -189,7 +180,17 @@ module mycpu_top(
               .es_allowin     (es_allowin),
               .es_to_ms_valid (es_to_ms_valid),
               .es_to_ms_bus   (es_to_ms_bus),
-              .es_fwd_bus     (es_fwd_bus)
+              .es_fwd_bus     (es_fwd_bus),
+              .br_taken       (br_taken),
+              .br_target      (br_target),
+              .bpu_valid      (bpu_ex_valid),
+              .bpu_is_bj      (bpu_ex_is_bj),
+              .bpu_pc         (bpu_ex_pc),
+              .bpu_real_taken (bpu_ex_real_taken),
+              .bpu_real_target(bpu_ex_real_target),
+              .bpu_is_call    (bpu_ex_is_call),
+              .bpu_is_ret     (bpu_ex_is_ret),
+              .bpu_ret_addr   (bpu_ex_ret_addr)
             );
 
   // MEM stage
