@@ -91,7 +91,7 @@ module alu(
 
   assign sr_result   = sr64_result[31:0];
 
-  // 综合时使用 Xilinx 乘法 IP，仿真时保留一拍行为级模型以避免依赖 IP 仿真库
+  // 综合时使用 Xilinx 乘法 IP
   mult_gen_0 u_mult_gen_0 (
                .CLK (clk     ),
                .A   (alu_src1),
@@ -100,15 +100,17 @@ module alu(
              );
 
 /* 乘法仿真模型
-  reg [63:0] sim_mul_ss_result;
+  reg [63:0] sim_mul_pipe [0:2];
 
   always @(posedge clk)
   begin
-    sim_mul_ss_result <= $signed({{32{alu_src1[31]}}, alu_src1})
-                         * $signed({{32{alu_src2[31]}}, alu_src2});
+    sim_mul_pipe[0] <= $signed({{32{alu_src1[31]}}, alu_src1})
+                       * $signed({{32{alu_src2[31]}}, alu_src2});
+    sim_mul_pipe[1] <= sim_mul_pipe[0];
+    sim_mul_pipe[2] <= sim_mul_pipe[1];
   end
 
-  assign mul_ss_result = sim_mul_ss_result;
+  assign mul_ss_result = sim_mul_pipe[2];
 */
 
 

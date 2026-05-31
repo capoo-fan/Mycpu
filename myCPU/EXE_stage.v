@@ -90,7 +90,7 @@ module EXE_stage(
   // 乘法
   wire [63:0] mul_product;
 
-  localparam [2:0] MUL_LATENCY = 3'd1;
+  localparam [2:0] MUL_LATENCY = 3'd3;
 
 
   // 流水线控制
