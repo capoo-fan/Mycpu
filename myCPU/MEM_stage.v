@@ -49,11 +49,12 @@ module MEM_stage(
   reg         ms_ld_sign_ext;
   reg         ms_st_byte;
   reg         ms_st_half;
-  reg  [31:0] ms_alu_src1;
   reg         ms_pred_taken;
   reg  [31:0] ms_pred_target;
-  reg  [ 3:0] ms_br_op;
-  reg  [31:0] ms_br_offs;
+  reg         ms_is_bj;
+  reg         ms_real_taken;
+  reg  [31:0] ms_real_target;
+  reg  [31:0] ms_next_pc;
   reg         ms_is_call;
   reg         ms_is_ret;
 
@@ -70,11 +71,12 @@ module MEM_stage(
   wire        es_ld_sign_ext;
   wire        es_st_byte;
   wire        es_st_half;
-  wire [31:0] es_alu_src1;
   wire        es_pred_taken;
   wire [31:0] es_pred_target;
-  wire [ 3:0] es_br_op;
-  wire [31:0] es_br_offs;
+  wire        es_is_bj;
+  wire        es_real_taken;
+  wire [31:0] es_real_target;
+  wire [31:0] es_next_pc;
   wire        es_is_call;
   wire        es_is_ret;
 
@@ -82,7 +84,8 @@ module MEM_stage(
           es_res_from_mem, es_gr_we, es_mem_we, es_dest,
           es_ld_byte, es_ld_half, es_ld_sign_ext,
           es_st_byte, es_st_half,
-          es_alu_src1, es_pred_taken, es_pred_target, es_br_op, es_br_offs,
+          es_pred_taken, es_pred_target,
+          es_is_bj, es_real_taken, es_real_target, es_next_pc,
           es_is_call, es_is_ret} = es_to_ms_bus;
 
   wire ms_has_mem_op = ms_valid && (ms_res_from_mem || ms_mem_we);
@@ -109,26 +112,6 @@ module MEM_stage(
   wire   ms_fire        = ms_valid && ms_ready_go && ws_allowin;
 
   assign ms_fwd_bus = {ms_valid, ms_gr_we, ms_res_from_mem, ms_dest, ms_alu_result};
-
-  wire ms_is_bj = (ms_br_op != `BR_NONE);
-  wire ms_rj_eq_rkd          = (ms_alu_src1 == ms_rkd_value);
-  wire ms_rj_lt_rkd_signed   = ($signed(ms_alu_src1) < $signed(ms_rkd_value));
-  wire ms_rj_lt_rkd_unsigned = (ms_alu_src1 < ms_rkd_value);
-
-  wire ms_real_taken = ((ms_br_op == `BR_BEQ)  &&  ms_rj_eq_rkd          ||
-                        (ms_br_op == `BR_BNE)  && !ms_rj_eq_rkd          ||
-                        (ms_br_op == `BR_BLT)  &&  ms_rj_lt_rkd_signed   ||
-                        (ms_br_op == `BR_BGE)  && !ms_rj_lt_rkd_signed   ||
-                        (ms_br_op == `BR_BLTU) &&  ms_rj_lt_rkd_unsigned ||
-                        (ms_br_op == `BR_BGEU) && !ms_rj_lt_rkd_unsigned ||
-                        (ms_br_op == `BR_JIRL) ||
-                        (ms_br_op == `BR_BL)   ||
-                        (ms_br_op == `BR_B)) && ms_is_bj;
-  wire [31:0] ms_pc_br_target   = ms_pc + ms_br_offs;
-  wire [31:0] ms_jirl_br_target = ms_rkd_value + ms_br_offs;
-  wire [31:0] ms_real_target    = (ms_br_op == `BR_JIRL) ? ms_jirl_br_target :
-       ms_pc_br_target;
-  wire [31:0] ms_next_pc        = ms_pc + 32'h4;
 
   wire ms_taken_miss  = ms_real_taken ^ ms_pred_taken;
   wire ms_target_miss = ms_real_taken && ms_pred_taken &&
@@ -186,6 +169,8 @@ module MEM_stage(
   always @(posedge clk)
   begin
     if (reset)
+      ms_valid <= 1'b0;
+    else if (ms_redirect)
       ms_valid <= 1'b0;
     else if (ms_allowin)
       ms_valid <= es_to_ms_valid;
@@ -249,11 +234,24 @@ module MEM_stage(
       ms_ld_sign_ext  <= 1'b0;
       ms_st_byte      <= 1'b0;
       ms_st_half      <= 1'b0;
-      ms_alu_src1     <= 32'b0;
       ms_pred_taken   <= 1'b0;
       ms_pred_target  <= 32'b0;
-      ms_br_op        <= `BR_NONE;
-      ms_br_offs      <= 32'b0;
+      ms_is_bj        <= 1'b0;
+      ms_real_taken   <= 1'b0;
+      ms_real_target  <= 32'b0;
+      ms_next_pc      <= 32'b0;
+      ms_is_call      <= 1'b0;
+      ms_is_ret       <= 1'b0;
+    end
+    else if (ms_redirect)
+    begin
+      ms_gr_we        <= 1'b0;
+      ms_mem_we       <= 1'b0;
+      ms_res_from_mem <= 1'b0;
+      ms_is_bj        <= 1'b0;
+      ms_real_taken   <= 1'b0;
+      ms_real_target  <= 32'b0;
+      ms_next_pc      <= 32'b0;
       ms_is_call      <= 1'b0;
       ms_is_ret       <= 1'b0;
     end
@@ -273,11 +271,12 @@ module MEM_stage(
         ms_ld_sign_ext  <= es_ld_sign_ext;
         ms_st_byte      <= es_st_byte;
         ms_st_half      <= es_st_half;
-        ms_alu_src1     <= es_alu_src1;
         ms_pred_taken   <= es_pred_taken;
         ms_pred_target  <= es_pred_target;
-        ms_br_op        <= es_br_op;
-        ms_br_offs      <= es_br_offs;
+        ms_is_bj        <= es_is_bj;
+        ms_real_taken   <= es_real_taken;
+        ms_real_target  <= es_real_target;
+        ms_next_pc      <= es_next_pc;
         ms_is_call      <= es_is_call;
         ms_is_ret       <= es_is_ret;
       end
@@ -286,7 +285,10 @@ module MEM_stage(
         ms_gr_we        <= 1'b0;
         ms_mem_we       <= 1'b0;
         ms_res_from_mem <= 1'b0;
-        ms_br_op        <= `BR_NONE;
+        ms_is_bj        <= 1'b0;
+        ms_real_taken   <= 1'b0;
+        ms_real_target  <= 32'b0;
+        ms_next_pc      <= 32'b0;
         ms_is_call      <= 1'b0;
         ms_is_ret       <= 1'b0;
       end

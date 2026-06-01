@@ -88,11 +88,28 @@ module EXE_stage(
   wire   mul_result_ready = !es_is_mul       || (mul_cnt == MUL_LATENCY);
   wire   es_ready_go      = mul_result_ready;
   assign es_allowin       = !es_valid || (es_ready_go && ms_allowin);
-  assign es_to_ms_valid   = es_valid && es_ready_go && !flush;
+  assign es_to_ms_valid   = es_valid && es_ready_go;
 
   // EXE 的结果
   wire [31:0] es_final_result = es_is_mul ? (es_mul_hi ? mul_product[63:32] : mul_product[31:0]) :
        alu_result;
+
+  wire        es_is_bj;
+  wire        es_real_taken;
+  wire [31:0] es_real_target;
+  wire [31:0] es_next_pc;
+
+  branch_judge u_branch_judge(
+                 .br_op       (es_br_op),
+                 .pc          (es_pc),
+                 .src1        (es_alu_src1),
+                 .rkd_value   (es_rkd_value),
+                 .br_offs     (es_br_offs),
+                 .is_bj       (es_is_bj),
+                 .real_taken  (es_real_taken),
+                 .real_target (es_real_target),
+                 .next_pc     (es_next_pc)
+               );
 
   // 前递信号
   wire es_fwd_valid = !es_res_from_mem &&
@@ -111,11 +128,12 @@ module EXE_stage(
                          es_ld_sign_ext,
                          es_st_byte,
                          es_st_half,
-                         es_alu_src1,
                          es_pred_taken,
                          es_pred_target,
-                         es_br_op,
-                         es_br_offs,
+                         es_is_bj,
+                         es_real_taken,
+                         es_real_target,
+                         es_next_pc,
                          es_is_call,
                          es_is_ret
                         };
