@@ -6,6 +6,7 @@ module ID_stage(
     input  wire                           fs_to_ds_valid,
     input  wire [`FS_TO_DS_BUS_WD-1:0]    fs_to_ds_bus,
     output wire                           ds_allowin,
+    output wire                           ds_pop_ready,
     input  wire                           br_taken,
 
     input  wire                           es_allowin,
@@ -171,7 +172,8 @@ module ID_stage(
 
   // 流水线控制
   wire   ds_ready_go    = !load_use_stall;
-  assign ds_allowin     = br_taken || !ds_valid || (ds_ready_go && es_allowin);
+  assign ds_pop_ready   = !ds_valid || (ds_ready_go && es_allowin);
+  assign ds_allowin     = br_taken || ds_pop_ready;
   assign ds_to_es_valid = ds_valid && ds_ready_go && !br_taken;
 
   // ALU 源操作数

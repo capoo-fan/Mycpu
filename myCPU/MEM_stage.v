@@ -10,6 +10,16 @@ module MEM_stage(
     output wire                         ms_to_ws_valid,
     output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus,
+    output wire                         br_taken,
+    output wire [31:0]                  br_target,
+    output wire                         bpu_valid,
+    output wire                         bpu_is_bj,
+    output wire [31:0]                  bpu_pc,
+    output wire                         bpu_real_taken,
+    output wire [31:0]                  bpu_real_target,
+    output wire                         bpu_is_call,
+    output wire                         bpu_is_ret,
+    output wire [31:0]                  bpu_ret_addr,
     // 类SRAM 数据接口
     output wire                         data_sram_req,
     output wire                         data_sram_wr,
@@ -39,6 +49,13 @@ module MEM_stage(
   reg         ms_ld_sign_ext;
   reg         ms_st_byte;
   reg         ms_st_half;
+  reg  [31:0] ms_alu_src1;
+  reg         ms_pred_taken;
+  reg  [31:0] ms_pred_target;
+  reg  [ 3:0] ms_br_op;
+  reg  [31:0] ms_br_offs;
+  reg         ms_is_call;
+  reg         ms_is_ret;
 
   // 总线解包
   wire [31:0] es_pc;
@@ -53,11 +70,20 @@ module MEM_stage(
   wire        es_ld_sign_ext;
   wire        es_st_byte;
   wire        es_st_half;
+  wire [31:0] es_alu_src1;
+  wire        es_pred_taken;
+  wire [31:0] es_pred_target;
+  wire [ 3:0] es_br_op;
+  wire [31:0] es_br_offs;
+  wire        es_is_call;
+  wire        es_is_ret;
 
   assign {es_pc, es_final_result, es_rkd_value,
           es_res_from_mem, es_gr_we, es_mem_we, es_dest,
           es_ld_byte, es_ld_half, es_ld_sign_ext,
-          es_st_byte, es_st_half} = es_to_ms_bus;
+          es_st_byte, es_st_half,
+          es_alu_src1, es_pred_taken, es_pred_target, es_br_op, es_br_offs,
+          es_is_call, es_is_ret} = es_to_ms_bus;
 
   wire ms_has_mem_op = ms_valid && (ms_res_from_mem || ms_mem_we);
 
@@ -80,8 +106,47 @@ module MEM_stage(
   wire   ms_ready_go    = !ms_has_mem_op || ms_rdata_buf_valid || ms_data_ok;
   assign ms_allowin     = !ms_valid || (ms_ready_go && ws_allowin);
   assign ms_to_ws_valid = ms_valid && ms_ready_go;
+  wire   ms_fire        = ms_valid && ms_ready_go && ws_allowin;
 
   assign ms_fwd_bus = {ms_valid, ms_gr_we, ms_res_from_mem, ms_dest, ms_alu_result};
+
+  wire ms_is_bj = (ms_br_op != `BR_NONE);
+  wire ms_rj_eq_rkd          = (ms_alu_src1 == ms_rkd_value);
+  wire ms_rj_lt_rkd_signed   = ($signed(ms_alu_src1) < $signed(ms_rkd_value));
+  wire ms_rj_lt_rkd_unsigned = (ms_alu_src1 < ms_rkd_value);
+
+  wire ms_real_taken = ((ms_br_op == `BR_BEQ)  &&  ms_rj_eq_rkd          ||
+                        (ms_br_op == `BR_BNE)  && !ms_rj_eq_rkd          ||
+                        (ms_br_op == `BR_BLT)  &&  ms_rj_lt_rkd_signed   ||
+                        (ms_br_op == `BR_BGE)  && !ms_rj_lt_rkd_signed   ||
+                        (ms_br_op == `BR_BLTU) &&  ms_rj_lt_rkd_unsigned ||
+                        (ms_br_op == `BR_BGEU) && !ms_rj_lt_rkd_unsigned ||
+                        (ms_br_op == `BR_JIRL) ||
+                        (ms_br_op == `BR_BL)   ||
+                        (ms_br_op == `BR_B)) && ms_is_bj;
+  wire [31:0] ms_pc_br_target   = ms_pc + ms_br_offs;
+  wire [31:0] ms_jirl_br_target = ms_rkd_value + ms_br_offs;
+  wire [31:0] ms_real_target    = (ms_br_op == `BR_JIRL) ? ms_jirl_br_target :
+       ms_pc_br_target;
+  wire [31:0] ms_next_pc        = ms_pc + 32'h4;
+
+  wire ms_taken_miss  = ms_real_taken ^ ms_pred_taken;
+  wire ms_target_miss = ms_real_taken && ms_pred_taken &&
+       (ms_real_target != ms_pred_target);
+  wire ms_redirect    = ms_fire && ms_is_bj && (ms_taken_miss || ms_target_miss);
+
+  assign br_taken  = ms_redirect;
+  assign br_target = ms_redirect ? (ms_real_taken ? ms_real_target : ms_next_pc) :
+         32'b0;
+
+  assign bpu_valid       = ms_fire;
+  assign bpu_is_bj       = ms_fire && ms_is_bj;
+  assign bpu_pc          = ms_pc;
+  assign bpu_real_taken  = ms_real_taken;
+  assign bpu_real_target = ms_real_target;
+  assign bpu_is_call     = ms_fire && ms_is_bj && ms_real_taken && ms_is_call;
+  assign bpu_is_ret      = ms_fire && ms_is_bj && ms_real_taken && ms_is_ret;
+  assign bpu_ret_addr    = ms_next_pc;
 
   // Store 数据通道和写使能
   wire [31:0] ms_st_data = ms_st_byte ? {4{ms_rkd_value[7:0]}} :
@@ -184,6 +249,13 @@ module MEM_stage(
       ms_ld_sign_ext  <= 1'b0;
       ms_st_byte      <= 1'b0;
       ms_st_half      <= 1'b0;
+      ms_alu_src1     <= 32'b0;
+      ms_pred_taken   <= 1'b0;
+      ms_pred_target  <= 32'b0;
+      ms_br_op        <= `BR_NONE;
+      ms_br_offs      <= 32'b0;
+      ms_is_call      <= 1'b0;
+      ms_is_ret       <= 1'b0;
     end
     else if (ms_allowin)
     begin
@@ -201,12 +273,22 @@ module MEM_stage(
         ms_ld_sign_ext  <= es_ld_sign_ext;
         ms_st_byte      <= es_st_byte;
         ms_st_half      <= es_st_half;
+        ms_alu_src1     <= es_alu_src1;
+        ms_pred_taken   <= es_pred_taken;
+        ms_pred_target  <= es_pred_target;
+        ms_br_op        <= es_br_op;
+        ms_br_offs      <= es_br_offs;
+        ms_is_call      <= es_is_call;
+        ms_is_ret       <= es_is_ret;
       end
       else
       begin
-        ms_gr_we  <= 1'b0;
-        ms_mem_we <= 1'b0;
+        ms_gr_we        <= 1'b0;
+        ms_mem_we       <= 1'b0;
         ms_res_from_mem <= 1'b0;
+        ms_br_op        <= `BR_NONE;
+        ms_is_call      <= 1'b0;
+        ms_is_ret       <= 1'b0;
       end
     end
   end

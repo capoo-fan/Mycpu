@@ -36,6 +36,12 @@ module inst_buffer(
 
   always @(posedge clk)
   begin
+    if (push_fire)
+      fifo_mem[tail] <= push_bus;
+  end
+
+  always @(posedge clk)
+  begin
     if (!resetn)
     begin
       head <= {PTR_W{1'b0}};
@@ -50,9 +56,6 @@ module inst_buffer(
     end
     else
     begin
-      if (push_fire)
-        fifo_mem[tail] <= push_bus;
-
       if (pop_fire)
         head <= head + {{(PTR_W-1){1'b0}}, 1'b1};
 

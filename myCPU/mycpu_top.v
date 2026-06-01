@@ -40,6 +40,7 @@ module mycpu_top(
 
   // 级间握手 & 总线
   wire        ds_allowin;
+  wire        ds_pop_ready;
   wire        es_allowin;
   wire        ms_allowin;
   wire        ws_allowin;
@@ -148,7 +149,7 @@ module mycpu_top(
                 .push_bus    (if_to_ibuf_bus),
                 .push_ready  (ibuf_push_ready),
                 .full        (ibuf_full),
-                .pop_ready   (ds_allowin),
+                .pop_ready   (ds_pop_ready),
                 .front_valid (fs_to_ds_valid),
                 .front_bus   (fs_to_ds_bus)
               );
@@ -160,6 +161,7 @@ module mycpu_top(
              .fs_to_ds_valid (fs_to_ds_valid),
              .fs_to_ds_bus   (fs_to_ds_bus),
              .ds_allowin     (ds_allowin),
+             .ds_pop_ready   (ds_pop_ready),
              .br_taken       (br_taken),
              .es_allowin     (es_allowin),
              .es_fwd_bus     (es_fwd_bus),
@@ -176,21 +178,12 @@ module mycpu_top(
               .resetn         (resetn),
               .ds_to_es_valid (ds_to_es_valid),
               .ds_to_es_bus   (ds_to_es_bus),
+              .flush          (br_taken),
               .ms_allowin     (ms_allowin),
               .es_allowin     (es_allowin),
               .es_to_ms_valid (es_to_ms_valid),
               .es_to_ms_bus   (es_to_ms_bus),
-              .es_fwd_bus     (es_fwd_bus),
-              .br_taken       (br_taken),
-              .br_target      (br_target),
-              .bpu_valid      (bpu_ex_valid),
-              .bpu_is_bj      (bpu_ex_is_bj),
-              .bpu_pc         (bpu_ex_pc),
-              .bpu_real_taken (bpu_ex_real_taken),
-              .bpu_real_target(bpu_ex_real_target),
-              .bpu_is_call    (bpu_ex_is_call),
-              .bpu_is_ret     (bpu_ex_is_ret),
-              .bpu_ret_addr   (bpu_ex_ret_addr)
+              .es_fwd_bus     (es_fwd_bus)
             );
 
   // MEM stage
@@ -204,6 +197,16 @@ module mycpu_top(
               .ms_to_ws_valid   (ms_to_ws_valid),
               .ms_to_ws_bus     (ms_to_ws_bus),
               .ms_fwd_bus       (ms_fwd_bus),
+              .br_taken         (br_taken),
+              .br_target        (br_target),
+              .bpu_valid        (bpu_ex_valid),
+              .bpu_is_bj        (bpu_ex_is_bj),
+              .bpu_pc           (bpu_ex_pc),
+              .bpu_real_taken   (bpu_ex_real_taken),
+              .bpu_real_target  (bpu_ex_real_target),
+              .bpu_is_call      (bpu_ex_is_call),
+              .bpu_is_ret       (bpu_ex_is_ret),
+              .bpu_ret_addr     (bpu_ex_ret_addr),
               .data_sram_req    (data_sram_req),
               .data_sram_wr     (data_sram_wr),
               .data_sram_size   (data_sram_size),

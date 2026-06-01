@@ -5,21 +5,12 @@ module EXE_stage(
     input  wire                         resetn,
     input  wire                         ds_to_es_valid,
     input  wire [`DS_TO_ES_BUS_WD-1:0]  ds_to_es_bus,
+    input  wire                         flush,
     input  wire                         ms_allowin,
     output wire                         es_allowin,
     output wire                         es_to_ms_valid,
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus,
-    output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus,
-    output wire                         br_taken,
-    output wire [31:0]                  br_target,
-    output wire                         bpu_valid,
-    output wire                         bpu_is_bj,
-    output wire [31:0]                  bpu_pc,
-    output wire                         bpu_real_taken,
-    output wire [31:0]                  bpu_real_target,
-    output wire                         bpu_is_call,
-    output wire                         bpu_is_ret,
-    output wire [31:0]                  bpu_ret_addr
+    output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus
   );
 
   reg         reset;
@@ -96,9 +87,8 @@ module EXE_stage(
   // 流水线控制
   wire   mul_result_ready = !es_is_mul       || (mul_cnt == MUL_LATENCY);
   wire   es_ready_go      = mul_result_ready;
-  assign es_allowin       = !es_valid        || (es_ready_go && ms_allowin);
-  assign es_to_ms_valid   = es_valid         && es_ready_go;
-  wire   es_fire          = es_valid         && es_ready_go && ms_allowin;
+  assign es_allowin       = !es_valid || (es_ready_go && ms_allowin);
+  assign es_to_ms_valid   = es_valid && es_ready_go && !flush;
 
   // EXE 的结果
   wire [31:0] es_final_result = es_is_mul ? (es_mul_hi ? mul_product[63:32] : mul_product[31:0]) :
@@ -120,49 +110,21 @@ module EXE_stage(
                          es_ld_half,
                          es_ld_sign_ext,
                          es_st_byte,
-                         es_st_half
+                         es_st_half,
+                         es_alu_src1,
+                         es_pred_taken,
+                         es_pred_target,
+                         es_br_op,
+                         es_br_offs,
+                         es_is_call,
+                         es_is_ret
                         };
-
-  wire es_is_bj = (es_br_op != `BR_NONE);
-  wire es_rj_eq_rkd          = (es_alu_src1 == es_rkd_value);
-  wire es_rj_lt_rkd_signed   = ($signed(es_alu_src1) < $signed(es_rkd_value));
-  wire es_rj_lt_rkd_unsigned = (es_alu_src1 < es_rkd_value);
-
-  wire es_real_taken = ((es_br_op == `BR_BEQ)  &&  es_rj_eq_rkd          ||
-                        (es_br_op == `BR_BNE)  && !es_rj_eq_rkd          ||
-                        (es_br_op == `BR_BLT)  &&  es_rj_lt_rkd_signed   ||
-                        (es_br_op == `BR_BGE)  && !es_rj_lt_rkd_signed   ||
-                        (es_br_op == `BR_BLTU) &&  es_rj_lt_rkd_unsigned ||
-                        (es_br_op == `BR_BGEU) && !es_rj_lt_rkd_unsigned ||
-                        (es_br_op == `BR_JIRL) ||
-                        (es_br_op == `BR_BL)   ||
-                        (es_br_op == `BR_B)) && es_is_bj;
-  wire [31:0] es_pc_br_target   = es_pc + es_br_offs;
-  wire [31:0] es_jirl_br_target = es_rkd_value + es_br_offs;
-  wire [31:0] es_real_target    = (es_br_op == `BR_JIRL) ? es_jirl_br_target :
-       es_pc_br_target;
-
-  wire es_taken_miss  = es_real_taken ^ es_pred_taken;
-  wire es_target_miss = es_real_taken && es_pred_taken &&
-       (es_real_target != es_pred_target);
-  wire es_redirect = es_fire && es_is_bj && (es_taken_miss || es_target_miss);
-
-  assign br_taken  = es_redirect;
-  assign br_target = es_redirect ? (es_real_taken ? es_real_target : (es_pc + 32'h4)) :
-         32'b0;
-
-  assign bpu_valid       = es_fire;
-  assign bpu_is_bj       = es_fire && es_is_bj;
-  assign bpu_pc          = es_pc;
-  assign bpu_real_taken  = es_real_taken;
-  assign bpu_real_target = es_real_target;
-  assign bpu_is_call     = es_fire && es_is_bj && es_real_taken && es_is_call;
-  assign bpu_is_ret      = es_fire && es_is_bj && es_real_taken && es_is_ret;
-  assign bpu_ret_addr    = es_pc + 32'h4;
 
   always @(posedge clk)
   begin
     if (reset)
+      es_valid <= 1'b0;
+    else if (flush)
       es_valid <= 1'b0;
     else if (es_allowin)
       es_valid <= ds_to_es_valid;
@@ -193,6 +155,16 @@ module EXE_stage(
       es_pred_target  <= 32'b0;
       es_br_op        <= `BR_NONE;
       es_br_offs      <= 32'b0;
+      es_is_call      <= 1'b0;
+      es_is_ret       <= 1'b0;
+    end
+    else if (flush)
+    begin
+      es_gr_we        <= 1'b0;
+      es_mem_we       <= 1'b0;
+      es_res_from_mem <= 1'b0;
+      es_is_mul       <= 1'b0;
+      es_br_op        <= `BR_NONE;
       es_is_call      <= 1'b0;
       es_is_ret       <= 1'b0;
     end
@@ -239,7 +211,7 @@ module EXE_stage(
   //乘法流水线计数器
   always @(posedge clk)
   begin
-    if (reset)
+    if (reset || flush)
       mul_cnt <= 3'd0;
     else if (es_allowin)
       mul_cnt <= 3'd0;

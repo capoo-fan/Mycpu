@@ -117,7 +117,7 @@ module IF_stage(
   reg         s3_pred_taken;
   reg [31:0]  s3_pred_target;
 
-  assign fs_to_ds_valid = s3_valid && !br_taken;
+  assign fs_to_ds_valid = s3_valid;
   assign fs_to_ds_bus   = {s3_pc, s3_inst, s3_pred_taken, s3_pred_target};
 
   // 替换路选择: 优先填无效路, 都有效则 LFSR 随机
