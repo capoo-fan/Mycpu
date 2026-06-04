@@ -142,12 +142,13 @@ module IF_stage(
 
 
   // 阻塞链
-  wire s3_stall = !ibuf_allowin && s3_valid;
-  wire s2_stall = s3_stall || (s2_valid && !s2_hit && state != FSM_DONE);
+  wire s3_hold   = s3_valid && !ibuf_allowin;
+  wire miss_hold = s2_valid && !s2_hit && state != FSM_DONE;
+  wire s2_stall  = s3_hold || miss_hold;
   wire s1_stall = s2_stall;
-  assign if_suspend   = s1_stall; 
+  assign if_suspend = s3_hold || miss_hold;
 
-  wire trigger_miss = s2_valid && !s2_hit && (state != FSM_DONE);
+  wire trigger_miss = s2_valid && !s2_hit && (state == FSM_IDLE);
 
   always @(*)
   begin
@@ -162,7 +163,7 @@ module IF_stage(
       FSM_RECOVERY:
         next_state = FSM_DONE;
       FSM_DONE:
-        next_state = s3_stall ? FSM_DONE : FSM_IDLE;
+        next_state = s3_hold ? FSM_DONE : FSM_IDLE;
       default:
         next_state = FSM_IDLE;
     endcase
@@ -247,7 +248,7 @@ module IF_stage(
       s3_valid       <= 1'b0;
     else if (br_taken)
       s3_valid       <= 1'b0;
-    else if (!s3_stall)
+    else if (!s3_hold)
       s3_valid       <= s2_valid && s2_data_ready;
   end
 
@@ -260,7 +261,7 @@ module IF_stage(
       s3_pred_taken  <= 1'b0;
       s3_pred_target <= 32'b0;
     end
-    else if (!s3_stall)
+    else if (!s3_hold)
     begin
       s3_inst        <= s2_effective_inst;
       s3_pc          <= s2_addr;
@@ -311,7 +312,7 @@ module IF_stage(
       lfsr <= {lfsr[6:0], lfsr_feedback};
 
       // MISS_REQ -> MISS_REFILL: 初始化重填
-      if (state == FSM_MISS_REQ && next_state == FSM_MISS_REFILL)
+      if (state == FSM_MISS_REQ && rd_rdy)
       begin
         refill_beat <= 2'b0;
         refill_line <= 128'b0;

@@ -29,7 +29,7 @@ module inst_buffer(
   assign full        = (cnt == CNT_FULL);
 
   wire pop_fire  = pop_ready && front_valid;
-  assign push_ready = !full || pop_fire;   // 即使满了，只要 pop_fire ，也可以 push 
+  assign push_ready = !full;
   wire push_fire = push_valid && push_ready;
 
   assign front_bus = front_valid ? fifo_mem[head] : {`FS_TO_DS_BUS_WD{1'b0}};
