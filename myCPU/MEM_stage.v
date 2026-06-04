@@ -17,9 +17,6 @@ module MEM_stage(
     output wire [31:0]                  bpu_pc,
     output wire                         bpu_real_taken,
     output wire [31:0]                  bpu_real_target,
-    output wire                         bpu_is_call,
-    output wire                         bpu_is_ret,
-    output wire [31:0]                  bpu_ret_addr,
     // 类SRAM 数据接口
     output wire                         data_sram_req,
     output wire                         data_sram_wr,
@@ -55,8 +52,6 @@ module MEM_stage(
   reg         ms_real_taken;
   reg  [31:0] ms_real_target;
   reg  [31:0] ms_next_pc;
-  reg         ms_is_call;
-  reg         ms_is_ret;
 
   // 总线解包
   wire [31:0] es_pc;
@@ -77,16 +72,13 @@ module MEM_stage(
   wire        es_real_taken;
   wire [31:0] es_real_target;
   wire [31:0] es_next_pc;
-  wire        es_is_call;
-  wire        es_is_ret;
 
   assign {es_pc, es_final_result, es_rkd_value,
           es_res_from_mem, es_gr_we, es_mem_we, es_dest,
           es_ld_byte, es_ld_half, es_ld_sign_ext,
           es_st_byte, es_st_half,
           es_pred_taken, es_pred_target,
-          es_is_bj, es_real_taken, es_real_target, es_next_pc,
-          es_is_call, es_is_ret} = es_to_ms_bus;
+          es_is_bj, es_real_taken, es_real_target, es_next_pc} = es_to_ms_bus;
 
   wire ms_has_mem_op = ms_valid && (ms_res_from_mem || ms_mem_we);
 
@@ -127,9 +119,6 @@ module MEM_stage(
   assign bpu_pc          = ms_pc;
   assign bpu_real_taken  = ms_real_taken;
   assign bpu_real_target = ms_real_target;
-  assign bpu_is_call     = ms_fire && ms_is_bj && ms_real_taken && ms_is_call;
-  assign bpu_is_ret      = ms_fire && ms_is_bj && ms_real_taken && ms_is_ret;
-  assign bpu_ret_addr    = ms_next_pc;
 
   // Store 数据通道和写使能
   wire [31:0] ms_st_data = ms_st_byte ? {4{ms_rkd_value[7:0]}} :
@@ -240,8 +229,6 @@ module MEM_stage(
       ms_real_taken   <= 1'b0;
       ms_real_target  <= 32'b0;
       ms_next_pc      <= 32'b0;
-      ms_is_call      <= 1'b0;
-      ms_is_ret       <= 1'b0;
     end
     else if (ms_redirect)
     begin
@@ -252,8 +239,6 @@ module MEM_stage(
       ms_real_taken   <= 1'b0;
       ms_real_target  <= 32'b0;
       ms_next_pc      <= 32'b0;
-      ms_is_call      <= 1'b0;
-      ms_is_ret       <= 1'b0;
     end
     else if (ms_allowin)
     begin
@@ -277,8 +262,6 @@ module MEM_stage(
         ms_real_taken   <= es_real_taken;
         ms_real_target  <= es_real_target;
         ms_next_pc      <= es_next_pc;
-        ms_is_call      <= es_is_call;
-        ms_is_ret       <= es_is_ret;
       end
       else
       begin
@@ -289,8 +272,6 @@ module MEM_stage(
         ms_real_taken   <= 1'b0;
         ms_real_target  <= 32'b0;
         ms_next_pc      <= 32'b0;
-        ms_is_call      <= 1'b0;
-        ms_is_ret       <= 1'b0;
       end
     end
   end

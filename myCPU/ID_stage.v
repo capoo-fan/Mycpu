@@ -102,8 +102,6 @@ module ID_stage(
   wire        inst_jirl;
   wire        inst_bl;
   wire        inst_b;
-  wire        ds_is_call;
-  wire        ds_is_ret;
   wire [31:0] rf_rdata1;
   wire [31:0] rf_rdata2;
 
@@ -114,8 +112,7 @@ module ID_stage(
           ld_byte, ld_half, ld_sign_ext, st_byte, st_half,
           ds_need_rj, ds_need_rkd, ds_is_bj,
           inst_beq, inst_bne, inst_blt, inst_bge, inst_bltu, inst_bgeu,
-          inst_jirl, inst_bl, inst_b,
-          ds_is_call, ds_is_ret} = ds_dec_bus;
+          inst_jirl, inst_bl, inst_b} = ds_dec_bus;
 
   inst_decoder u_inst_decoder(
                  .inst    (ds_inst   ),
@@ -215,9 +212,7 @@ module ID_stage(
                          ds_pred_taken,
                          ds_pred_target,
                          ds_br_op,
-                         ds_br_offs,
-                         ds_is_call,
-                         ds_is_ret
+                         ds_br_offs
                         };
 
   always @(posedge clk)

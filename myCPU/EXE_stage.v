@@ -40,8 +40,6 @@ module EXE_stage(
   reg  [31:0] es_pred_target;
   reg  [ 3:0] es_br_op;
   reg  [31:0] es_br_offs;
-  reg         es_is_call;
-  reg         es_is_ret;
 
 
   wire [31:0] ds_pc;
@@ -65,15 +63,12 @@ module EXE_stage(
   wire [31:0] ds_pred_target;
   wire [ 3:0] ds_br_op;
   wire [31:0] ds_br_offs;
-  wire        ds_is_call;
-  wire        ds_is_ret;
   assign {ds_pc, ds_alu_op, ds_alu_src1, ds_alu_src2, ds_rkd_value,
           ds_res_from_mem, ds_gr_we, ds_mem_we, ds_dest,
           ds_is_mul, ds_mul_signed, ds_mul_hi,
           ds_ld_byte, ds_ld_half, ds_ld_sign_ext,
           ds_st_byte, ds_st_half,
-          ds_pred_taken, ds_pred_target, ds_br_op, ds_br_offs,
-          ds_is_call, ds_is_ret} = ds_to_es_bus;
+          ds_pred_taken, ds_pred_target, ds_br_op, ds_br_offs} = ds_to_es_bus;
 
 
   wire [31:0] alu_result;
@@ -133,9 +128,7 @@ module EXE_stage(
                          es_is_bj,
                          es_real_taken,
                          es_real_target,
-                         es_next_pc,
-                         es_is_call,
-                         es_is_ret
+                         es_next_pc
                         };
 
   always @(posedge clk)
@@ -173,8 +166,6 @@ module EXE_stage(
       es_pred_target  <= 32'b0;
       es_br_op        <= `BR_NONE;
       es_br_offs      <= 32'b0;
-      es_is_call      <= 1'b0;
-      es_is_ret       <= 1'b0;
     end
     else if (flush)
     begin
@@ -183,8 +174,6 @@ module EXE_stage(
       es_res_from_mem <= 1'b0;
       es_is_mul       <= 1'b0;
       es_br_op        <= `BR_NONE;
-      es_is_call      <= 1'b0;
-      es_is_ret       <= 1'b0;
     end
     else if (es_allowin)
     begin
@@ -211,8 +200,6 @@ module EXE_stage(
         es_pred_target  <= ds_pred_target;
         es_br_op        <= ds_br_op;
         es_br_offs      <= ds_br_offs;
-        es_is_call      <= ds_is_call;
-        es_is_ret       <= ds_is_ret;
       end
       else //如果没有新信号，赋0防止误操作
       begin
@@ -220,8 +207,6 @@ module EXE_stage(
         es_mem_we       <= 1'b0;
         es_is_mul       <= 1'b0;
         es_br_op        <= `BR_NONE;
-        es_is_call      <= 1'b0;
-        es_is_ret       <= 1'b0;
       end
     end
   end

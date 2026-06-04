@@ -80,9 +80,6 @@ module mycpu_top(
   wire [31:0] bpu_ex_pc;
   wire        bpu_ex_real_taken;
   wire [31:0] bpu_ex_real_target;
-  wire        bpu_ex_is_call;
-  wire        bpu_ex_is_ret;
-  wire [31:0] bpu_ex_ret_addr;
 
   // PC 模块信号
   wire [31:0] pc_out;
@@ -114,10 +111,7 @@ module mycpu_top(
         .ex_is_bj    (bpu_ex_is_bj),
         .ex_pc       (bpu_ex_pc),
         .real_taken  (bpu_ex_real_taken),
-        .real_target (bpu_ex_real_target),
-        .ex_is_call  (bpu_ex_is_call),
-        .ex_is_ret   (bpu_ex_is_ret),
-        .ex_ret_addr (bpu_ex_ret_addr)
+        .real_target (bpu_ex_real_target)
       );
 
   // IF stage (四级流水线 + 集成 ICache)
@@ -204,9 +198,6 @@ module mycpu_top(
               .bpu_pc           (bpu_ex_pc),
               .bpu_real_taken   (bpu_ex_real_taken),
               .bpu_real_target  (bpu_ex_real_target),
-              .bpu_is_call      (bpu_ex_is_call),
-              .bpu_is_ret       (bpu_ex_is_ret),
-              .bpu_ret_addr     (bpu_ex_ret_addr),
               .data_sram_req    (data_sram_req),
               .data_sram_wr     (data_sram_wr),
               .data_sram_size   (data_sram_size),

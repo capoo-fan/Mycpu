@@ -165,8 +165,6 @@ module inst_decoder(
 
   wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
        inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
-  wire ds_is_call = inst_bl || (inst_jirl && (rd == 5'd1));
-  wire ds_is_ret  = inst_jirl && (rd == 5'd0) && (rj == 5'd1) && (i16 == 16'h0000);
 
   assign dec_bus = {
     alu_op, imm, br_offs, jirl_offs,
@@ -176,8 +174,7 @@ module inst_decoder(
     ld_byte, ld_half, ld_sign_ext, st_byte, st_half,
     ds_need_rj, ds_need_rkd, ds_is_bj,
     inst_beq, inst_bne, inst_blt, inst_bge, inst_bltu, inst_bgeu,
-    inst_jirl, inst_bl, inst_b,
-    ds_is_call, ds_is_ret
+    inst_jirl, inst_bl, inst_b
   };
 
   decoder_6_64 u_dec0 (.in(op_31_26), .out(op_31_26_d));
