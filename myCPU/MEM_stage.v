@@ -3,13 +3,18 @@
 module MEM_stage(
     input  wire                         clk,
     input  wire                         resetn,
-    input  wire                         es_to_ms_valid,
-    input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus,
+    input  wire                         es_to_ms_valid_0,
+    input  wire                         es_to_ms_valid_1,
+    input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
+    input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_1,
     input  wire                         ws_allowin,
     output wire                         ms_allowin,
-    output wire                         ms_to_ws_valid,
-    output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus,
-    output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus,
+    output wire                         ms_to_ws_valid_0,
+    output wire                         ms_to_ws_valid_1,
+    output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_0,
+    output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_1,
+    output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_0,
+    output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_1,
     output wire                         br_taken,
     output wire [31:0]                  br_target,
     output wire                         bpu_valid,
@@ -29,157 +34,271 @@ module MEM_stage(
     input  wire [31:0]                  data_sram_rdata
   );
 
-  // 内部信号
-  reg         reset;
+  reg reset;
   always @(posedge clk) reset <= ~resetn;
 
-  reg         ms_valid;
-  reg  [31:0] ms_pc;
-  reg  [31:0] ms_alu_result;
-  reg  [31:0] ms_rkd_value;
-  reg         ms_res_from_mem;
-  reg         ms_gr_we;
-  reg         ms_mem_we;
-  reg  [ 4:0] ms_dest;
-  reg         ms_ld_byte;
-  reg         ms_ld_half;
-  reg         ms_ld_sign_ext;
-  reg         ms_st_byte;
-  reg         ms_st_half;
-  reg         ms_pred_taken;
-  reg  [31:0] ms_pred_target;
-  reg         ms_is_bj;
-  reg         ms_real_taken;
-  reg  [31:0] ms_real_target;
-  reg  [31:0] ms_next_pc;
+  reg         ms_valid_0;
+  reg  [31:0] ms_pc_0;
+  reg  [31:0] ms_alu_result_0;
+  reg  [31:0] ms_rkd_value_0;
+  reg         ms_res_from_mem_0;
+  reg         ms_gr_we_0;
+  reg         ms_mem_we_0;
+  reg  [ 4:0] ms_dest_0;
+  reg         ms_ld_byte_0;
+  reg         ms_ld_half_0;
+  reg         ms_ld_sign_ext_0;
+  reg         ms_st_byte_0;
+  reg         ms_st_half_0;
+  reg         ms_pred_taken_0;
+  reg  [31:0] ms_pred_target_0;
+  reg         ms_is_bj_0;
+  reg         ms_real_taken_0;
+  reg  [31:0] ms_real_target_0;
+  reg  [31:0] ms_next_pc_0;
 
-  // 总线解包
-  wire [31:0] es_pc;
-  wire [31:0] es_final_result;
-  wire [31:0] es_rkd_value;
-  wire        es_res_from_mem;
-  wire        es_gr_we;
-  wire        es_mem_we;
-  wire [ 4:0] es_dest;
-  wire        es_ld_byte;
-  wire        es_ld_half;
-  wire        es_ld_sign_ext;
-  wire        es_st_byte;
-  wire        es_st_half;
-  wire        es_pred_taken;
-  wire [31:0] es_pred_target;
-  wire        es_is_bj;
-  wire        es_real_taken;
-  wire [31:0] es_real_target;
-  wire [31:0] es_next_pc;
+  reg         ms_valid_1;
+  reg  [31:0] ms_pc_1;
+  reg  [31:0] ms_alu_result_1;
+  reg  [31:0] ms_rkd_value_1;
+  reg         ms_res_from_mem_1;
+  reg         ms_gr_we_1;
+  reg         ms_mem_we_1;
+  reg  [ 4:0] ms_dest_1;
+  reg         ms_ld_byte_1;
+  reg         ms_ld_half_1;
+  reg         ms_ld_sign_ext_1;
+  reg         ms_st_byte_1;
+  reg         ms_st_half_1;
+  reg         ms_pred_taken_1;
+  reg  [31:0] ms_pred_target_1;
+  reg         ms_is_bj_1;
+  reg         ms_real_taken_1;
+  reg  [31:0] ms_real_target_1;
+  reg  [31:0] ms_next_pc_1;
 
-  assign {es_pc, es_final_result, es_rkd_value,
-          es_res_from_mem, es_gr_we, es_mem_we, es_dest,
-          es_ld_byte, es_ld_half, es_ld_sign_ext,
-          es_st_byte, es_st_half,
-          es_pred_taken, es_pred_target,
-          es_is_bj, es_real_taken, es_real_target, es_next_pc} = es_to_ms_bus;
+  wire [31:0] es_pc_0;
+  wire [31:0] es_final_result_0;
+  wire [31:0] es_rkd_value_0;
+  wire        es_res_from_mem_0;
+  wire        es_gr_we_0;
+  wire        es_mem_we_0;
+  wire [ 4:0] es_dest_0;
+  wire        es_ld_byte_0;
+  wire        es_ld_half_0;
+  wire        es_ld_sign_ext_0;
+  wire        es_st_byte_0;
+  wire        es_st_half_0;
+  wire        es_pred_taken_0;
+  wire [31:0] es_pred_target_0;
+  wire        es_is_bj_0;
+  wire        es_real_taken_0;
+  wire [31:0] es_real_target_0;
+  wire [31:0] es_next_pc_0;
 
-  wire ms_has_mem_op = ms_valid && (ms_res_from_mem || ms_mem_we);
+  assign {es_pc_0, es_final_result_0, es_rkd_value_0,
+          es_res_from_mem_0, es_gr_we_0, es_mem_we_0, es_dest_0,
+          es_ld_byte_0, es_ld_half_0, es_ld_sign_ext_0,
+          es_st_byte_0, es_st_half_0,
+          es_pred_taken_0, es_pred_target_0,
+          es_is_bj_0, es_real_taken_0, es_real_target_0, es_next_pc_0} = es_to_ms_bus_0;
 
-  // ms_addr_sent: 本条指令的请求是否已被接受
+  wire [31:0] es_pc_1;
+  wire [31:0] es_final_result_1;
+  wire [31:0] es_rkd_value_1;
+  wire        es_res_from_mem_1;
+  wire        es_gr_we_1;
+  wire        es_mem_we_1;
+  wire [ 4:0] es_dest_1;
+  wire        es_ld_byte_1;
+  wire        es_ld_half_1;
+  wire        es_ld_sign_ext_1;
+  wire        es_st_byte_1;
+  wire        es_st_half_1;
+  wire        es_pred_taken_1;
+  wire [31:0] es_pred_target_1;
+  wire        es_is_bj_1;
+  wire        es_real_taken_1;
+  wire [31:0] es_real_target_1;
+  wire [31:0] es_next_pc_1;
+
+  assign {es_pc_1, es_final_result_1, es_rkd_value_1,
+          es_res_from_mem_1, es_gr_we_1, es_mem_we_1, es_dest_1,
+          es_ld_byte_1, es_ld_half_1, es_ld_sign_ext_1,
+          es_st_byte_1, es_st_half_1,
+          es_pred_taken_1, es_pred_target_1,
+          es_is_bj_1, es_real_taken_1, es_real_target_1, es_next_pc_1} = es_to_ms_bus_1;
+
+  wire ms_taken_miss_0  = ms_real_taken_0 ^ ms_pred_taken_0;
+  wire ms_target_miss_0 = ms_real_taken_0 && ms_pred_taken_0 &&
+       (ms_real_target_0 != ms_pred_target_0);
+  wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && (ms_taken_miss_0 || ms_target_miss_0); // 分支预测错误，刷掉 lane1 的指令
+
+  wire ms_taken_miss_1  = ms_real_taken_1 ^ ms_pred_taken_1;
+  wire ms_target_miss_1 = ms_real_taken_1 && ms_pred_taken_1 &&
+       (ms_real_target_1 != ms_pred_target_1);
+  wire ms_lane1_eff_valid = ms_valid_1 && !ms_redirect_0_raw;  // 如果 lane0 分支预测错误，lane1 的指令就无效了
+  wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 &&
+       (ms_taken_miss_1 || ms_target_miss_1);
+
+  wire lane0_mem_op = ms_valid_0 && (ms_res_from_mem_0 || ms_mem_we_0);
+  wire lane1_mem_op = ms_lane1_eff_valid && (ms_res_from_mem_1 || ms_mem_we_1);
+  wire select_lane1 = lane1_mem_op;
+
+  wire selected_valid          = select_lane1 ? ms_lane1_eff_valid   : ms_valid_0;
+  wire selected_res_from_mem   = select_lane1 ? ms_res_from_mem_1    : ms_res_from_mem_0;
+  wire selected_mem_we         = select_lane1 ? ms_mem_we_1          : ms_mem_we_0;
+  wire [31:0] selected_addr    = select_lane1 ? ms_alu_result_1      : ms_alu_result_0;
+  wire [31:0] selected_rkd     = select_lane1 ? ms_rkd_value_1       : ms_rkd_value_0;
+  wire        selected_ld_byte = select_lane1 ? ms_ld_byte_1         : ms_ld_byte_0;
+  wire        selected_ld_half = select_lane1 ? ms_ld_half_1         : ms_ld_half_0;
+  wire        selected_st_byte = select_lane1 ? ms_st_byte_1         : ms_st_byte_0;
+  wire        selected_st_half = select_lane1 ? ms_st_half_1         : ms_st_half_0;
+
+  wire ms_has_mem_op = selected_valid && (selected_res_from_mem || selected_mem_we);
+
+  // 处理 SRAM 的握手
   reg  ms_addr_sent;
-
-  // 已发出但没返回的数据
   reg  ms_data_pending;
-
-  // 缓存 rdata
-  reg         ms_rdata_buf_valid;
+  reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
 
-  // 请求握手
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
-  // 当前指令的数据返回
   wire ms_data_ok  = ms_addr_sent && data_sram_data_ok;
+  wire mem_data_ready = ms_rdata_buf_valid || ms_data_ok;
 
-  // 流水线控制
-  wire   ms_ready_go    = !ms_has_mem_op || ms_rdata_buf_valid || ms_data_ok;
-  assign ms_allowin     = !ms_valid || (ms_ready_go && ws_allowin);
-  assign ms_to_ws_valid = ms_valid && ms_ready_go;
-  wire   ms_fire        = ms_valid && ms_ready_go && ws_allowin;
+  wire packet_valid = ms_valid_0 || ms_valid_1;
+  wire ms_ready_go  = !ms_has_mem_op || mem_data_ready;
+  assign ms_allowin = !packet_valid || (ms_ready_go && ws_allowin);
+  wire ms_fire      = packet_valid && ms_ready_go && ws_allowin;
 
-  assign ms_fwd_bus = {ms_valid, ms_gr_we, ms_res_from_mem, ms_dest, ms_alu_result};
+  assign ms_to_ws_valid_0 = ms_valid_0 && ms_ready_go;
+  assign ms_to_ws_valid_1 = ms_lane1_eff_valid && ms_ready_go;
 
-  wire ms_taken_miss  = ms_real_taken ^ ms_pred_taken;
-  wire ms_target_miss = ms_real_taken && ms_pred_taken &&
-       (ms_real_target != ms_pred_target);
-  wire ms_redirect    = ms_fire && ms_is_bj && (ms_taken_miss || ms_target_miss);
+  // 分支预测与重定向
+  assign br_taken  = ms_fire && (ms_redirect_0_raw || ms_redirect_1_raw);
+  assign br_target = !br_taken ? 32'b0 :
+         ms_redirect_0_raw ? (ms_real_taken_0 ? ms_real_target_0 : ms_next_pc_0) :
+         (ms_real_taken_1 ? ms_real_target_1 : ms_next_pc_1);
 
-  assign br_taken  = ms_redirect;
-  assign br_target = ms_redirect ? (ms_real_taken ? ms_real_target : ms_next_pc) :
-         32'b0;
+  // 发出 BPU 更新信号
+  wire bpu_sel_lane1 = !ms_is_bj_0 && ms_is_bj_1 && ms_lane1_eff_valid;
 
-  assign bpu_valid       = ms_fire;
-  assign bpu_is_bj       = ms_fire && ms_is_bj;
-  assign bpu_pc          = ms_pc;
-  assign bpu_real_taken  = ms_real_taken;
-  assign bpu_real_target = ms_real_target;
+  assign bpu_valid       = ms_fire && ((ms_valid_0 && ms_is_bj_0) || (ms_lane1_eff_valid && ms_is_bj_1));
+  assign bpu_is_bj       = bpu_valid;
+  assign bpu_pc          = bpu_sel_lane1 ? ms_pc_1          : ms_pc_0;
+  assign bpu_real_taken  = bpu_sel_lane1 ? ms_real_taken_1  : ms_real_taken_0;
+  assign bpu_real_target = bpu_sel_lane1 ? ms_real_target_1 : ms_real_target_0;
 
-  // Store 数据通道和写使能
-  wire [31:0] ms_st_data = ms_st_byte ? {4{ms_rkd_value[7:0]}} :
-       ms_st_half ? {2{ms_rkd_value[15:0]}} :
-       ms_rkd_value;
-  wire [ 3:0] ms_st_strb = ms_st_byte ? (4'b0001 << ms_alu_result[1:0]) :
-       ms_st_half ? (ms_alu_result[1] ? 4'b1100 : 4'b0011) :
+  wire [31:0] ms_st_data = selected_st_byte ? {4{selected_rkd[7:0]}} :
+       selected_st_half ? {2{selected_rkd[15:0]}} :
+       selected_rkd;
+  wire [ 3:0] ms_st_strb = selected_st_byte ? (4'b0001 << selected_addr[1:0]) :
+       selected_st_half ? (selected_addr[1] ? 4'b1100 : 4'b0011) :
        4'b1111;
-  wire [ 1:0] ms_mem_size = (ms_ld_byte || ms_st_byte) ? 2'b00 :
-       (ms_ld_half || ms_st_half) ? 2'b01 :
+  wire [ 1:0] ms_mem_size = (selected_ld_byte || selected_st_byte) ? 2'b00 :
+       (selected_ld_half || selected_st_half) ? 2'b01 :
        2'b10;
 
-  // 发请求条件: 有访存操作, 本条地址未被接受, 无旧数据未返
   assign data_sram_req   = ms_has_mem_op && !ms_addr_sent && !ms_data_pending;
-  assign data_sram_wr    = ms_mem_we;
+  assign data_sram_wr    = selected_mem_we;
   assign data_sram_size  = ms_mem_size;
-  assign data_sram_wstrb = ms_mem_we ? ms_st_strb : 4'b0;
-  assign data_sram_addr  = ms_alu_result;
+  assign data_sram_wstrb = selected_mem_we ? ms_st_strb : 4'b0;
+  assign data_sram_addr  = selected_addr;
   assign data_sram_wdata = ms_st_data;
-
 
   wire [31:0] ms_final_rdata = ms_rdata_buf_valid ? ms_rdata_buf : data_sram_rdata;
 
-  assign ms_to_ws_bus = {ms_pc,
-                         ms_alu_result,
-                         ms_res_from_mem,
-                         ms_gr_we,
-                         ms_dest,
-                         ms_ld_byte,
-                         ms_ld_half,
-                         ms_ld_sign_ext,
-                         ms_final_rdata
-                        };
+  // 处理加载指令的结果
+  function [31:0] load_result;
+    input [31:0] alu_result;
+    input [31:0] mem_result;
+    input        ld_byte;
+    input        ld_half;
+    input        ld_sign_ext;
+    reg [7:0]    load_byte;
+    reg [15:0]   load_half;
+    begin
+      load_byte = alu_result[1] ? (alu_result[0] ? mem_result[31:24] : mem_result[23:16]) :
+                (alu_result[0] ? mem_result[15:8]  : mem_result[7:0]);
+      load_half = alu_result[1] ? mem_result[31:16] : mem_result[15:0];
+      load_result = ld_byte ? (ld_sign_ext ? {{24{load_byte[7]}}, load_byte} :
+                               {24'b0, load_byte}) :
+                  ld_half ? (ld_sign_ext ? {{16{load_half[15]}}, load_half} :
+                             {16'b0, load_half}) :
+                  mem_result;
+    end
+  endfunction
 
+  wire [31:0] ms_load_result_0 = load_result(ms_alu_result_0, ms_final_rdata,
+       ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
+  wire [31:0] ms_load_result_1 = load_result(ms_alu_result_1, ms_final_rdata,
+       ms_ld_byte_1, ms_ld_half_1, ms_ld_sign_ext_1);
 
-  // ms_valid
+  wire ms_fwd_valid_0 = !ms_res_from_mem_0 || mem_data_ready;
+  wire ms_fwd_valid_1 = !ms_res_from_mem_1 || mem_data_ready;
+  wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 : ms_alu_result_0;
+  wire [31:0] ms_fwd_data_1 = ms_res_from_mem_1 ? ms_load_result_1 : ms_alu_result_1;
+
+  assign ms_fwd_bus_0 = {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
+                         ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0};
+  assign ms_fwd_bus_1 = {ms_lane1_eff_valid, ms_gr_we_1, ms_fwd_valid_1,
+                         ms_res_from_mem_1, ms_dest_1, ms_fwd_data_1};
+
+  assign ms_to_ws_bus_0 = {ms_pc_0,
+                           ms_alu_result_0,
+                           ms_res_from_mem_0,
+                           ms_gr_we_0,
+                           ms_dest_0,
+                           ms_ld_byte_0,
+                           ms_ld_half_0,
+                           ms_ld_sign_ext_0,
+                           ms_final_rdata
+                          };
+
+  assign ms_to_ws_bus_1 = {ms_pc_1,
+                           ms_alu_result_1,
+                           ms_res_from_mem_1,
+                           ms_gr_we_1,
+                           ms_dest_1,
+                           ms_ld_byte_1,
+                           ms_ld_half_1,
+                           ms_ld_sign_ext_1,
+                           ms_final_rdata
+                          };
+
   always @(posedge clk)
   begin
     if (reset)
-      ms_valid <= 1'b0;
-    else if (ms_redirect)
-      ms_valid <= 1'b0;
+    begin
+      ms_valid_0 <= 1'b0;
+      ms_valid_1 <= 1'b0;
+    end
+    else if (br_taken)
+    begin
+      ms_valid_0 <= 1'b0;
+      ms_valid_1 <= 1'b0;
+    end
     else if (ms_allowin)
-      ms_valid <= es_to_ms_valid;
+    begin
+      ms_valid_0 <= es_to_ms_valid_0;
+      ms_valid_1 <= es_to_ms_valid_1;
+    end
   end
-
 
   always @(posedge clk)
   begin
     if (reset)
       ms_addr_sent <= 1'b0;
-    else if (ms_allowin)
+    else if (ms_allowin || br_taken)
       ms_addr_sent <= 1'b0;
     else if (got_addr_ok)
       ms_addr_sent <= 1'b1;
   end
 
-  // ms_data_pending: sram_wrap 中是否有未返回的数据
   always @(posedge clk)
   begin
-    if (reset)
+    if (reset || br_taken)
       ms_data_pending <= 1'b0;
     else if (got_addr_ok)
       ms_data_pending <= 1'b1;
@@ -187,11 +306,9 @@ module MEM_stage(
       ms_data_pending <= 1'b0;
   end
 
-  // ms_rdata_buf_valid: 缓冲数据有效标志
-  // data_ok 到来时设置, 新指令进入或冲刷时清除
   always @(posedge clk)
   begin
-    if (reset)
+    if (reset || br_taken)
       ms_rdata_buf_valid <= 1'b0;
     else if (ms_allowin)
       ms_rdata_buf_valid <= 1'b0;
@@ -199,79 +316,123 @@ module MEM_stage(
       ms_rdata_buf_valid <= 1'b1;
   end
 
-  // 缓存 Data
   always @(posedge clk)
   begin
     if (ms_data_ok)
       ms_rdata_buf <= data_sram_rdata;
   end
 
-  // 流水线寄存器
   always @(posedge clk)
   begin
     if (reset)
     begin
-      ms_pc           <= 32'b0;
-      ms_gr_we        <= 1'b0;
-      ms_mem_we       <= 1'b0;
-      ms_res_from_mem <= 1'b0;
-      ms_dest         <= 5'b0;
-      ms_alu_result   <= 32'b0;
-      ms_rkd_value    <= 32'b0;
-      ms_ld_byte      <= 1'b0;
-      ms_ld_half      <= 1'b0;
-      ms_ld_sign_ext  <= 1'b0;
-      ms_st_byte      <= 1'b0;
-      ms_st_half      <= 1'b0;
-      ms_pred_taken   <= 1'b0;
-      ms_pred_target  <= 32'b0;
-      ms_is_bj        <= 1'b0;
-      ms_real_taken   <= 1'b0;
-      ms_real_target  <= 32'b0;
-      ms_next_pc      <= 32'b0;
+      ms_pc_0           <= 32'b0;
+      ms_gr_we_0        <= 1'b0;
+      ms_mem_we_0       <= 1'b0;
+      ms_res_from_mem_0 <= 1'b0;
+      ms_dest_0         <= 5'b0;
+      ms_alu_result_0   <= 32'b0;
+      ms_rkd_value_0    <= 32'b0;
+      ms_ld_byte_0      <= 1'b0;
+      ms_ld_half_0      <= 1'b0;
+      ms_ld_sign_ext_0  <= 1'b0;
+      ms_st_byte_0      <= 1'b0;
+      ms_st_half_0      <= 1'b0;
+      ms_pred_taken_0   <= 1'b0;
+      ms_pred_target_0  <= 32'b0;
+      ms_is_bj_0        <= 1'b0;
+      ms_real_taken_0   <= 1'b0;
+      ms_real_target_0  <= 32'b0;
+      ms_next_pc_0      <= 32'b0;
+
+      ms_pc_1           <= 32'b0;
+      ms_gr_we_1        <= 1'b0;
+      ms_mem_we_1       <= 1'b0;
+      ms_res_from_mem_1 <= 1'b0;
+      ms_dest_1         <= 5'b0;
+      ms_alu_result_1   <= 32'b0;
+      ms_rkd_value_1    <= 32'b0;
+      ms_ld_byte_1      <= 1'b0;
+      ms_ld_half_1      <= 1'b0;
+      ms_ld_sign_ext_1  <= 1'b0;
+      ms_st_byte_1      <= 1'b0;
+      ms_st_half_1      <= 1'b0;
+      ms_pred_taken_1   <= 1'b0;
+      ms_pred_target_1  <= 32'b0;
+      ms_is_bj_1        <= 1'b0;
+      ms_real_taken_1   <= 1'b0;
+      ms_real_target_1  <= 32'b0;
+      ms_next_pc_1      <= 32'b0;
     end
-    else if (ms_redirect)
+    else if (br_taken)
     begin
-      ms_gr_we        <= 1'b0;
-      ms_mem_we       <= 1'b0;
-      ms_res_from_mem <= 1'b0;
-      ms_is_bj        <= 1'b0;
-      ms_real_taken   <= 1'b0;
-      ms_real_target  <= 32'b0;
-      ms_next_pc      <= 32'b0;
+      ms_gr_we_0        <= 1'b0;
+      ms_mem_we_0       <= 1'b0;
+      ms_res_from_mem_0 <= 1'b0;
+      ms_is_bj_0        <= 1'b0;
+      ms_gr_we_1        <= 1'b0;
+      ms_mem_we_1       <= 1'b0;
+      ms_res_from_mem_1 <= 1'b0;
+      ms_is_bj_1        <= 1'b0;
     end
     else if (ms_allowin)
     begin
-      if (es_to_ms_valid)
+      if (es_to_ms_valid_0)
       begin
-        ms_pc           <= es_pc;
-        ms_alu_result   <= es_final_result;
-        ms_rkd_value    <= es_rkd_value;
-        ms_res_from_mem <= es_res_from_mem;
-        ms_gr_we        <= es_gr_we;
-        ms_mem_we       <= es_mem_we;
-        ms_dest         <= es_dest;
-        ms_ld_byte      <= es_ld_byte;
-        ms_ld_half      <= es_ld_half;
-        ms_ld_sign_ext  <= es_ld_sign_ext;
-        ms_st_byte      <= es_st_byte;
-        ms_st_half      <= es_st_half;
-        ms_pred_taken   <= es_pred_taken;
-        ms_pred_target  <= es_pred_target;
-        ms_is_bj        <= es_is_bj;
-        ms_real_taken   <= es_real_taken;
-        ms_real_target  <= es_real_target;
-        ms_next_pc      <= es_next_pc;
+        ms_pc_0           <= es_pc_0;
+        ms_alu_result_0   <= es_final_result_0;
+        ms_rkd_value_0    <= es_rkd_value_0;
+        ms_res_from_mem_0 <= es_res_from_mem_0;
+        ms_gr_we_0        <= es_gr_we_0;
+        ms_mem_we_0       <= es_mem_we_0;
+        ms_dest_0         <= es_dest_0;
+        ms_ld_byte_0      <= es_ld_byte_0;
+        ms_ld_half_0      <= es_ld_half_0;
+        ms_ld_sign_ext_0  <= es_ld_sign_ext_0;
+        ms_st_byte_0      <= es_st_byte_0;
+        ms_st_half_0      <= es_st_half_0;
+        ms_pred_taken_0   <= es_pred_taken_0;
+        ms_pred_target_0  <= es_pred_target_0;
+        ms_is_bj_0        <= es_is_bj_0;
+        ms_real_taken_0   <= es_real_taken_0;
+        ms_real_target_0  <= es_real_target_0;
+        ms_next_pc_0      <= es_next_pc_0;
       end
       else
       begin
-        ms_gr_we        <= 1'b0;
-        ms_mem_we       <= 1'b0;
-        ms_res_from_mem <= 1'b0;
-        ms_is_bj        <= 1'b0;
-        ms_real_taken   <= 1'b0;
-        ms_real_target  <= 32'b0;
-        ms_next_pc      <= 32'b0;
+        ms_gr_we_0        <= 1'b0;
+        ms_mem_we_0       <= 1'b0;
+        ms_res_from_mem_0 <= 1'b0;
+        ms_is_bj_0        <= 1'b0;
+      end
+
+      if (es_to_ms_valid_1)
+      begin
+        ms_pc_1           <= es_pc_1;
+        ms_alu_result_1   <= es_final_result_1;
+        ms_rkd_value_1    <= es_rkd_value_1;
+        ms_res_from_mem_1 <= es_res_from_mem_1;
+        ms_gr_we_1        <= es_gr_we_1;
+        ms_mem_we_1       <= es_mem_we_1;
+        ms_dest_1         <= es_dest_1;
+        ms_ld_byte_1      <= es_ld_byte_1;
+        ms_ld_half_1      <= es_ld_half_1;
+        ms_ld_sign_ext_1  <= es_ld_sign_ext_1;
+        ms_st_byte_1      <= es_st_byte_1;
+        ms_st_half_1      <= es_st_half_1;
+        ms_pred_taken_1   <= es_pred_taken_1;
+        ms_pred_target_1  <= es_pred_target_1;
+        ms_is_bj_1        <= es_is_bj_1;
+        ms_real_taken_1   <= es_real_taken_1;
+        ms_real_target_1  <= es_real_target_1;
+        ms_next_pc_1      <= es_next_pc_1;
+      end
+      else
+      begin
+        ms_gr_we_1        <= 1'b0;
+        ms_mem_we_1       <= 1'b0;
+        ms_res_from_mem_1 <= 1'b0;
+        ms_is_bj_1        <= 1'b0;
       end
     end
   end

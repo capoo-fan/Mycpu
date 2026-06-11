@@ -39,30 +39,45 @@ module mycpu_top(
   wire [31:0]  icache_ret_data;
 
   // 级间握手 & 总线
-  wire        ds_allowin;
-  wire        ds_pop_ready;
   wire        es_allowin;
   wire        ms_allowin;
   wire        ws_allowin;
 
-  wire        fs_to_ds_valid;
-  wire        ds_to_es_valid;
-  wire        es_to_ms_valid;
-  wire        ms_to_ws_valid;
-
-  wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus;
-  wire        if_to_ibuf_valid;
-  wire [`FS_TO_DS_BUS_WD-1:0] if_to_ibuf_bus;
+  wire        if_to_ibuf_valid_0;
+  wire        if_to_ibuf_valid_1;
+  wire [`FS_TO_DS_BUS_WD-1:0] if_to_ibuf_bus_0;
+  wire [`FS_TO_DS_BUS_WD-1:0] if_to_ibuf_bus_1;
   wire        ibuf_push_ready;
   wire        ibuf_full;
-  wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus;
-  wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus;
-  wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus;
+
+  wire        ibuf_front_valid_0;
+  wire        ibuf_front_valid_1;
+  wire [`IBUF_ENTRY_BUS_WD-1:0] ibuf_front_bus_0;
+  wire [`IBUF_ENTRY_BUS_WD-1:0] ibuf_front_bus_1;
+  wire        issue_pop_0;
+  wire        issue_pop_1;
+
+  wire        ds_to_es_valid_0;
+  wire        ds_to_es_valid_1;
+  wire        es_to_ms_valid_0;
+  wire        es_to_ms_valid_1;
+  wire        ms_to_ws_valid_0;
+  wire        ms_to_ws_valid_1;
+
+  wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_0;
+  wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_1;
+  wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
+  wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_1;
+  wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
+  wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_1;
 
   // 前递总线
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus;
-  wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus;
-  wire [`WS_FWD_BUS_WD-1:0] ws_fwd_bus;
+  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
+  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
+  wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
+  wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
+  wire [`WS_FWD_BUS_WD-1:0] ws_fwd_bus_0;
+  wire [`WS_FWD_BUS_WD-1:0] ws_fwd_bus_1;
 
   // 写回总线
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
@@ -72,8 +87,10 @@ module mycpu_top(
   wire [31:0] br_target;
 
   // BPU 预测与训练信号
-  wire        bpu_pred_taken;
-  wire [31:0] bpu_pred_target;
+  wire        bpu_pred_taken_0;
+  wire [31:0] bpu_pred_target_0;
+  wire        bpu_pred_taken_1;
+  wire [31:0] bpu_pred_target_1;
 
   wire        bpu_ex_valid;
   wire        bpu_ex_is_bj;
@@ -85,143 +102,177 @@ module mycpu_top(
   wire [31:0] pc_out;
   wire        pc_inst_req;
   wire        if_suspend;
+  wire        pc_cross_line = (pc_out[3:2] == 2'b11);
+  wire [31:0] pc_next_seq   = pc_out + (pc_cross_line ? 32'h4 : 32'h8);
+  wire [31:0] pc_next       = bpu_pred_taken_0 ? bpu_pred_target_0 :
+                              (!pc_cross_line && bpu_pred_taken_1) ? bpu_pred_target_1 :
+                              pc_next_seq;
 
-  // PC 实例
   PC u_pc(
        .clk      (clk),
        .resetn   (resetn),
        .flush    (br_taken),
        .flush_pc (br_target),
        .suspend  (if_suspend),
-       .din      (bpu_pred_target),
+       .din      (pc_next),
        .pc       (pc_out),
        .inst_req (pc_inst_req)
      );
 
   BPU u_bpu(
-        .clk         (clk),
-        .resetn      (resetn),
-        .if_pc       (pc_out),
-        .if_valid    (pc_inst_req && !if_suspend),
-        .id_valid    (bpu_ex_valid),
-        .pl_suspend  (if_suspend),
-        .pred_taken  (bpu_pred_taken),
-        .pred_target (bpu_pred_target),
-        .ex_valid    (bpu_ex_valid),
-        .ex_is_bj    (bpu_ex_is_bj),
-        .ex_pc       (bpu_ex_pc),
-        .real_taken  (bpu_ex_real_taken),
-        .real_target (bpu_ex_real_target)
+        .clk           (clk),
+        .resetn        (resetn),
+        .if_pc         (pc_out),
+        .if_valid      (pc_inst_req && !if_suspend),
+        .id_valid      (bpu_ex_valid),
+        .pl_suspend    (if_suspend),
+        .pred_taken_0  (bpu_pred_taken_0),
+        .pred_target_0 (bpu_pred_target_0),
+        .pred_taken_1  (bpu_pred_taken_1),
+        .pred_target_1 (bpu_pred_target_1),
+        .ex_valid      (bpu_ex_valid),
+        .ex_is_bj      (bpu_ex_is_bj),
+        .ex_pc         (bpu_ex_pc),
+        .real_taken    (bpu_ex_real_taken),
+        .real_target   (bpu_ex_real_target)
       );
 
   // IF stage (四级流水线 + 集成 ICache)
   IF_stage u_if(
-             .clk              (clk),
-             .resetn           (resetn),
-             .pc_inst_req      (pc_inst_req),
-             .pc               (pc_out),
-             .bpu_pred_taken   (bpu_pred_taken),
-             .bpu_pred_target  (bpu_pred_target),
-             .br_taken         (br_taken),
-             .ibuf_allowin     (ibuf_push_ready),
-             .fs_to_ds_valid   (if_to_ibuf_valid),
-             .fs_to_ds_bus     (if_to_ibuf_bus),
-             .if_suspend       (if_suspend),
-             .rd_req           (icache_rd_req),
-             .rd_addr          (icache_rd_addr),
-             .rd_rdy           (icache_rd_rdy),
-             .ret_valid        (icache_ret_valid),
-             .ret_last         (icache_ret_last),
-             .ret_data         (icache_ret_data)
+             .clk               (clk),
+             .resetn            (resetn),
+             .pc_inst_req       (pc_inst_req),
+             .pc                (pc_out),
+             .bpu_pred_taken_0  (bpu_pred_taken_0),
+             .bpu_pred_target_0 (bpu_pred_target_0),
+             .bpu_pred_taken_1  (bpu_pred_taken_1),
+             .bpu_pred_target_1 (bpu_pred_target_1),
+             .br_taken          (br_taken),
+             .ibuf_allowin      (ibuf_push_ready),
+             .fs_to_ds_valid_0  (if_to_ibuf_valid_0),
+             .fs_to_ds_valid_1  (if_to_ibuf_valid_1),
+             .fs_to_ds_bus_0    (if_to_ibuf_bus_0),
+             .fs_to_ds_bus_1    (if_to_ibuf_bus_1),
+             .if_suspend        (if_suspend),
+             .rd_req            (icache_rd_req),
+             .rd_addr           (icache_rd_addr),
+             .rd_rdy            (icache_rd_rdy),
+             .ret_valid         (icache_ret_valid),
+             .ret_last          (icache_ret_last),
+             .ret_data          (icache_ret_data)
            );
 
   inst_buffer u_inst_buffer(
-                .clk         (clk),
-                .resetn      (resetn),
-                .flush       (br_taken),
-                .push_valid  (if_to_ibuf_valid),
-                .push_bus    (if_to_ibuf_bus),
-                .push_ready  (ibuf_push_ready),
-                .full        (ibuf_full),
-                .pop_ready   (ds_pop_ready),
-                .front_valid (fs_to_ds_valid),
-                .front_bus   (fs_to_ds_bus)
+                .clk           (clk),
+                .resetn        (resetn),
+                .flush         (br_taken),
+                .push_valid_0  (if_to_ibuf_valid_0),
+                .push_bus_0    (if_to_ibuf_bus_0),
+                .push_valid_1  (if_to_ibuf_valid_1),
+                .push_bus_1    (if_to_ibuf_bus_1),
+                .push_ready    (ibuf_push_ready),
+                .full          (ibuf_full),
+                .pop_0         (issue_pop_0),
+                .pop_1         (issue_pop_1),
+                .front_valid_0 (ibuf_front_valid_0),
+                .front_bus_0   (ibuf_front_bus_0),
+                .front_valid_1 (ibuf_front_valid_1),
+                .front_bus_1   (ibuf_front_bus_1)
               );
 
-  // ID stage
-  ID_stage u_id(
-             .clk            (clk),
-             .resetn         (resetn),
-             .fs_to_ds_valid (fs_to_ds_valid),
-             .fs_to_ds_bus   (fs_to_ds_bus),
-             .ds_allowin     (ds_allowin),
-             .ds_pop_ready   (ds_pop_ready),
-             .br_taken       (br_taken),
-             .es_allowin     (es_allowin),
-             .es_fwd_bus     (es_fwd_bus),
-             .ms_fwd_bus     (ms_fwd_bus),
-             .ws_fwd_bus     (ws_fwd_bus),
-             .ws_to_rf_bus   (ws_to_rf_bus),
-             .ds_to_es_valid (ds_to_es_valid),
-             .ds_to_es_bus   (ds_to_es_bus)
-           );
+  ISSUE_stage u_issue(
+                .clk              (clk),
+                .resetn           (resetn),
+                .front_valid_0    (ibuf_front_valid_0),
+                .front_bus_0      (ibuf_front_bus_0),
+                .front_valid_1    (ibuf_front_valid_1),
+                .front_bus_1      (ibuf_front_bus_1),
+                .pop_0            (issue_pop_0),
+                .pop_1            (issue_pop_1),
+                .br_taken         (br_taken),
+                .es_allowin       (es_allowin),
+                .es_fwd_bus_0     (es_fwd_bus_0),
+                .es_fwd_bus_1     (es_fwd_bus_1),
+                .ms_fwd_bus_0     (ms_fwd_bus_0),
+                .ms_fwd_bus_1     (ms_fwd_bus_1),
+                .ws_fwd_bus_0     (ws_fwd_bus_0),
+                .ws_fwd_bus_1     (ws_fwd_bus_1),
+                .ws_to_rf_bus     (ws_to_rf_bus),
+                .ds_to_es_valid_0 (ds_to_es_valid_0),
+                .ds_to_es_valid_1 (ds_to_es_valid_1),
+                .ds_to_es_bus_0   (ds_to_es_bus_0),
+                .ds_to_es_bus_1   (ds_to_es_bus_1)
+              );
 
   // EX stage
   EXE_stage u_exe(
-              .clk            (clk),
-              .resetn         (resetn),
-              .ds_to_es_valid (ds_to_es_valid),
-              .ds_to_es_bus   (ds_to_es_bus),
-              .flush          (br_taken),
-              .ms_allowin     (ms_allowin),
-              .es_allowin     (es_allowin),
-              .es_to_ms_valid (es_to_ms_valid),
-              .es_to_ms_bus   (es_to_ms_bus),
-              .es_fwd_bus     (es_fwd_bus)
+              .clk              (clk),
+              .resetn           (resetn),
+              .ds_to_es_valid_0 (ds_to_es_valid_0),
+              .ds_to_es_valid_1 (ds_to_es_valid_1),
+              .ds_to_es_bus_0   (ds_to_es_bus_0),
+              .ds_to_es_bus_1   (ds_to_es_bus_1),
+              .flush            (br_taken),
+              .ms_allowin       (ms_allowin),
+              .es_allowin       (es_allowin),
+              .es_to_ms_valid_0 (es_to_ms_valid_0),
+              .es_to_ms_valid_1 (es_to_ms_valid_1),
+              .es_to_ms_bus_0   (es_to_ms_bus_0),
+              .es_to_ms_bus_1   (es_to_ms_bus_1),
+              .es_fwd_bus_0     (es_fwd_bus_0),
+              .es_fwd_bus_1     (es_fwd_bus_1)
             );
 
   // MEM stage
   MEM_stage u_mem(
-              .clk              (clk),
-              .resetn           (resetn),
-              .es_to_ms_valid   (es_to_ms_valid),
-              .es_to_ms_bus     (es_to_ms_bus),
-              .ws_allowin       (ws_allowin),
-              .ms_allowin       (ms_allowin),
-              .ms_to_ws_valid   (ms_to_ws_valid),
-              .ms_to_ws_bus     (ms_to_ws_bus),
-              .ms_fwd_bus       (ms_fwd_bus),
-              .br_taken         (br_taken),
-              .br_target        (br_target),
-              .bpu_valid        (bpu_ex_valid),
-              .bpu_is_bj        (bpu_ex_is_bj),
-              .bpu_pc           (bpu_ex_pc),
-              .bpu_real_taken   (bpu_ex_real_taken),
-              .bpu_real_target  (bpu_ex_real_target),
-              .data_sram_req    (data_sram_req),
-              .data_sram_wr     (data_sram_wr),
-              .data_sram_size   (data_sram_size),
-              .data_sram_wstrb  (data_sram_wstrb),
-              .data_sram_addr   (data_sram_addr),
-              .data_sram_wdata  (data_sram_wdata),
-              .data_sram_addr_ok(data_sram_addr_ok),
-              .data_sram_data_ok(data_sram_data_ok),
-              .data_sram_rdata  (data_sram_rdata)
+              .clk               (clk),
+              .resetn            (resetn),
+              .es_to_ms_valid_0  (es_to_ms_valid_0),
+              .es_to_ms_valid_1  (es_to_ms_valid_1),
+              .es_to_ms_bus_0    (es_to_ms_bus_0),
+              .es_to_ms_bus_1    (es_to_ms_bus_1),
+              .ws_allowin        (ws_allowin),
+              .ms_allowin        (ms_allowin),
+              .ms_to_ws_valid_0  (ms_to_ws_valid_0),
+              .ms_to_ws_valid_1  (ms_to_ws_valid_1),
+              .ms_to_ws_bus_0    (ms_to_ws_bus_0),
+              .ms_to_ws_bus_1    (ms_to_ws_bus_1),
+              .ms_fwd_bus_0      (ms_fwd_bus_0),
+              .ms_fwd_bus_1      (ms_fwd_bus_1),
+              .br_taken          (br_taken),
+              .br_target         (br_target),
+              .bpu_valid         (bpu_ex_valid),
+              .bpu_is_bj         (bpu_ex_is_bj),
+              .bpu_pc            (bpu_ex_pc),
+              .bpu_real_taken    (bpu_ex_real_taken),
+              .bpu_real_target   (bpu_ex_real_target),
+              .data_sram_req     (data_sram_req),
+              .data_sram_wr      (data_sram_wr),
+              .data_sram_size    (data_sram_size),
+              .data_sram_wstrb   (data_sram_wstrb),
+              .data_sram_addr    (data_sram_addr),
+              .data_sram_wdata   (data_sram_wdata),
+              .data_sram_addr_ok (data_sram_addr_ok),
+              .data_sram_data_ok (data_sram_data_ok),
+              .data_sram_rdata   (data_sram_rdata)
             );
 
   // WB stage
   WB_stage u_wb(
-             .clk             (clk),
-             .resetn          (resetn),
-             .ms_to_ws_valid  (ms_to_ws_valid),
-             .ms_to_ws_bus    (ms_to_ws_bus),
-             .ws_allowin      (ws_allowin),
-             .ws_fwd_bus      (ws_fwd_bus),
-             .ws_to_rf_bus    (ws_to_rf_bus),
-             .debug_wb_pc     (debug_wb_pc),
-             .debug_wb_rf_we  (debug_wb_rf_we),
-             .debug_wb_rf_wnum(debug_wb_rf_wnum),
-             .debug_wb_rf_wdata(debug_wb_rf_wdata)
+             .clk                (clk),
+             .resetn             (resetn),
+             .ms_to_ws_valid_0   (ms_to_ws_valid_0),
+             .ms_to_ws_valid_1   (ms_to_ws_valid_1),
+             .ms_to_ws_bus_0     (ms_to_ws_bus_0),
+             .ms_to_ws_bus_1     (ms_to_ws_bus_1),
+             .ws_allowin         (ws_allowin),
+             .ws_fwd_bus_0       (ws_fwd_bus_0),
+             .ws_fwd_bus_1       (ws_fwd_bus_1),
+             .ws_to_rf_bus       (ws_to_rf_bus),
+             .debug_wb_pc        (debug_wb_pc),
+             .debug_wb_rf_we     (debug_wb_rf_we),
+             .debug_wb_rf_wnum   (debug_wb_rf_wnum),
+             .debug_wb_rf_wdata  (debug_wb_rf_wdata)
            );
 
   icache_refill u_icache_refill(

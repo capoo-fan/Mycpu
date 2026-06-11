@@ -8,8 +8,10 @@ module BPU (
     input  wire         if_valid,
     input  wire         id_valid,
     input  wire         pl_suspend,
-    output wire         pred_taken,
-    output wire [31:0]  pred_target,
+    output wire         pred_taken_0,
+    output wire [31:0]  pred_target_0,
+    output wire         pred_taken_1,
+    output wire [31:0]  pred_target_1,
     // 更新接口
     input  wire         ex_valid,
     input  wire         ex_is_bj,
@@ -17,13 +19,13 @@ module BPU (
     input  wire         real_taken,
     input  wire [31:0]  real_target
   );
-  localparam BPU_ROW_W     = 2;   // bank 行数
-  localparam BPU_BANKS     = 2;   // 两个 banke
-  localparam BPU_ENTRY_NUM = BPU_BANKS * (1 << BPU_ROW_W); //总项数 8项
-  localparam BPU_INDEX_W   = BPU_ROW_W + 1;     // 索引宽度
-  localparam BPU_TAG_W     = 18;                // tag 位宽
+  localparam BPU_ROW_W     = 2;
+  localparam BPU_BANKS     = 2;
+  localparam BPU_ENTRY_NUM = BPU_BANKS * (1 << BPU_ROW_W);
+  localparam BPU_INDEX_W   = BPU_ROW_W + 1;
+  localparam BPU_TAG_W     = 18;       // {valid, tag, counter, target}
 
-  localparam BTB_ENTRY_W   = 1 + BPU_TAG_W + 2 + 32; // {valid, tag, counter, target}
+  localparam BTB_ENTRY_W   = 1 + BPU_TAG_W + 2 + 32;
 
   reg reset;
   always @(posedge clk)
@@ -66,28 +68,48 @@ module BPU (
     end
   endfunction
 
-  // BTB 表
-  reg [BTB_ENTRY_W-1:0] btb_entry [0:BPU_ENTRY_NUM-1]; //  valid | tag | counter | target -> 有效 | tag | counter | 目标地址
+  reg [BTB_ENTRY_W-1:0] btb_entry [0:BPU_ENTRY_NUM-1];  //  valid | tag | counter | target -> 有效 | tag | counter | 目标地址
 
-  wire [BPU_TAG_W-1:0]   if_tag       = btb_tag(if_pc);
-  wire [BPU_INDEX_W-1:0] if_index     = btb_index(if_pc);
-  wire [BTB_ENTRY_W-1:0] if_btb_entry = btb_entry[if_index];
+  wire [31:0] if_pc_0 = if_pc;
+  wire [31:0] if_pc_1 = if_pc + 32'h4;
 
-  wire                 if_entry_valid;
-  wire [BPU_TAG_W-1:0] if_entry_tag;
-  wire [1:0]           if_entry_counter;
-  wire [31:0]          if_entry_target;
+  wire [BPU_TAG_W-1:0]   if_tag_0       = btb_tag(if_pc_0);
+  wire [BPU_INDEX_W-1:0] if_index_0     = btb_index(if_pc_0);
+  wire [BTB_ENTRY_W-1:0] if_btb_entry_0 = btb_entry[if_index_0];
 
-  assign {if_entry_valid,
-          if_entry_tag,
-          if_entry_counter,
-          if_entry_target} = if_btb_entry;
+  wire [BPU_TAG_W-1:0]   if_tag_1       = btb_tag(if_pc_1);
+  wire [BPU_INDEX_W-1:0] if_index_1     = btb_index(if_pc_1);
+  wire [BTB_ENTRY_W-1:0] if_btb_entry_1 = btb_entry[if_index_1];
 
-  wire   pred_btb_hit = if_entry_valid && (if_entry_tag == if_tag);   // BTB 命中
-  assign pred_taken   = pred_btb_hit && if_entry_counter[1];
-  assign pred_target  = pred_taken ? if_entry_target : (if_pc + 32'h4);
+  wire                 if_entry_valid_0;
+  wire [BPU_TAG_W-1:0] if_entry_tag_0;
+  wire [1:0]           if_entry_counter_0;
+  wire [31:0]          if_entry_target_0;
 
-  // 第一个周期读，第二个周期更新
+  assign {if_entry_valid_0,
+          if_entry_tag_0,
+          if_entry_counter_0,
+          if_entry_target_0} = if_btb_entry_0;
+
+  wire                 if_entry_valid_1;
+  wire [BPU_TAG_W-1:0] if_entry_tag_1;
+  wire [1:0]           if_entry_counter_1;
+  wire [31:0]          if_entry_target_1;
+
+  assign {if_entry_valid_1,
+          if_entry_tag_1,
+          if_entry_counter_1,
+          if_entry_target_1} = if_btb_entry_1;
+
+  wire pred_btb_hit_0 = if_entry_valid_0 && (if_entry_tag_0 == if_tag_0);
+  wire pred_btb_hit_1 = if_entry_valid_1 && (if_entry_tag_1 == if_tag_1);
+
+  assign pred_taken_0  = pred_btb_hit_0 && if_entry_counter_0[1];
+  assign pred_target_0 = pred_taken_0 ? if_entry_target_0 : if_pc_1;
+
+  assign pred_taken_1  = pred_btb_hit_1 && if_entry_counter_1[1];
+  assign pred_target_1 = pred_taken_1 ? if_entry_target_1 : (if_pc + 32'h8);
+
   wire                   update_valid_s1 = ex_valid && ex_is_bj;
   wire [BPU_TAG_W-1:0]   update_tag_s1   = btb_tag(ex_pc);
   wire [BPU_INDEX_W-1:0] update_index_s1 = btb_index(ex_pc);
@@ -103,7 +125,6 @@ module BPU (
           read_counter_s1,
           read_target_s1} = update_entry_s1;
 
-  // 第二个周期的寄存器
   reg                   update_valid_s2;
   reg [BPU_TAG_W-1:0]   update_tag_s2;
   reg [BPU_INDEX_W-1:0] update_index_s2;
@@ -137,10 +158,8 @@ module BPU (
       begin
         update_tag_s2   <= update_tag_s1;
         update_index_s2 <= update_index_s1;
-        // 真实分支结果和相关信息
         real_taken_s2   <= real_taken;
         real_target_s2  <= real_target;
-
         read_valid_s2   <= read_valid_s1;
         read_tag_s2     <= read_tag_s1;
         read_counter_s2 <= read_counter_s1;
@@ -149,7 +168,6 @@ module BPU (
     end
   end
 
-  // BTB表 更新
   wire update_hit_s2 = read_valid_s2 && (read_tag_s2 == update_tag_s2);
   wire [1:0] next_counter_s2 = train_counter(read_counter_s2, real_taken_s2);
 
@@ -170,7 +188,7 @@ module BPU (
                  next_counter_s2,
                  real_taken_s2 ? real_target_s2 : read_target_s2);
       end
-      else if (real_taken_s2)  // 未命中且分支被执行，更新表项
+      else if (real_taken_s2)
       begin
         btb_entry[update_index_s2] <= make_btb_entry(1'b1,
                  update_tag_s2,
