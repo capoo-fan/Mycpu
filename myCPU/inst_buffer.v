@@ -25,7 +25,7 @@ module inst_buffer(
   localparam [PTR_W:0] CNT_ZERO = {(PTR_W+1){1'b0}};
   localparam [PTR_W:0] CNT_ONE  = {{PTR_W{1'b0}}, 1'b1};
 
-  reg [`FS_TO_DS_BUS_WD-1:0] fifo [0:DEPTH-1];
+  reg [`IBUF_ENTRY_BUS_WD-1:0] fifo [0:DEPTH-1];
   reg [PTR_W-1:0] head;
   reg [PTR_W-1:0] tail;
   reg [PTR_W:0]   cnt;
@@ -37,8 +37,8 @@ module inst_buffer(
 
   wire [`DS_DEC_BUS_WD-1:0] dec_bus_0;
   wire [`DS_DEC_BUS_WD-1:0] dec_bus_1;
-  wire [`FS_TO_DS_BUS_WD-1:0] fifo_front_0;
-  wire [`FS_TO_DS_BUS_WD-1:0] fifo_front_1;
+  wire [`IBUF_ENTRY_BUS_WD-1:0] fifo_front_0;
+  wire [`IBUF_ENTRY_BUS_WD-1:0] fifo_front_1;
 
   wire [PTR_W-1:0] head_next = head + {{(PTR_W-1){1'b0}}, 1'b1};
   wire [PTR_W-1:0] tail_next = tail + {{(PTR_W-1){1'b0}}, 1'b1};
@@ -47,17 +47,17 @@ module inst_buffer(
   assign fifo_front_1 = fifo[head_next];
 
   inst_decoder u_decoder_0(
-                 .inst    (fifo_front_0[64:33]),
+                 .inst    (push_bus_0[64:33]),
                  .dec_bus (dec_bus_0)
                );
 
   inst_decoder u_decoder_1(
-                 .inst    (fifo_front_1[64:33]),
+                 .inst    (push_bus_1[64:33]),
                  .dec_bus (dec_bus_1)
                );
 
-  wire [`IBUF_ENTRY_BUS_WD-1:0] decoded_entry_0 = {dec_bus_0, fifo_front_0};
-  wire [`IBUF_ENTRY_BUS_WD-1:0] decoded_entry_1 = {dec_bus_1, fifo_front_1};
+  wire [`IBUF_ENTRY_BUS_WD-1:0] push_entry_0 = {dec_bus_0, push_bus_0};
+  wire [`IBUF_ENTRY_BUS_WD-1:0] push_entry_1 = {dec_bus_1, push_bus_1};
 
   reg                          temp_front_valid_0;
   reg                          temp_front_valid_1;
@@ -77,8 +77,8 @@ module inst_buffer(
 
   assign front_valid_0 = front_valid_0_r;
   assign front_valid_1 = front_valid_1_r;
-  assign front_bus_0   = front_valid_0_r ? front_bus_0_r : {`IBUF_ENTRY_BUS_WD{1'b0}};
-  assign front_bus_1   = front_valid_1_r ? front_bus_1_r : {`IBUF_ENTRY_BUS_WD{1'b0}};
+  assign front_bus_0   = front_bus_0_r;
+  assign front_bus_1   = front_bus_1_r;
 
   assign push_ready = (cnt <= CNT_ONE);
   assign full       = !push_ready;
@@ -124,26 +124,26 @@ module inst_buffer(
     if (refill_0)
     begin
       next_front_valid_0 = 1'b1;
-      next_front_bus_0   = decoded_entry_0;
+      next_front_bus_0   = fifo_front_0;
       if (refill_1)
       begin
         next_front_valid_1 = 1'b1;
-        next_front_bus_1   = decoded_entry_1;
+        next_front_bus_1   = fifo_front_1;
       end
     end
     else if (refill_1)
     begin
       next_front_valid_1 = 1'b1;
-      next_front_bus_1   = decoded_entry_0;
+      next_front_bus_1   = fifo_front_0;
     end
   end
 
   always @(posedge clk)
   begin
     if (push_fire_0)
-      fifo[tail] <= push_bus_0;
+      fifo[tail] <= push_entry_0;
     if (push_fire_1)
-      fifo[tail_next] <= push_bus_1;
+      fifo[tail_next] <= push_entry_1;
   end
 
   always @(posedge clk)
