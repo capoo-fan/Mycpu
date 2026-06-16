@@ -8,10 +8,9 @@ module BPU (
     input  wire         if_valid,
     input  wire         id_valid,
     input  wire         pl_suspend,
-    output wire         pred_taken_0,
-    output wire [31:0]  pred_target_0,
-    output wire         pred_taken_1,
-    output wire [31:0]  pred_target_1,
+    output wire         pred_taken,
+    output wire [31:0]  pred_target,
+    output wire         pred_lane,
     // 更新接口
     input  wire         ex_valid,
     input  wire         ex_is_bj,
@@ -21,22 +20,12 @@ module BPU (
   );
   localparam BPU_ROW_W     = 2;
   localparam BPU_BANKS     = 2;
-  localparam BPU_ENTRY_NUM = BPU_BANKS * (1 << BPU_ROW_W);
-  localparam BPU_INDEX_W   = BPU_ROW_W + 1;
-  localparam BPU_TAG_W     = 18;       // {valid, tag, counter, target}
-
-  localparam BTB_ENTRY_W   = 1 + BPU_TAG_W + 2 + 32;
+  localparam BPU_ROWS      = (1 << BPU_ROW_W);
+  localparam BPU_TAG_W     = 18;
 
   reg reset;
   always @(posedge clk)
     reset <= ~resetn;
-
-  function [BPU_INDEX_W-1:0] btb_index;
-    input [31:0] pc;
-    begin
-      btb_index = {pc[2], pc[4:3]};
-    end
-  endfunction
 
   function [BPU_TAG_W-1:0] btb_tag;
     input [31:0] pc;
@@ -57,77 +46,54 @@ module BPU (
     end
   endfunction
 
-  // 生成 BTB 表项的函数
-  function [BTB_ENTRY_W-1:0] make_btb_entry;
-    input                 entry_valid;
-    input [BPU_TAG_W-1:0] entry_tag;
-    input [1:0]           entry_counter;
-    input [31:0]          entry_target;
-    begin
-      make_btb_entry = {entry_valid, entry_tag, entry_counter, entry_target};
-    end
-  endfunction
+  reg                 btb_valid   [0:BPU_BANKS-1][0:BPU_ROWS-1];
+  reg [BPU_TAG_W-1:0] btb_tag_mem [0:BPU_BANKS-1][0:BPU_ROWS-1];
+  reg [1:0]           btb_counter [0:BPU_BANKS-1][0:BPU_ROWS-1];
+  reg [31:0]          btb_target  [0:BPU_BANKS-1][0:BPU_ROWS-1];
 
-  reg [BTB_ENTRY_W-1:0] btb_entry [0:BPU_ENTRY_NUM-1];  //  valid | tag | counter | target -> 有效 | tag | counter | 目标地址
+  wire [BPU_TAG_W-1:0]   pred_tag  = btb_tag(if_pc);
+  wire [BPU_ROW_W-1:0]   pred_row  = if_pc[4:3];
+  wire                   pred_bank = if_pc[2];
 
-  wire [31:0] if_pc_0 = if_pc;
-  wire [31:0] if_pc_1 = if_pc + 32'h4;
+  wire pred_hit_bank0 = btb_valid[1'b0][pred_row] &&
+                        (btb_tag_mem[1'b0][pred_row] == pred_tag);
+  wire pred_hit_bank1 = btb_valid[1'b1][pred_row] &&
+                        (btb_tag_mem[1'b1][pred_row] == pred_tag);
 
-  wire [BPU_TAG_W-1:0]   if_tag_0       = btb_tag(if_pc_0);
-  wire [BPU_INDEX_W-1:0] if_index_0     = btb_index(if_pc_0);
-  wire [BTB_ENTRY_W-1:0] if_btb_entry_0 = btb_entry[if_index_0];
+  wire pred_valid_bank0 = pred_hit_bank0 && btb_counter[1'b0][pred_row][1];
+  wire pred_valid_bank1 = pred_hit_bank1 && btb_counter[1'b1][pred_row][1];
 
-  wire [BPU_TAG_W-1:0]   if_tag_1       = btb_tag(if_pc_1);
-  wire [BPU_INDEX_W-1:0] if_index_1     = btb_index(if_pc_1);
-  wire [BTB_ENTRY_W-1:0] if_btb_entry_1 = btb_entry[if_index_1];
+  wire lane0_taken = pred_bank ? pred_valid_bank1 : pred_valid_bank0;
+  wire lane1_taken = !pred_bank && pred_valid_bank1;
+  wire raw_pred_taken = lane0_taken || lane1_taken;
+  wire raw_pred_lane  = !lane0_taken && lane1_taken;
+  wire [31:0] raw_pred_target = raw_pred_lane ? btb_target[1'b1][pred_row] :
+                                                (pred_bank ? btb_target[1'b1][pred_row] :
+                                                             btb_target[1'b0][pred_row]);
 
-  wire                 if_entry_valid_0;
-  wire [BPU_TAG_W-1:0] if_entry_tag_0;
-  wire [1:0]           if_entry_counter_0;
-  wire [31:0]          if_entry_target_0;
-
-  assign {if_entry_valid_0,
-          if_entry_tag_0,
-          if_entry_counter_0,
-          if_entry_target_0} = if_btb_entry_0;
-
-  wire                 if_entry_valid_1;
-  wire [BPU_TAG_W-1:0] if_entry_tag_1;
-  wire [1:0]           if_entry_counter_1;
-  wire [31:0]          if_entry_target_1;
-
-  assign {if_entry_valid_1,
-          if_entry_tag_1,
-          if_entry_counter_1,
-          if_entry_target_1} = if_btb_entry_1;
-
-  wire pred_btb_hit_0 = if_entry_valid_0 && (if_entry_tag_0 == if_tag_0);
-  wire pred_btb_hit_1 = if_entry_valid_1 && (if_entry_tag_1 == if_tag_1);
-
-  assign pred_taken_0  = pred_btb_hit_0 && if_entry_counter_0[1];
-  assign pred_target_0 = pred_taken_0 ? if_entry_target_0 : if_pc_1;
-
-  assign pred_taken_1  = pred_btb_hit_1 && if_entry_counter_1[1];
-  assign pred_target_1 = pred_taken_1 ? if_entry_target_1 : (if_pc + 32'h8);
+  assign pred_taken = if_valid && raw_pred_taken;
+  assign pred_target = pred_taken ? raw_pred_target : 32'b0;
+  assign pred_lane = pred_taken ? raw_pred_lane : 1'b0;
 
   wire                   update_valid_s1 = ex_valid && ex_is_bj;
   wire [BPU_TAG_W-1:0]   update_tag_s1   = btb_tag(ex_pc);
-  wire [BPU_INDEX_W-1:0] update_index_s1 = btb_index(ex_pc);
-  wire [BTB_ENTRY_W-1:0] update_entry_s1 = btb_entry[update_index_s1];
+  wire                   update_bank_s1  = ex_pc[2];
+  wire [BPU_ROW_W-1:0]   update_row_s1   = ex_pc[4:3];
 
   wire                 read_valid_s1;
   wire [BPU_TAG_W-1:0] read_tag_s1;
   wire [1:0]           read_counter_s1;
   wire [31:0]          read_target_s1;
 
-  assign {read_valid_s1,
-          read_tag_s1,
-          read_counter_s1,
-          read_target_s1} = update_entry_s1;
+  assign read_valid_s1  = btb_valid[update_bank_s1][update_row_s1];
+  assign read_tag_s1    = btb_tag_mem[update_bank_s1][update_row_s1];
+  assign read_counter_s1 = btb_counter[update_bank_s1][update_row_s1];
+  assign read_target_s1 = btb_target[update_bank_s1][update_row_s1];
 
   reg                   update_valid_s2;
   reg [BPU_TAG_W-1:0]   update_tag_s2;
-  reg [BPU_INDEX_W-1:0] update_index_s2;
+  reg                   update_bank_s2;
+  reg [BPU_ROW_W-1:0]   update_row_s2;
 
   reg                   real_taken_s2;
   reg [31:0]            real_target_s2;
@@ -143,7 +109,8 @@ module BPU (
     begin
       update_valid_s2 <= 1'b0;
       update_tag_s2   <= {BPU_TAG_W{1'b0}};
-      update_index_s2 <= {BPU_INDEX_W{1'b0}};
+      update_bank_s2  <= 1'b0;
+      update_row_s2   <= {BPU_ROW_W{1'b0}};
       real_taken_s2   <= 1'b0;
       real_target_s2  <= 32'b0;
       read_valid_s2   <= 1'b0;
@@ -157,7 +124,8 @@ module BPU (
       if (update_valid_s1)
       begin
         update_tag_s2   <= update_tag_s1;
-        update_index_s2 <= update_index_s1;
+        update_bank_s2  <= update_bank_s1;
+        update_row_s2   <= update_row_s1;
         real_taken_s2   <= real_taken;
         real_target_s2  <= real_target;
         read_valid_s2   <= read_valid_s1;
@@ -171,29 +139,37 @@ module BPU (
   wire update_hit_s2 = read_valid_s2 && (read_tag_s2 == update_tag_s2);
   wire [1:0] next_counter_s2 = train_counter(read_counter_s2, real_taken_s2);
 
-  integer i;
+  integer i, j;
   always @(posedge clk)
   begin
     if (reset)
     begin
-      for (i = 0; i < BPU_ENTRY_NUM; i = i + 1)
-        btb_entry[i] <= make_btb_entry(1'b0, {BPU_TAG_W{1'b0}}, 2'b01, 32'b0);
+      for (i = 0; i < BPU_BANKS; i = i + 1)
+      begin
+        for (j = 0; j < BPU_ROWS; j = j + 1)
+        begin
+          btb_valid[i][j]   <= 1'b0;
+          btb_tag_mem[i][j] <= {BPU_TAG_W{1'b0}};
+          btb_counter[i][j] <= 2'b01;
+          btb_target[i][j]  <= 32'b0;
+        end
+      end
     end
     else if (update_valid_s2)
     begin
       if (update_hit_s2)
       begin
-        btb_entry[update_index_s2] <= make_btb_entry(1'b1,
-                 update_tag_s2,
-                 next_counter_s2,
-                 real_taken_s2 ? real_target_s2 : read_target_s2);
+        btb_valid[update_bank_s2][update_row_s2]   <= 1'b1;
+        btb_tag_mem[update_bank_s2][update_row_s2] <= update_tag_s2;
+        btb_counter[update_bank_s2][update_row_s2] <= next_counter_s2;
+        btb_target[update_bank_s2][update_row_s2]  <= real_taken_s2 ? real_target_s2 : read_target_s2;
       end
       else if (real_taken_s2)
       begin
-        btb_entry[update_index_s2] <= make_btb_entry(1'b1,
-                 update_tag_s2,
-                 2'b10,
-                 real_target_s2);
+        btb_valid[update_bank_s2][update_row_s2]   <= 1'b1;
+        btb_tag_mem[update_bank_s2][update_row_s2] <= update_tag_s2;
+        btb_counter[update_bank_s2][update_row_s2] <= 2'b10;
+        btb_target[update_bank_s2][update_row_s2]  <= real_target_s2;
       end
     end
   end

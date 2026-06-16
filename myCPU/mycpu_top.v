@@ -87,6 +87,9 @@ module mycpu_top(
   wire [31:0] br_target;
 
   // BPU 预测与训练信号
+  wire        bpu_pred_taken;
+  wire [31:0] bpu_pred_target;
+  wire        bpu_pred_lane;
   wire        bpu_pred_taken_0;
   wire [31:0] bpu_pred_target_0;
   wire        bpu_pred_taken_1;
@@ -104,9 +107,12 @@ module mycpu_top(
   wire        if_suspend;
   wire        pc_cross_line = (pc_out[3:2] == 2'b11);
   wire [31:0] pc_next_seq   = pc_out + (pc_cross_line ? 32'h4 : 32'h8);
-  wire [31:0] pc_next       = bpu_pred_taken_0 ? bpu_pred_target_0 :
-                              (!pc_cross_line && bpu_pred_taken_1) ? bpu_pred_target_1 :
-                              pc_next_seq;
+  wire [31:0] pc_next       = bpu_pred_taken ? bpu_pred_target : pc_next_seq;
+
+  assign bpu_pred_taken_0  = bpu_pred_taken && !bpu_pred_lane;
+  assign bpu_pred_target_0 = bpu_pred_target;
+  assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
+  assign bpu_pred_target_1 = bpu_pred_target;
 
   PC u_pc(
        .clk      (clk),
@@ -126,10 +132,9 @@ module mycpu_top(
         .if_valid      (pc_inst_req && !if_suspend),
         .id_valid      (bpu_ex_valid),
         .pl_suspend    (if_suspend),
-        .pred_taken_0  (bpu_pred_taken_0),
-        .pred_target_0 (bpu_pred_target_0),
-        .pred_taken_1  (bpu_pred_taken_1),
-        .pred_target_1 (bpu_pred_target_1),
+        .pred_taken    (bpu_pred_taken),
+        .pred_target   (bpu_pred_target),
+        .pred_lane     (bpu_pred_lane),
         .ex_valid      (bpu_ex_valid),
         .ex_is_bj      (bpu_ex_is_bj),
         .ex_pc         (bpu_ex_pc),
