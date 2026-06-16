@@ -56,6 +56,7 @@ module MEM_stage(
   reg         ms_real_taken_0;
   reg  [31:0] ms_real_target_0;
   reg  [31:0] ms_next_pc_0;
+  reg         ms_redirect_miss_0;
 
   reg         ms_valid_1;
   reg  [31:0] ms_pc_1;
@@ -76,6 +77,7 @@ module MEM_stage(
   reg         ms_real_taken_1;
   reg  [31:0] ms_real_target_1;
   reg  [31:0] ms_next_pc_1;
+  reg         ms_redirect_miss_1;
 
   wire [31:0] es_pc_0;
   wire [31:0] es_final_result_0;
@@ -95,13 +97,15 @@ module MEM_stage(
   wire        es_real_taken_0;
   wire [31:0] es_real_target_0;
   wire [31:0] es_next_pc_0;
+  wire        es_redirect_miss_0;
 
   assign {es_pc_0, es_final_result_0, es_rkd_value_0,
           es_res_from_mem_0, es_gr_we_0, es_mem_we_0, es_dest_0,
           es_ld_byte_0, es_ld_half_0, es_ld_sign_ext_0,
           es_st_byte_0, es_st_half_0,
           es_pred_taken_0, es_pred_target_0,
-          es_is_bj_0, es_real_taken_0, es_real_target_0, es_next_pc_0} = es_to_ms_bus_0;
+          es_is_bj_0, es_real_taken_0, es_real_target_0,
+          es_next_pc_0, es_redirect_miss_0} = es_to_ms_bus_0;
 
   wire [31:0] es_pc_1;
   wire [31:0] es_final_result_1;
@@ -121,25 +125,20 @@ module MEM_stage(
   wire        es_real_taken_1;
   wire [31:0] es_real_target_1;
   wire [31:0] es_next_pc_1;
+  wire        es_redirect_miss_1;
 
   assign {es_pc_1, es_final_result_1, es_rkd_value_1,
           es_res_from_mem_1, es_gr_we_1, es_mem_we_1, es_dest_1,
           es_ld_byte_1, es_ld_half_1, es_ld_sign_ext_1,
           es_st_byte_1, es_st_half_1,
           es_pred_taken_1, es_pred_target_1,
-          es_is_bj_1, es_real_taken_1, es_real_target_1, es_next_pc_1} = es_to_ms_bus_1;
+          es_is_bj_1, es_real_taken_1, es_real_target_1,
+          es_next_pc_1, es_redirect_miss_1} = es_to_ms_bus_1;
 
-  wire ms_taken_miss_0  = ms_real_taken_0 ^ ms_pred_taken_0;
-  wire ms_target_miss_0 = ms_real_taken_0 && ms_pred_taken_0 &&
-       (ms_real_target_0 != ms_pred_target_0);
-  wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && (ms_taken_miss_0 || ms_target_miss_0); // 分支预测错误，刷掉 lane1 的指令
+  wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0; // 分支预测错误，刷掉 lane1 的指令
 
-  wire ms_taken_miss_1  = ms_real_taken_1 ^ ms_pred_taken_1;
-  wire ms_target_miss_1 = ms_real_taken_1 && ms_pred_taken_1 &&
-       (ms_real_target_1 != ms_pred_target_1);
   wire ms_lane1_eff_valid = ms_valid_1 && !ms_redirect_0_raw;  // 如果 lane0 分支预测错误，lane1 的指令就无效了
-  wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 &&
-       (ms_taken_miss_1 || ms_target_miss_1);
+  wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
   wire lane0_mem_op = ms_valid_0 && (ms_res_from_mem_0 || ms_mem_we_0);
   wire lane1_mem_op = ms_lane1_eff_valid && (ms_res_from_mem_1 || ms_mem_we_1);
@@ -344,6 +343,7 @@ module MEM_stage(
       ms_real_taken_0   <= 1'b0;
       ms_real_target_0  <= 32'b0;
       ms_next_pc_0      <= 32'b0;
+      ms_redirect_miss_0 <= 1'b0;
 
       ms_pc_1           <= 32'b0;
       ms_gr_we_1        <= 1'b0;
@@ -363,6 +363,7 @@ module MEM_stage(
       ms_real_taken_1   <= 1'b0;
       ms_real_target_1  <= 32'b0;
       ms_next_pc_1      <= 32'b0;
+      ms_redirect_miss_1 <= 1'b0;
     end
     else if (br_taken)
     begin
@@ -370,10 +371,12 @@ module MEM_stage(
       ms_mem_we_0       <= 1'b0;
       ms_res_from_mem_0 <= 1'b0;
       ms_is_bj_0        <= 1'b0;
+      ms_redirect_miss_0 <= 1'b0;
       ms_gr_we_1        <= 1'b0;
       ms_mem_we_1       <= 1'b0;
       ms_res_from_mem_1 <= 1'b0;
       ms_is_bj_1        <= 1'b0;
+      ms_redirect_miss_1 <= 1'b0;
     end
     else if (ms_allowin)
     begin
@@ -397,6 +400,7 @@ module MEM_stage(
         ms_real_taken_0   <= es_real_taken_0;
         ms_real_target_0  <= es_real_target_0;
         ms_next_pc_0      <= es_next_pc_0;
+        ms_redirect_miss_0 <= es_redirect_miss_0;
       end
       else
       begin
@@ -404,6 +408,7 @@ module MEM_stage(
         ms_mem_we_0       <= 1'b0;
         ms_res_from_mem_0 <= 1'b0;
         ms_is_bj_0        <= 1'b0;
+        ms_redirect_miss_0 <= 1'b0;
       end
 
       if (es_to_ms_valid_1)
@@ -426,6 +431,7 @@ module MEM_stage(
         ms_real_taken_1   <= es_real_taken_1;
         ms_real_target_1  <= es_real_target_1;
         ms_next_pc_1      <= es_next_pc_1;
+        ms_redirect_miss_1 <= es_redirect_miss_1;
       end
       else
       begin
@@ -433,6 +439,7 @@ module MEM_stage(
         ms_mem_we_1       <= 1'b0;
         ms_res_from_mem_1 <= 1'b0;
         ms_is_bj_1        <= 1'b0;
+        ms_redirect_miss_1 <= 1'b0;
       end
     end
   end

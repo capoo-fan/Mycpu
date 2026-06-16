@@ -182,6 +182,16 @@ module EXE_stage(
                  .next_pc     (es_next_pc_1)
                );
 
+  wire es_taken_miss_0  = es_real_taken_0 ^ es_pred_taken_0;
+  wire es_target_miss_0 = es_real_taken_0 && es_pred_taken_0 &&
+       (es_real_target_0 != es_pred_target_0);
+  wire es_redirect_miss_0 = es_is_bj_0 && (es_taken_miss_0 || es_target_miss_0);
+
+  wire es_taken_miss_1  = es_real_taken_1 ^ es_pred_taken_1;
+  wire es_target_miss_1 = es_real_taken_1 && es_pred_taken_1 &&
+       (es_real_target_1 != es_pred_target_1);
+  wire es_redirect_miss_1 = es_is_bj_1 && (es_taken_miss_1 || es_target_miss_1);
+
   wire es_fwd_valid_0 = !es_res_from_mem_0 &&
        !(es_is_mul_0 && (mul_cnt_0 != MUL_LATENCY));
   wire es_fwd_valid_1 = !es_res_from_mem_1 &&
@@ -209,7 +219,8 @@ module EXE_stage(
                            es_is_bj_0,
                            es_real_taken_0,
                            es_real_target_0,
-                           es_next_pc_0
+                           es_next_pc_0,
+                           es_redirect_miss_0
                           };
 
   assign es_to_ms_bus_1 = {es_pc_1,
@@ -229,7 +240,8 @@ module EXE_stage(
                            es_is_bj_1,
                            es_real_taken_1,
                            es_real_target_1,
-                           es_next_pc_1
+                           es_next_pc_1,
+                           es_redirect_miss_1
                           };
 
   always @(posedge clk)
