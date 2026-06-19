@@ -49,8 +49,6 @@ module alu(
   wire [31:0] sr_result;
 
   wire [63:0] mul_ss_result;
-  wire [63:0] mul_unsigned_fix;
-  wire [63:0] mul_unsigned_result;
 
 
   wire [31:0] adder_a;
@@ -104,8 +102,10 @@ module alu(
 
   always @(posedge clk)
   begin
-    sim_mul_pipe[0] <= $signed({{32{alu_src1[31]}}, alu_src1})
-                       * $signed({{32{alu_src2[31]}}, alu_src2});
+    sim_mul_pipe[0] <= mul_signed ?
+                       ($signed({{32{alu_src1[31]}}, alu_src1})
+                        * $signed({{32{alu_src2[31]}}, alu_src2})) :
+                       ({32'b0, alu_src1} * {32'b0, alu_src2});
     sim_mul_pipe[1] <= sim_mul_pipe[0];
     sim_mul_pipe[2] <= sim_mul_pipe[1];
   end
@@ -114,10 +114,7 @@ module alu(
 */
 
 
-  assign mul_unsigned_fix = (alu_src1[31] ? {alu_src2, 32'b0} : 64'd0)
-         + (alu_src2[31] ? {alu_src1, 32'b0} : 64'd0);
-  assign mul_unsigned_result = mul_ss_result + mul_unsigned_fix;
-  assign mul_result = mul_signed ? mul_ss_result : mul_unsigned_result;
+  assign mul_result = mul_ss_result;
 
   // final result mux
   assign alu_result = ({32{op_add|op_sub}} & add_sub_result)

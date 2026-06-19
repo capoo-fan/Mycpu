@@ -143,10 +143,8 @@ module EXE_stage(
   wire [31:0] alu_result_1;
   wire [63:0] mul_product_1;
 
-  wire [31:0] es_final_result_0 = es_is_mul_0 ? (es_mul_hi_0 ? mul_product_0[63:32] : mul_product_0[31:0]) :
-       alu_result_0;
-  wire [31:0] es_final_result_1 = es_is_mul_1 ? (es_mul_hi_1 ? mul_product_1[63:32] : mul_product_1[31:0]) :
-       alu_result_1;
+  wire [31:0] es_final_result_0 = es_is_mul_0 ? (es_mul_hi_0 ? mul_product_0[63:32] : mul_product_0[31:0]) : alu_result_0;
+  wire [31:0] es_final_result_1 = es_is_mul_1 ? (es_mul_hi_1 ? mul_product_1[63:32] : mul_product_1[31:0]) : alu_result_1;
 
   wire        es_is_bj_0;
   wire        es_real_taken_0;
