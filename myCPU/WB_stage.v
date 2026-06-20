@@ -9,8 +9,6 @@ module WB_stage(
     input  wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_1,
 
     output wire                         ws_allowin,
-    output wire [`WS_FWD_BUS_WD-1:0]    ws_fwd_bus_0,
-    output wire [`WS_FWD_BUS_WD-1:0]    ws_fwd_bus_1,
     output wire [`WS_TO_RF_BUS_WD-1:0]  ws_to_rf_bus,
 
     output reg  [31:0]                  debug_wb_pc,
@@ -119,17 +117,13 @@ module WB_stage(
   wire ws_fire = packet_valid && dbg_commit_ready;
   assign ws_allowin = !packet_valid || ws_fire;
 
-  wire ws_rf_we_0    = ws_fire && ws_valid_0 && ws_gr_we_0;
+  wire ws_rf_we_0    = ws_valid_0 && ws_gr_we_0;
   wire [ 4:0] ws_rf_waddr_0 = ws_dest_0;
   wire [31:0] ws_rf_wdata_0 = final_result_0;
 
-  wire ws_rf_we_1    = ws_fire && ws_valid_1 && ws_gr_we_1;
+  wire ws_rf_we_1    = ws_valid_1 && ws_gr_we_1;
   wire [ 4:0] ws_rf_waddr_1 = ws_dest_1;
   wire [31:0] ws_rf_wdata_1 = final_result_1;
-
-  // WB_stage 的转发逻辑
-  assign ws_fwd_bus_0 = {ws_valid_0, ws_gr_we_0, ws_dest_0, final_result_0};
-  assign ws_fwd_bus_1 = {ws_valid_1, ws_gr_we_1, ws_dest_1, final_result_1};
 
   assign ws_to_rf_bus = {ws_rf_we_0, ws_rf_waddr_0, ws_rf_wdata_0,
                          ws_rf_we_1, ws_rf_waddr_1, ws_rf_wdata_1};

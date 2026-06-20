@@ -76,8 +76,6 @@ module mycpu_top(
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
-  wire [`WS_FWD_BUS_WD-1:0] ws_fwd_bus_0;
-  wire [`WS_FWD_BUS_WD-1:0] ws_fwd_bus_1;
 
   wire        es_wait_valid_0;
   wire [ 4:0] es_wait_dest_0;
@@ -209,8 +207,6 @@ module mycpu_top(
                 .es_fwd_bus_1     (es_fwd_bus_1),
                 .ms_fwd_bus_0     (ms_fwd_bus_0),
                 .ms_fwd_bus_1     (ms_fwd_bus_1),
-                .ws_fwd_bus_0     (ws_fwd_bus_0),
-                .ws_fwd_bus_1     (ws_fwd_bus_1),
                 .es_wait_valid_0  (es_wait_valid_0),
                 .es_wait_dest_0   (es_wait_dest_0),
                 .es_wait_valid_1  (es_wait_valid_1),
@@ -296,8 +292,6 @@ module mycpu_top(
              .ms_to_ws_bus_0     (ms_to_ws_bus_0),
              .ms_to_ws_bus_1     (ms_to_ws_bus_1),
              .ws_allowin         (ws_allowin),
-             .ws_fwd_bus_0       (ws_fwd_bus_0),
-             .ws_fwd_bus_1       (ws_fwd_bus_1),
              .ws_to_rf_bus       (ws_to_rf_bus),
              .debug_wb_pc        (debug_wb_pc),
              .debug_wb_rf_we     (debug_wb_rf_we),

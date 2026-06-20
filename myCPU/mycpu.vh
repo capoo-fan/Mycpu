@@ -21,8 +21,6 @@
 
 `define MS_FWD_BUS_WD   41
 
-`define WS_FWD_BUS_WD   39
-
 `define BR_NONE 4'd0
 `define BR_BEQ  4'd1
 `define BR_BNE  4'd2
