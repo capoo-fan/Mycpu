@@ -20,6 +20,14 @@ module ISSUE_stage(
     input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus_1,
     input  wire [`WS_FWD_BUS_WD-1  :  0]  ws_fwd_bus_0,
     input  wire [`WS_FWD_BUS_WD-1  :  0]  ws_fwd_bus_1,
+    input  wire                           es_wait_valid_0,
+    input  wire [ 4:0]                    es_wait_dest_0,
+    input  wire                           es_wait_valid_1,
+    input  wire [ 4:0]                    es_wait_dest_1,
+    input  wire                           ms_wait_valid_0,
+    input  wire [ 4:0]                    ms_wait_dest_0,
+    input  wire                           ms_wait_valid_1,
+    input  wire [ 4:0]                    ms_wait_dest_1,
     input  wire [`WS_TO_RF_BUS_WD-1:  0]  ws_to_rf_bus,
     // 送到 ES 阶段的信息
     output wire                           ds_to_es_valid_0,
@@ -277,8 +285,11 @@ module ISSUE_stage(
   wire rj0_hit_ws0  = src0_rj_valid  && ws_valid_0 && ws_gr_we_0 && (ws_dest_0 != 5'b0) && (ws_dest_0 == rf_raddr1_0);
   wire rj0_hit_ws1  = src0_rj_valid  && ws_valid_1 && ws_gr_we_1 && (ws_dest_1 != 5'b0) && (ws_dest_1 == rf_raddr1_0);
 
-  wire rj0_wait     = (rj0_hit_es1 && !es_fwd_valid_1) || (rj0_hit_es0 && !es_fwd_valid_0) ||
-       (rj0_hit_ms1 && !ms_fwd_valid_1) || (rj0_hit_ms0 && !ms_fwd_valid_0);
+  wire rj0_wait = src0_rj_valid &&
+       ((es_wait_valid_1 && (es_wait_dest_1 == rf_raddr1_0)) ||
+        (es_wait_valid_0 && (es_wait_dest_0 == rf_raddr1_0)) ||
+        (ms_wait_valid_1 && (ms_wait_dest_1 == rf_raddr1_0)) ||
+        (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr1_0)));
 
   wire [6:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1 && es_fwd_valid_1,
                                          rj0_hit_es0 && es_fwd_valid_0,
@@ -301,8 +312,11 @@ module ISSUE_stage(
   wire rkd0_hit_ws0 = src0_rkd_valid && ws_valid_0 && ws_gr_we_0 && (ws_dest_0 != 5'b0) && (ws_dest_0 == rf_raddr2_0);
   wire rkd0_hit_ws1 = src0_rkd_valid && ws_valid_1 && ws_gr_we_1 && (ws_dest_1 != 5'b0) && (ws_dest_1 == rf_raddr2_0);
 
-  wire rkd0_wait    = (rkd0_hit_es1 && !es_fwd_valid_1) || (rkd0_hit_es0 && !es_fwd_valid_0) ||
-       (rkd0_hit_ms1 && !ms_fwd_valid_1) || (rkd0_hit_ms0 && !ms_fwd_valid_0);
+  wire rkd0_wait = src0_rkd_valid &&
+       ((es_wait_valid_1 && (es_wait_dest_1 == rf_raddr2_0)) ||
+        (es_wait_valid_0 && (es_wait_dest_0 == rf_raddr2_0)) ||
+        (ms_wait_valid_1 && (ms_wait_dest_1 == rf_raddr2_0)) ||
+        (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr2_0)));
 
   wire [6:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
                                           rkd0_hit_es0 && es_fwd_valid_0,
@@ -326,8 +340,11 @@ module ISSUE_stage(
   wire rj1_hit_ws0  = src1_rj_valid  && ws_valid_0 && ws_gr_we_0 && (ws_dest_0 != 5'b0) && (ws_dest_0 == rf_raddr1_1);
   wire rj1_hit_ws1  = src1_rj_valid  && ws_valid_1 && ws_gr_we_1 && (ws_dest_1 != 5'b0) && (ws_dest_1 == rf_raddr1_1);
 
-  wire rj1_wait     = (rj1_hit_es1 && !es_fwd_valid_1) || (rj1_hit_es0 && !es_fwd_valid_0) ||
-       (rj1_hit_ms1 && !ms_fwd_valid_1) || (rj1_hit_ms0 && !ms_fwd_valid_0);
+  wire rj1_wait = src1_rj_valid &&
+       ((es_wait_valid_1 && (es_wait_dest_1 == rf_raddr1_1)) ||
+        (es_wait_valid_0 && (es_wait_dest_0 == rf_raddr1_1)) ||
+        (ms_wait_valid_1 && (ms_wait_dest_1 == rf_raddr1_1)) ||
+        (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr1_1)));
   wire [6:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1 && es_fwd_valid_1,
                                          rj1_hit_es0 && es_fwd_valid_0,
                                          rj1_hit_ms1 && ms_fwd_valid_1,
@@ -347,8 +364,11 @@ module ISSUE_stage(
   wire rkd1_hit_ws0 = src1_rkd_valid && ws_valid_0 && ws_gr_we_0 && (ws_dest_0 != 5'b0) && (ws_dest_0 == rf_raddr2_1);
   wire rkd1_hit_ws1 = src1_rkd_valid && ws_valid_1 && ws_gr_we_1 && (ws_dest_1 != 5'b0) && (ws_dest_1 == rf_raddr2_1);
 
-  wire rkd1_wait    = (rkd1_hit_es1 && !es_fwd_valid_1) || (rkd1_hit_es0 && !es_fwd_valid_0) ||
-       (rkd1_hit_ms1 && !ms_fwd_valid_1) || (rkd1_hit_ms0 && !ms_fwd_valid_0);
+  wire rkd1_wait = src1_rkd_valid &&
+       ((es_wait_valid_1 && (es_wait_dest_1 == rf_raddr2_1)) ||
+        (es_wait_valid_0 && (es_wait_dest_0 == rf_raddr2_1)) ||
+        (ms_wait_valid_1 && (ms_wait_dest_1 == rf_raddr2_1)) ||
+        (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr2_1)));
 
   wire [6:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
                                           rkd1_hit_es0 && es_fwd_valid_0,

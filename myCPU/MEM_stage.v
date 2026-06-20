@@ -15,6 +15,10 @@ module MEM_stage(
     output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_1,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_0,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_1,
+    output wire                         ms_wait_valid_0,
+    output wire [ 4:0]                  ms_wait_dest_0,
+    output wire                         ms_wait_valid_1,
+    output wire [ 4:0]                  ms_wait_dest_1,
     output wire                         br_taken,
     output wire [31:0]                  br_target,
     output wire                         bpu_valid,
@@ -238,6 +242,13 @@ module MEM_stage(
   wire ms_fwd_valid_1 = !ms_res_from_mem_1 || mem_data_ready;
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 : ms_alu_result_0;
   wire [31:0] ms_fwd_data_1 = ms_res_from_mem_1 ? ms_load_result_1 : ms_alu_result_1;
+
+  assign ms_wait_valid_0 = ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
+         ms_res_from_mem_0 && !mem_data_ready;
+  assign ms_wait_dest_0  = ms_dest_0;
+  assign ms_wait_valid_1 = ms_lane1_eff_valid && ms_gr_we_1 && (ms_dest_1 != 5'b0) &&
+         ms_res_from_mem_1 && !mem_data_ready;
+  assign ms_wait_dest_1  = ms_dest_1;
 
   assign ms_fwd_bus_0 = {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
                          ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0};

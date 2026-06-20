@@ -15,7 +15,11 @@ module EXE_stage(
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_1,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_0,
-    output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_1
+    output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_1,
+    output wire                         es_wait_valid_0,
+    output wire [ 4:0]                  es_wait_dest_0,
+    output wire                         es_wait_valid_1,
+    output wire [ 4:0]                  es_wait_dest_1
   );
 
   reg reset;
@@ -194,6 +198,13 @@ module EXE_stage(
        !(es_is_mul_0 && (mul_cnt_0 != MUL_LATENCY));
   wire es_fwd_valid_1 = !es_res_from_mem_1 &&
        !(es_is_mul_1 && (mul_cnt_1 != MUL_LATENCY));
+
+  assign es_wait_valid_0 = es_valid_0 && es_gr_we_0 &&
+         (es_dest_0 != 5'b0) && !es_fwd_valid_0;
+  assign es_wait_dest_0  = es_dest_0;
+  assign es_wait_valid_1 = es_valid_1 && es_gr_we_1 &&
+         (es_dest_1 != 5'b0) && !es_fwd_valid_1;
+  assign es_wait_dest_1  = es_dest_1;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
                          es_res_from_mem_0, es_dest_0, es_final_result_0};
