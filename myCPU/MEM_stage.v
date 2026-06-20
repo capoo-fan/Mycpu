@@ -164,7 +164,7 @@ module MEM_stage(
 
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
   wire ms_data_ok  = ms_addr_sent && data_sram_data_ok;
-  wire mem_data_ready = ms_rdata_buf_valid || ms_data_ok;
+  wire mem_data_ready = ms_rdata_buf_valid;
 
   wire packet_valid = ms_valid_0 || ms_valid_1;
   wire ms_ready_go  = !ms_has_mem_op || mem_data_ready;
@@ -206,7 +206,7 @@ module MEM_stage(
   assign data_sram_addr  = selected_addr;
   assign data_sram_wdata = ms_st_data;
 
-  wire [31:0] ms_final_rdata = ms_rdata_buf_valid ? ms_rdata_buf : data_sram_rdata;
+  wire [31:0] ms_final_rdata = ms_rdata_buf;
 
   // 处理加载指令的结果
   function [31:0] load_result;

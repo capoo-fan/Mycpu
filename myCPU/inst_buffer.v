@@ -69,11 +69,9 @@ module inst_buffer(
          pop_clear ? 1'b0 :
          front_valid_0_r;
   assign temp_front_bus_0   = pop_shift ? front_bus_1_r :
-         pop_clear ? {`IBUF_ENTRY_BUS_WD{1'b0}} :
          front_bus_0_r;
   assign temp_front_valid_1 = (pop_0 || pop_1) ? 1'b0 : front_valid_1_r;
-  assign temp_front_bus_1   = (pop_0 || pop_1) ? {`IBUF_ENTRY_BUS_WD{1'b0}} :
-         front_bus_1_r;
+  assign temp_front_bus_1   = front_bus_1_r;
 
   // 判断指令是否需要从fifo中补充到front
   assign refill_0 = !temp_front_valid_0 && (cnt != CNT_ZERO);
@@ -96,8 +94,6 @@ module inst_buffer(
       cnt  <= CNT_ZERO;
       front_valid_0_r <= 1'b0;
       front_valid_1_r <= 1'b0;
-      front_bus_0_r   <= {`IBUF_ENTRY_BUS_WD{1'b0}};
-      front_bus_1_r   <= {`IBUF_ENTRY_BUS_WD{1'b0}};
     end
     else if (flush)
     begin
@@ -106,8 +102,6 @@ module inst_buffer(
       cnt  <= CNT_ZERO;
       front_valid_0_r <= 1'b0;
       front_valid_1_r <= 1'b0;
-      front_bus_0_r   <= {`IBUF_ENTRY_BUS_WD{1'b0}};
-      front_bus_1_r   <= {`IBUF_ENTRY_BUS_WD{1'b0}};
     end
     else
     begin
