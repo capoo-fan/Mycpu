@@ -45,8 +45,6 @@ project/
 *.cache/
 *.hw/
 *.ip_user_files/
-# Large reference files
-CPU设计实战.pdf
 
 .DS_Store
 
@@ -60,3 +58,33 @@ CPU设计实战.pdf
 schematic
 
 Record.md
+
+*.bin
+*.o
+*.elf
+ipshared/
+*_netlist.*
+*_stub.*
+*.dcp
+*.veo
+*.vho
+*.hwh
+*.hdf
+
+thinkpad_top/thinpad_top.tmp/
+thinkpad_top/thinpad_top.cache/
+thinkpad_top/thinpad_top.hw/
+thinkpad_top/thinpad_top.ip_user_files/
+
+thinkpad_top/thinpad_top.runs/
+thinkpad_top/thinpad_top.runs/
+thinkpad_top/thinpad_top.runs/
+thinkpad_top/thinpad_top.runs/
+
+thinkpad_top/thinpad_top.sim/sim_1/behav/xsim/
+.Xil/
+*.jou
+*.log
+*.dcp
+/.lint/
+
