@@ -88,6 +88,9 @@ module ISSUE_stage(
   wire        inst_jirl_0;
   wire        inst_bl_0;
   wire        inst_b_0;
+  wire        is_cpucfg_0;
+  wire        is_cacop_0;
+  wire [ 4:0] cacop_code_0;
 
   assign {alu_op_0, imm_0, br_offs_0, jirl_offs_0,
           rf_raddr1_0, rf_raddr2_0, dest_0,
@@ -96,7 +99,8 @@ module ISSUE_stage(
           ld_byte_0, ld_half_0, ld_sign_ext_0, st_byte_0, st_half_0,
           need_rj_0, need_rkd_0, is_bj_0,
           inst_beq_0, inst_bne_0, inst_blt_0, inst_bge_0, inst_bltu_0, inst_bgeu_0,
-          inst_jirl_0, inst_bl_0, inst_b_0} = dec_bus_0;
+          inst_jirl_0, inst_bl_0, inst_b_0,
+          is_cpucfg_0, is_cacop_0, cacop_code_0} = dec_bus_0;
 
   wire [11:0] alu_op_1;
   wire [31:0] imm_1;
@@ -130,6 +134,9 @@ module ISSUE_stage(
   wire        inst_jirl_1;
   wire        inst_bl_1;
   wire        inst_b_1;
+  wire        is_cpucfg_1;
+  wire        is_cacop_1;
+  wire [ 4:0] cacop_code_1;
 
   assign {alu_op_1, imm_1, br_offs_1, jirl_offs_1,
           rf_raddr1_1, rf_raddr2_1, dest_1,
@@ -138,7 +145,8 @@ module ISSUE_stage(
           ld_byte_1, ld_half_1, ld_sign_ext_1, st_byte_1, st_half_1,
           need_rj_1, need_rkd_1, is_bj_1,
           inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1, inst_bltu_1, inst_bgeu_1,
-          inst_jirl_1, inst_bl_1, inst_b_1} = dec_bus_1;
+          inst_jirl_1, inst_bl_1, inst_b_1,
+          is_cpucfg_1, is_cacop_1, cacop_code_1} = dec_bus_1;
 
   // 拆解前递总线
   wire        es_valid_0;
@@ -339,8 +347,8 @@ module ISSUE_stage(
   wire raw_0_to_1 = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid  && (dest_0 == rf_raddr1_1)) ||
         (src1_rkd_valid && (dest_0 == rf_raddr2_1)));  // 两条指令相互依赖
-  wire mem_op_0 = res_from_mem_0 || mem_we_0;
-  wire mem_op_1 = res_from_mem_1 || mem_we_1;
+  wire mem_op_0 = res_from_mem_0 || mem_we_0 || is_cacop_0;
+  wire mem_op_1 = res_from_mem_1 || mem_we_1 || is_cacop_1;
 
   wire issue0_ok = front_valid_0 && !stall_0;
   wire issue1_ok = front_valid_1 && issue0_ok && !stall_1 &&
@@ -413,7 +421,10 @@ module ISSUE_stage(
                            ds_pred_taken_0,
                            ds_pred_target_0,
                            ds_br_op_0,
-                           ds_br_offs_0
+                           ds_br_offs_0,
+                           is_cpucfg_0,
+                           is_cacop_0,
+                           cacop_code_0
                           };
 
   assign ds_to_es_bus_1 = {ds_pc_1,
@@ -436,7 +447,10 @@ module ISSUE_stage(
                            ds_pred_taken_1,
                            ds_pred_target_1,
                            ds_br_op_1,
-                           ds_br_offs_1
+                           ds_br_offs_1,
+                           is_cpucfg_1,
+                           is_cacop_1,
+                           cacop_code_1
                           };
 
 endmodule

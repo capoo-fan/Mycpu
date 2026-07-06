@@ -63,7 +63,6 @@ module thinpad_top(
 wire cpu_clk;
 wire clk_20M;
 wire pll_locked;
-wire clk_20M;
 pll_example clock_gen 
  (
   // Clock in ports

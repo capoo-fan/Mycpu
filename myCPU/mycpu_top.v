@@ -108,6 +108,11 @@ module mycpu_top(
   wire        bpu_ex_real_taken;
   wire [31:0] bpu_ex_real_target;
 
+  // ICache 维护信号
+  wire        icacop_valid;
+  wire [ 4:0] icacop_code;
+  wire [31:0] icacop_addr;
+
   // PC 模块信号
   wire [31:0] pc_out;
   wire        pc_inst_req;
@@ -160,6 +165,9 @@ module mycpu_top(
              .bpu_pred_taken_1  (bpu_pred_taken_1),
              .bpu_pred_target_1 (bpu_pred_target_1),
              .br_taken          (br_taken),
+             .icacop_valid      (icacop_valid),
+             .icacop_code       (icacop_code),
+             .icacop_addr       (icacop_addr),
              .ibuf_allowin      (ibuf_push_ready),
              .fs_to_ds_valid_0  (if_to_ibuf_valid_0),
              .fs_to_ds_valid_1  (if_to_ibuf_valid_1),
@@ -272,6 +280,9 @@ module mycpu_top(
               .bpu_pc            (bpu_ex_pc),
               .bpu_real_taken    (bpu_ex_real_taken),
               .bpu_real_target   (bpu_ex_real_target),
+              .icacop_valid      (icacop_valid),
+              .icacop_code       (icacop_code),
+              .icacop_addr       (icacop_addr),
               .data_sram_req     (data_sram_req),
               .data_sram_wr      (data_sram_wr),
               .data_sram_size    (data_sram_size),

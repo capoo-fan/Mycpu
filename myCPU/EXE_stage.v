@@ -48,6 +48,9 @@ module EXE_stage(
   reg  [31:0] es_pred_target_0;
   reg  [ 3:0] es_br_op_0;
   reg  [31:0] es_br_offs_0;
+  reg         es_is_cpucfg_0;
+  reg         es_is_cacop_0;
+  reg  [ 4:0] es_cacop_code_0;
 
   reg         es_valid_1;
   reg  [31:0] es_pc_1;
@@ -72,6 +75,9 @@ module EXE_stage(
   reg  [31:0] es_pred_target_1;
   reg  [ 3:0] es_br_op_1;
   reg  [31:0] es_br_offs_1;
+  reg         es_is_cpucfg_1;
+  reg         es_is_cacop_1;
+  reg  [ 4:0] es_cacop_code_1;
 
   wire [31:0] ds_pc_0;
   wire [11:0] ds_alu_op_0;
@@ -94,13 +100,17 @@ module EXE_stage(
   wire [31:0] ds_pred_target_0;
   wire [ 3:0] ds_br_op_0;
   wire [31:0] ds_br_offs_0;
+  wire        ds_is_cpucfg_0;
+  wire        ds_is_cacop_0;
+  wire [ 4:0] ds_cacop_code_0;
 
   assign {ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
           ds_res_from_mem_0, ds_gr_we_0, ds_mem_we_0, ds_dest_0,
           ds_is_mul_0, ds_mul_signed_0, ds_mul_hi_0,
           ds_ld_byte_0, ds_ld_half_0, ds_ld_sign_ext_0,
           ds_st_byte_0, ds_st_half_0,
-          ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0} = ds_to_es_bus_0;
+          ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0,
+          ds_is_cpucfg_0, ds_is_cacop_0, ds_cacop_code_0} = ds_to_es_bus_0;
 
   wire [31:0] ds_pc_1;
   wire [11:0] ds_alu_op_1;
@@ -123,13 +133,17 @@ module EXE_stage(
   wire [31:0] ds_pred_target_1;
   wire [ 3:0] ds_br_op_1;
   wire [31:0] ds_br_offs_1;
+  wire        ds_is_cpucfg_1;
+  wire        ds_is_cacop_1;
+  wire [ 4:0] ds_cacop_code_1;
 
   assign {ds_pc_1, ds_alu_op_1, ds_alu_src1_1, ds_alu_src2_1, ds_rkd_value_1,
           ds_res_from_mem_1, ds_gr_we_1, ds_mem_we_1, ds_dest_1,
           ds_is_mul_1, ds_mul_signed_1, ds_mul_hi_1,
           ds_ld_byte_1, ds_ld_half_1, ds_ld_sign_ext_1,
           ds_st_byte_1, ds_st_half_1,
-          ds_pred_taken_1, ds_pred_target_1, ds_br_op_1, ds_br_offs_1} = ds_to_es_bus_1;
+          ds_pred_taken_1, ds_pred_target_1, ds_br_op_1, ds_br_offs_1,
+          ds_is_cpucfg_1, ds_is_cacop_1, ds_cacop_code_1} = ds_to_es_bus_1;
 
   localparam [2:0] MUL_LATENCY = 3'd3;
 
@@ -147,8 +161,30 @@ module EXE_stage(
   wire [31:0] alu_result_1;
   wire [63:0] mul_product_1;
 
-  wire [31:0] es_final_result_0 = es_is_mul_0 ? (es_mul_hi_0 ? mul_product_0[63:32] : mul_product_0[31:0]) : alu_result_0;
-  wire [31:0] es_final_result_1 = es_is_mul_1 ? (es_mul_hi_1 ? mul_product_1[63:32] : mul_product_1[31:0]) : alu_result_1;
+  function [31:0] cpucfg_result;
+    input [31:0] index;
+    begin
+      case (index)
+        32'h00000000:
+          cpucfg_result = 32'h00000000;
+        32'h00000001:
+          cpucfg_result = 32'h0001f1f0;
+        32'h00000010:
+          cpucfg_result = 32'h00000001;
+        32'h00000011:
+          cpucfg_result = 32'h04030001;
+        default:
+          cpucfg_result = 32'h00000000;
+      endcase
+    end
+  endfunction
+
+  wire [31:0] es_mul_result_0 = es_mul_hi_0 ? mul_product_0[63:32] : mul_product_0[31:0];
+  wire [31:0] es_mul_result_1 = es_mul_hi_1 ? mul_product_1[63:32] : mul_product_1[31:0];
+  wire [31:0] es_final_result_0 = es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) :
+       es_is_mul_0 ? es_mul_result_0 : alu_result_0;
+  wire [31:0] es_final_result_1 = es_is_cpucfg_1 ? cpucfg_result(es_alu_src1_1) :
+       es_is_mul_1 ? es_mul_result_1 : alu_result_1;
 
   wire        es_is_bj_0;
   wire        es_real_taken_0;
@@ -229,7 +265,9 @@ module EXE_stage(
                            es_real_taken_0,
                            es_real_target_0,
                            es_next_pc_0,
-                           es_redirect_miss_0
+                           es_redirect_miss_0,
+                           es_is_cacop_0,
+                           es_cacop_code_0
                           };
 
   assign es_to_ms_bus_1 = {es_pc_1,
@@ -250,7 +288,9 @@ module EXE_stage(
                            es_real_taken_1,
                            es_real_target_1,
                            es_next_pc_1,
-                           es_redirect_miss_1
+                           es_redirect_miss_1,
+                           es_is_cacop_1,
+                           es_cacop_code_1
                           };
 
   always @(posedge clk)
@@ -297,6 +337,9 @@ module EXE_stage(
       es_pred_target_0  <= 32'b0;
       es_br_op_0        <= `BR_NONE;
       es_br_offs_0      <= 32'b0;
+      es_is_cpucfg_0    <= 1'b0;
+      es_is_cacop_0     <= 1'b0;
+      es_cacop_code_0   <= 5'b0;
 
       es_pc_1           <= 32'b0;
       es_gr_we_1        <= 1'b0;
@@ -319,6 +362,9 @@ module EXE_stage(
       es_pred_target_1  <= 32'b0;
       es_br_op_1        <= `BR_NONE;
       es_br_offs_1      <= 32'b0;
+      es_is_cpucfg_1    <= 1'b0;
+      es_is_cacop_1     <= 1'b0;
+      es_cacop_code_1   <= 5'b0;
     end
     else if (flush)
     begin
@@ -327,11 +373,15 @@ module EXE_stage(
       es_res_from_mem_0 <= 1'b0;
       es_is_mul_0       <= 1'b0;
       es_br_op_0        <= `BR_NONE;
+      es_is_cpucfg_0    <= 1'b0;
+      es_is_cacop_0     <= 1'b0;
       es_gr_we_1        <= 1'b0;
       es_mem_we_1       <= 1'b0;
       es_res_from_mem_1 <= 1'b0;
       es_is_mul_1       <= 1'b0;
       es_br_op_1        <= `BR_NONE;
+      es_is_cpucfg_1    <= 1'b0;
+      es_is_cacop_1     <= 1'b0;
     end
     else if (es_allowin)
     begin
@@ -358,6 +408,9 @@ module EXE_stage(
         es_pred_target_0  <= ds_pred_target_0;
         es_br_op_0        <= ds_br_op_0;
         es_br_offs_0      <= ds_br_offs_0;
+        es_is_cpucfg_0    <= ds_is_cpucfg_0;
+        es_is_cacop_0     <= ds_is_cacop_0;
+        es_cacop_code_0   <= ds_cacop_code_0;
       end
       else
       begin
@@ -366,6 +419,8 @@ module EXE_stage(
         es_res_from_mem_0 <= 1'b0;
         es_is_mul_0       <= 1'b0;
         es_br_op_0        <= `BR_NONE;
+        es_is_cpucfg_0    <= 1'b0;
+        es_is_cacop_0     <= 1'b0;
       end
 
       if (ds_to_es_valid_1)
@@ -391,6 +446,9 @@ module EXE_stage(
         es_pred_target_1  <= ds_pred_target_1;
         es_br_op_1        <= ds_br_op_1;
         es_br_offs_1      <= ds_br_offs_1;
+        es_is_cpucfg_1    <= ds_is_cpucfg_1;
+        es_is_cacop_1     <= ds_is_cacop_1;
+        es_cacop_code_1   <= ds_cacop_code_1;
       end
       else
       begin
@@ -399,6 +457,8 @@ module EXE_stage(
         es_res_from_mem_1 <= 1'b0;
         es_is_mul_1       <= 1'b0;
         es_br_op_1        <= `BR_NONE;
+        es_is_cpucfg_1    <= 1'b0;
+        es_is_cacop_1     <= 1'b0;
       end
     end
   end

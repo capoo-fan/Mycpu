@@ -13,6 +13,10 @@ module IF_stage(
     input  wire [31:0] bpu_pred_target_1,
     // 分支冲刷
     input  wire        br_taken,
+    // ICache 维护
+    input  wire        icacop_valid,
+    input  wire [ 4:0] icacop_code,
+    input  wire [31:0] icacop_addr,
     // IBUF 接收握手
     input  wire        ibuf_allowin,
     output wire        fs_to_ds_valid_0,
@@ -308,6 +312,21 @@ module IF_stage(
   assign rd_addr = {s2_addr[31:4], 4'b0000};
 
   wire lfsr_feedback = lfsr[7] ^ lfsr[5] ^ lfsr[4] ^ lfsr[3];
+  wire        icacop_is_icache = icacop_valid && (icacop_code[2:0] == 3'b000);
+  wire        icacop_direct    = icacop_is_icache &&
+       ((icacop_code[4:3] == 2'b00) || (icacop_code[4:3] == 2'b01));
+  wire        icacop_hit       = icacop_is_icache && (icacop_code[4:3] == 2'b10);
+  wire        icacop_way       = icacop_addr[0];
+  wire [2:0]  icacop_index     = icacop_addr[6:4];
+  wire [24:0] icacop_tag       = icacop_addr[31:7];
+  wire        refill_hits_icacop =
+       (state == FSM_RECOVERY) && (s2_index == icacop_index) && (s2_tag == icacop_tag);
+  wire        icacop_hit_way0 =
+       (cache_valid[0][icacop_index] && (cache_tag[0][icacop_index] == icacop_tag)) ||
+       (refill_hits_icacop && !miss_replace_way);
+  wire        icacop_hit_way1 =
+       (cache_valid[1][icacop_index] && (cache_tag[1][icacop_index] == icacop_tag)) ||
+       (refill_hits_icacop &&  miss_replace_way);
 
   // Miss FSM 与 Cache 管理
   always @(posedge clk)
@@ -373,6 +392,16 @@ module IF_stage(
         cache_tag[miss_replace_way][s2_index]   <= s2_tag;
         cache_data[miss_replace_way][s2_index]  <= refill_line;
         refill_data_reg <= refill_line;
+      end
+
+      if (icacop_direct)
+        cache_valid[icacop_way][icacop_index] <= 1'b0;
+      else if (icacop_hit)
+      begin
+        if (icacop_hit_way0)
+          cache_valid[0][icacop_index] <= 1'b0;
+        if (icacop_hit_way1)
+          cache_valid[1][icacop_index] <= 1'b0;
       end
     end
   end
