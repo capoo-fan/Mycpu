@@ -54,11 +54,9 @@ module thinpad_top(
     output wire        video_de
 );
 
-`ifdef SYNTHESIS
-    localparam integer CPU_CLK_FREQ = 155000000;
-`else
-    localparam integer CPU_CLK_FREQ = 50000000;
-`endif
+
+localparam integer CPU_CLK_FREQ = 151000000;
+
 
 wire cpu_clk;
 wire clk_20M;

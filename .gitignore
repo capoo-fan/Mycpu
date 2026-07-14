@@ -88,3 +88,4 @@ thinkpad_top/thinpad_top.sim/sim_1/behav/xsim/
 *.dcp
 /.lint/
 
+xilinx_ip/
