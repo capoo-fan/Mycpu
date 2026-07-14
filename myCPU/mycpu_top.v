@@ -93,6 +93,25 @@ module mycpu_top(
   wire        br_taken;
   wire [31:0] br_target;
 
+  // CSR 提交、串行化与流水线冲刷
+  wire        es_csr_busy;
+  wire        ms_csr_busy;
+  wire        ws_csr_busy;
+  wire        csr_inflight = es_csr_busy || ms_csr_busy || ws_csr_busy;
+  wire [13:0] csr_raddr;
+  wire [31:0] csr_rdata;
+  wire        csr_we;
+  wire [13:0] csr_waddr;
+  wire [31:0] csr_wmask;
+  wire [31:0] csr_wdata;
+  wire [31:0] csr_crmd;
+  wire [31:0] csr_dmw0;
+  wire [31:0] csr_dmw1;
+  wire        csr_flush;
+  wire [31:0] csr_flush_target;
+  wire        pipeline_flush = csr_flush || br_taken;
+  wire [31:0] pipeline_flush_target = csr_flush ? csr_flush_target : br_target;
+
   // BPU 预测与训练信号
   wire        bpu_pred_taken;
   wire [31:0] bpu_pred_target;
@@ -112,9 +131,12 @@ module mycpu_top(
   wire        icacop_valid;
   wire [ 4:0] icacop_code;
   wire [31:0] icacop_addr;
+  wire [31:0] icacop_paddr;
 
   // PC 模块信号
   wire [31:0] pc_out;
+  wire [31:0] pc_paddr;
+  wire [31:0] data_sram_vaddr;
   wire        pc_inst_req;
   wire        if_suspend;
   wire        pc_cross_line = (pc_out[3:2] == 2'b11);
@@ -126,11 +148,49 @@ module mycpu_top(
   assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
   assign bpu_pred_target_1 = bpu_pred_target;
 
+  csr u_csr(
+        .clk    (clk),
+        .resetn (resetn),
+        .raddr  (csr_raddr),
+        .rdata  (csr_rdata),
+        .we     (csr_we),
+        .waddr  (csr_waddr),
+        .wmask  (csr_wmask),
+        .wdata  (csr_wdata),
+        .crmd   (csr_crmd),
+        .dmw0   (csr_dmw0),
+        .dmw1   (csr_dmw1)
+      );
+
+  addr_translate u_inst_addr_translate(
+                   .vaddr (pc_out),
+                   .crmd  (csr_crmd),
+                   .dmw0  (csr_dmw0),
+                   .dmw1  (csr_dmw1),
+                   .paddr (pc_paddr)
+                 );
+
+  addr_translate u_icacop_addr_translate(
+                   .vaddr (icacop_addr),
+                   .crmd  (csr_crmd),
+                   .dmw0  (csr_dmw0),
+                   .dmw1  (csr_dmw1),
+                   .paddr (icacop_paddr)
+                 );
+
+  addr_translate u_data_addr_translate(
+                   .vaddr (data_sram_vaddr),
+                   .crmd  (csr_crmd),
+                   .dmw0  (csr_dmw0),
+                   .dmw1  (csr_dmw1),
+                   .paddr (data_sram_addr)
+                 );
+
   PC u_pc(
        .clk      (clk),
        .resetn   (resetn),
-       .flush    (br_taken),
-       .flush_pc (br_target),
+       .flush    (pipeline_flush),
+       .flush_pc (pipeline_flush_target),
        .suspend  (if_suspend),
        .din      (pc_next),
        .pc       (pc_out),
@@ -160,14 +220,15 @@ module mycpu_top(
              .resetn            (resetn),
              .pc_inst_req       (pc_inst_req),
              .pc                (pc_out),
+             .pc_paddr          (pc_paddr),
              .bpu_pred_taken_0  (bpu_pred_taken_0),
              .bpu_pred_target_0 (bpu_pred_target_0),
              .bpu_pred_taken_1  (bpu_pred_taken_1),
              .bpu_pred_target_1 (bpu_pred_target_1),
-             .br_taken          (br_taken),
+             .br_taken          (pipeline_flush),
              .icacop_valid      (icacop_valid),
              .icacop_code       (icacop_code),
-             .icacop_addr       (icacop_addr),
+             .icacop_addr       (icacop_paddr),
              .ibuf_allowin      (ibuf_push_ready),
              .fs_to_ds_valid_0  (if_to_ibuf_valid_0),
              .fs_to_ds_valid_1  (if_to_ibuf_valid_1),
@@ -185,7 +246,7 @@ module mycpu_top(
   inst_buffer u_inst_buffer(
                 .clk           (clk),
                 .resetn        (resetn),
-                .flush         (br_taken),
+                .flush         (pipeline_flush),
                 .push_valid_0  (if_to_ibuf_valid_0),
                 .push_bus_0    (if_to_ibuf_bus_0),
                 .push_valid_1  (if_to_ibuf_valid_1),
@@ -209,7 +270,8 @@ module mycpu_top(
                 .front_bus_1      (ibuf_front_bus_1),
                 .pop_0            (issue_pop_0),
                 .pop_1            (issue_pop_1),
-                .br_taken         (br_taken),
+                .br_taken         (pipeline_flush),
+                .csr_inflight     (csr_inflight),
                 .es_allowin       (es_allowin),
                 .es_fwd_bus_0     (es_fwd_bus_0),
                 .es_fwd_bus_1     (es_fwd_bus_1),
@@ -238,7 +300,7 @@ module mycpu_top(
               .ds_to_es_valid_1 (ds_to_es_valid_1),
               .ds_to_es_bus_0   (ds_to_es_bus_0),
               .ds_to_es_bus_1   (ds_to_es_bus_1),
-              .flush            (br_taken),
+              .flush            (pipeline_flush),
               .ms_allowin       (ms_allowin),
               .es_allowin       (es_allowin),
               .es_to_ms_valid_0 (es_to_ms_valid_0),
@@ -250,7 +312,10 @@ module mycpu_top(
               .es_wait_valid_0  (es_wait_valid_0),
               .es_wait_dest_0   (es_wait_dest_0),
               .es_wait_valid_1  (es_wait_valid_1),
-              .es_wait_dest_1   (es_wait_dest_1)
+              .es_wait_dest_1   (es_wait_dest_1),
+              .csr_busy         (es_csr_busy),
+              .csr_raddr        (csr_raddr),
+              .csr_rdata        (csr_rdata)
             );
 
   // MEM stage
@@ -273,6 +338,7 @@ module mycpu_top(
               .ms_wait_dest_0    (ms_wait_dest_0),
               .ms_wait_valid_1   (ms_wait_valid_1),
               .ms_wait_dest_1    (ms_wait_dest_1),
+              .csr_busy          (ms_csr_busy),
               .br_taken          (br_taken),
               .br_target         (br_target),
               .bpu_valid         (bpu_ex_valid),
@@ -287,7 +353,7 @@ module mycpu_top(
               .data_sram_wr      (data_sram_wr),
               .data_sram_size    (data_sram_size),
               .data_sram_wstrb   (data_sram_wstrb),
-              .data_sram_addr    (data_sram_addr),
+              .data_sram_addr    (data_sram_vaddr),
               .data_sram_wdata   (data_sram_wdata),
               .data_sram_addr_ok (data_sram_addr_ok),
               .data_sram_data_ok (data_sram_data_ok),
@@ -304,6 +370,13 @@ module mycpu_top(
              .ms_to_ws_bus_1     (ms_to_ws_bus_1),
              .ws_allowin         (ws_allowin),
              .ws_to_rf_bus       (ws_to_rf_bus),
+             .csr_busy           (ws_csr_busy),
+             .csr_we             (csr_we),
+             .csr_waddr          (csr_waddr),
+             .csr_wmask          (csr_wmask),
+             .csr_wdata          (csr_wdata),
+             .csr_flush          (csr_flush),
+             .csr_flush_target   (csr_flush_target),
              .debug_wb_pc        (debug_wb_pc),
              .debug_wb_rf_we     (debug_wb_rf_we),
              .debug_wb_rf_wnum   (debug_wb_rf_wnum),

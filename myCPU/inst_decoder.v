@@ -38,6 +38,7 @@ module inst_decoder(
   wire inst_st_b, inst_st_h;
   wire inst_mul_w, inst_mulh_w, inst_mulh_wu;
   wire inst_cpucfg, inst_cacop;
+  wire inst_csrwr, inst_csrxchg;
 
   // ALU 指令译码
   assign inst_add_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00];
@@ -84,6 +85,9 @@ module inst_decoder(
   assign inst_st_h = op_31_26_d[6'h0a] & op_25_22_d[4'h5];
   assign inst_cpucfg = (inst[31:15] == 17'b0) & (rk == 5'h1b);
   assign inst_cacop  = op_31_26_d[6'h01] & op_25_22_d[4'h8];
+  assign inst_csrwr   = (inst[31:24] == 8'h04) && (rj == 5'd1);
+  assign inst_csrxchg = (inst[31:24] == 8'h04) &&
+       (rj != 5'd0) && (rj != 5'd1);
 
   // 找出未知指令
   wire inst_known = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
@@ -98,7 +102,7 @@ module inst_decoder(
        inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
        inst_st_b | inst_st_h |
        inst_mul_w | inst_mulh_w | inst_mulh_wu |
-       inst_cpucfg | inst_cacop;
+       inst_cpucfg | inst_cacop | inst_csrwr | inst_csrxchg;
 
   wire is_mul      = inst_mul_w | inst_mulh_w | inst_mulh_wu;
   wire mul_signed  = inst_mul_w | inst_mulh_w;
@@ -160,15 +164,18 @@ module inst_decoder(
   assign alu_op[11] = inst_lu12i_w;
 
   wire [ 4:0] rf_raddr1 = rj;
-  wire [ 4:0] rf_raddr2 = src_reg_is_rd ? rd : rk;
+  wire is_csr = inst_csrwr | inst_csrxchg;
+  wire [13:0] csr_num = inst[23:10];
+  wire [ 4:0] rf_raddr2 = (src_reg_is_rd | is_csr) ? rd : rk;
 
-  wire ds_need_rj  = ~inst_b & ~inst_bl & ~inst_lu12i_w & ~inst_pcaddu12i;
+  wire ds_need_rj  = ~inst_b & ~inst_bl & ~inst_lu12i_w &
+       ~inst_pcaddu12i & ~inst_csrwr;
   wire ds_need_rkd = inst_beq | inst_bne | inst_st_w |
        inst_blt | inst_bge | inst_bltu | inst_bgeu | inst_st_b | inst_st_h |
        inst_add_w | inst_sub_w | inst_slt | inst_sltu |
        inst_nor | inst_and | inst_or | inst_xor |
        inst_sll_w | inst_srl_w | inst_sra_w |
-       inst_mul_w | inst_mulh_w | inst_mulh_wu;
+       inst_mul_w | inst_mulh_w | inst_mulh_wu | is_csr;
 
   wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
        inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
@@ -182,7 +189,8 @@ module inst_decoder(
     ds_need_rj, ds_need_rkd, ds_is_bj,
     inst_beq, inst_bne, inst_blt, inst_bge, inst_bltu, inst_bgeu,
     inst_jirl, inst_bl, inst_b,
-    inst_cpucfg, inst_cacop, cacop_code
+    inst_cpucfg, inst_cacop, cacop_code,
+    is_csr, inst_csrxchg, csr_num
   };
 
   decoder_6_64 u_dec0 (.in(op_31_26), .out(op_31_26_d));

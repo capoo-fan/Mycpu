@@ -5,15 +5,15 @@
 
 `define FS_TO_DS_BUS_WD 97
 
-`define DS_DEC_BUS_WD   155
+`define DS_DEC_BUS_WD   171
 
 `define IBUF_ENTRY_BUS_WD (`FS_TO_DS_BUS_WD + `DS_DEC_BUS_WD)
 
-`define DS_TO_ES_BUS_WD 232
+`define DS_TO_ES_BUS_WD 311
 
-`define ES_TO_MS_BUS_WD 215
+`define ES_TO_MS_BUS_WD 294
 
-`define MS_TO_WS_BUS_WD 106
+`define MS_TO_WS_BUS_WD 185
 
 `define WS_TO_RF_BUS_WD 76
 

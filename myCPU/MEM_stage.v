@@ -19,6 +19,7 @@ module MEM_stage(
     output wire [ 4:0]                  ms_wait_dest_0,
     output wire                         ms_wait_valid_1,
     output wire [ 4:0]                  ms_wait_dest_1,
+    output wire                         csr_busy,
     output wire                         br_taken,
     output wire [31:0]                  br_target,
     output wire                         bpu_valid,
@@ -66,6 +67,10 @@ module MEM_stage(
   reg         ms_redirect_miss_0;
   reg         ms_is_cacop_0;
   reg  [ 4:0] ms_cacop_code_0;
+  reg         ms_is_csr_0;
+  reg  [13:0] ms_csr_num_0;
+  reg  [31:0] ms_csr_wmask_0;
+  reg  [31:0] ms_csr_wvalue_0;
 
   reg         ms_valid_1;
   reg  [31:0] ms_pc_1;
@@ -89,6 +94,10 @@ module MEM_stage(
   reg         ms_redirect_miss_1;
   reg         ms_is_cacop_1;
   reg  [ 4:0] ms_cacop_code_1;
+  reg         ms_is_csr_1;
+  reg  [13:0] ms_csr_num_1;
+  reg  [31:0] ms_csr_wmask_1;
+  reg  [31:0] ms_csr_wvalue_1;
 
   wire [31:0] es_pc_0;
   wire [31:0] es_final_result_0;
@@ -111,6 +120,10 @@ module MEM_stage(
   wire        es_redirect_miss_0;
   wire        es_is_cacop_0;
   wire [ 4:0] es_cacop_code_0;
+  wire        es_is_csr_0;
+  wire [13:0] es_csr_num_0;
+  wire [31:0] es_csr_wmask_0;
+  wire [31:0] es_csr_wvalue_0;
 
   assign {es_pc_0, es_final_result_0, es_rkd_value_0,
           es_res_from_mem_0, es_gr_we_0, es_mem_we_0, es_dest_0,
@@ -119,7 +132,9 @@ module MEM_stage(
           es_pred_taken_0, es_pred_target_0,
           es_is_bj_0, es_real_taken_0, es_real_target_0,
           es_next_pc_0, es_redirect_miss_0,
-          es_is_cacop_0, es_cacop_code_0} = es_to_ms_bus_0;
+          es_is_cacop_0, es_cacop_code_0,
+          es_is_csr_0, es_csr_num_0, es_csr_wmask_0,
+          es_csr_wvalue_0} = es_to_ms_bus_0;
 
   wire [31:0] es_pc_1;
   wire [31:0] es_final_result_1;
@@ -142,6 +157,10 @@ module MEM_stage(
   wire        es_redirect_miss_1;
   wire        es_is_cacop_1;
   wire [ 4:0] es_cacop_code_1;
+  wire        es_is_csr_1;
+  wire [13:0] es_csr_num_1;
+  wire [31:0] es_csr_wmask_1;
+  wire [31:0] es_csr_wvalue_1;
 
   assign {es_pc_1, es_final_result_1, es_rkd_value_1,
           es_res_from_mem_1, es_gr_we_1, es_mem_we_1, es_dest_1,
@@ -150,7 +169,11 @@ module MEM_stage(
           es_pred_taken_1, es_pred_target_1,
           es_is_bj_1, es_real_taken_1, es_real_target_1,
           es_next_pc_1, es_redirect_miss_1,
-          es_is_cacop_1, es_cacop_code_1} = es_to_ms_bus_1;
+          es_is_cacop_1, es_cacop_code_1,
+          es_is_csr_1, es_csr_num_1, es_csr_wmask_1,
+          es_csr_wvalue_1} = es_to_ms_bus_1;
+
+  assign csr_busy = ms_valid_0 && ms_is_csr_0;
 
   wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0; // 分支预测错误，刷掉 lane1 的指令
 
@@ -283,7 +306,11 @@ module MEM_stage(
                            ms_ld_byte_0,
                            ms_ld_half_0,
                            ms_ld_sign_ext_0,
-                           ms_final_rdata
+                           ms_final_rdata,
+                           ms_is_csr_0,
+                           ms_csr_num_0,
+                           ms_csr_wmask_0,
+                           ms_csr_wvalue_0
                           };
 
   assign ms_to_ws_bus_1 = {ms_pc_1,
@@ -294,7 +321,11 @@ module MEM_stage(
                            ms_ld_byte_1,
                            ms_ld_half_1,
                            ms_ld_sign_ext_1,
-                           ms_final_rdata
+                           ms_final_rdata,
+                           ms_is_csr_1,
+                           ms_csr_num_1,
+                           ms_csr_wmask_1,
+                           ms_csr_wvalue_1
                           };
 
   always @(posedge clk)
@@ -377,6 +408,10 @@ module MEM_stage(
       ms_redirect_miss_0 <= 1'b0;
       ms_is_cacop_0     <= 1'b0;
       ms_cacop_code_0   <= 5'b0;
+      ms_is_csr_0       <= 1'b0;
+      ms_csr_num_0      <= 14'b0;
+      ms_csr_wmask_0    <= 32'b0;
+      ms_csr_wvalue_0   <= 32'b0;
 
       ms_pc_1           <= 32'b0;
       ms_gr_we_1        <= 1'b0;
@@ -399,6 +434,10 @@ module MEM_stage(
       ms_redirect_miss_1 <= 1'b0;
       ms_is_cacop_1     <= 1'b0;
       ms_cacop_code_1   <= 5'b0;
+      ms_is_csr_1       <= 1'b0;
+      ms_csr_num_1      <= 14'b0;
+      ms_csr_wmask_1    <= 32'b0;
+      ms_csr_wvalue_1   <= 32'b0;
     end
     else if (br_taken)
     begin
@@ -440,6 +479,10 @@ module MEM_stage(
         ms_redirect_miss_0 <= es_redirect_miss_0;
         ms_is_cacop_0     <= es_is_cacop_0;
         ms_cacop_code_0   <= es_cacop_code_0;
+        ms_is_csr_0       <= es_is_csr_0;
+        ms_csr_num_0      <= es_csr_num_0;
+        ms_csr_wmask_0    <= es_csr_wmask_0;
+        ms_csr_wvalue_0   <= es_csr_wvalue_0;
       end
       else
       begin
@@ -449,6 +492,7 @@ module MEM_stage(
         ms_is_bj_0        <= 1'b0;
         ms_redirect_miss_0 <= 1'b0;
         ms_is_cacop_0     <= 1'b0;
+        ms_is_csr_0       <= 1'b0;
       end
 
       if (es_to_ms_valid_1)
@@ -474,6 +518,10 @@ module MEM_stage(
         ms_redirect_miss_1 <= es_redirect_miss_1;
         ms_is_cacop_1     <= es_is_cacop_1;
         ms_cacop_code_1   <= es_cacop_code_1;
+        ms_is_csr_1       <= es_is_csr_1;
+        ms_csr_num_1      <= es_csr_num_1;
+        ms_csr_wmask_1    <= es_csr_wmask_1;
+        ms_csr_wvalue_1   <= es_csr_wvalue_1;
       end
       else
       begin
@@ -483,6 +531,7 @@ module MEM_stage(
         ms_is_bj_1        <= 1'b0;
         ms_redirect_miss_1 <= 1'b0;
         ms_is_cacop_1     <= 1'b0;
+        ms_is_csr_1       <= 1'b0;
       end
     end
   end

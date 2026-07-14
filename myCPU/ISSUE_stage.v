@@ -11,6 +11,7 @@ module ISSUE_stage(
     output wire                           pop_0,
     output wire                           pop_1,
     input  wire                           br_taken,
+    input  wire                           csr_inflight,
 
     input  wire                           es_allowin,
     // 前递信息
@@ -91,6 +92,9 @@ module ISSUE_stage(
   wire        is_cpucfg_0;
   wire        is_cacop_0;
   wire [ 4:0] cacop_code_0;
+  wire        is_csr_0;
+  wire        is_csrxchg_0;
+  wire [13:0] csr_num_0;
 
   assign {alu_op_0, imm_0, br_offs_0, jirl_offs_0,
           rf_raddr1_0, rf_raddr2_0, dest_0,
@@ -100,7 +104,8 @@ module ISSUE_stage(
           need_rj_0, need_rkd_0, is_bj_0,
           inst_beq_0, inst_bne_0, inst_blt_0, inst_bge_0, inst_bltu_0, inst_bgeu_0,
           inst_jirl_0, inst_bl_0, inst_b_0,
-          is_cpucfg_0, is_cacop_0, cacop_code_0} = dec_bus_0;
+          is_cpucfg_0, is_cacop_0, cacop_code_0,
+          is_csr_0, is_csrxchg_0, csr_num_0} = dec_bus_0;
 
   wire [11:0] alu_op_1;
   wire [31:0] imm_1;
@@ -137,6 +142,9 @@ module ISSUE_stage(
   wire        is_cpucfg_1;
   wire        is_cacop_1;
   wire [ 4:0] cacop_code_1;
+  wire        is_csr_1;
+  wire        is_csrxchg_1;
+  wire [13:0] csr_num_1;
 
   assign {alu_op_1, imm_1, br_offs_1, jirl_offs_1,
           rf_raddr1_1, rf_raddr2_1, dest_1,
@@ -146,7 +154,8 @@ module ISSUE_stage(
           need_rj_1, need_rkd_1, is_bj_1,
           inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1, inst_bltu_1, inst_bgeu_1,
           inst_jirl_1, inst_bl_1, inst_b_1,
-          is_cpucfg_1, is_cacop_1, cacop_code_1} = dec_bus_1;
+          is_cpucfg_1, is_cacop_1, cacop_code_1,
+          is_csr_1, is_csrxchg_1, csr_num_1} = dec_bus_1;
 
   // 拆解前递总线
   wire        es_valid_0;
@@ -350,10 +359,11 @@ module ISSUE_stage(
   wire mem_op_0 = res_from_mem_0 || mem_we_0 || is_cacop_0;
   wire mem_op_1 = res_from_mem_1 || mem_we_1 || is_cacop_1;
 
-  wire issue0_ok = front_valid_0 && !stall_0;
+  wire issue0_ok = front_valid_0 && !stall_0 && !csr_inflight;
   wire issue1_ok = front_valid_1 && issue0_ok && !stall_1 &&
        !raw_0_to_1 && !(mem_op_0 && mem_op_1) &&
-       !(is_bj_0 && is_bj_1); //指令有依赖，都是内存操作，都是跳转指令都不能发出第二条
+       !(is_bj_0 && is_bj_1) && !is_csr_0 && !is_csr_1;
+       // 指令有依赖、都是内存操作、都是跳转指令或包含 CSR 时不能发出第二条
 
   assign ds_to_es_valid_0 = es_allowin && !br_taken && issue0_ok;
   assign ds_to_es_valid_1 = es_allowin && !br_taken && issue1_ok;
@@ -367,6 +377,11 @@ module ISSUE_stage(
   wire [31:0] ds_alu_src1_1 = src1_is_pc_1  ? ds_pc_1 : rj_value_1;
   wire [31:0] ds_alu_src2_1 = src2_is_imm_1 ? imm_1   : rkd_value_1;
   wire [31:0] ds_rkd_value_1 = inst_jirl_1 ? rj_value_1 : rkd_value_1;
+
+  wire [31:0] csr_wmask_0  = is_csrxchg_0 ? rj_value_0 : 32'hffff_ffff;
+  wire [31:0] csr_wvalue_0 = rkd_value_0;
+  wire [31:0] csr_wmask_1  = is_csrxchg_1 ? rj_value_1 : 32'hffff_ffff;
+  wire [31:0] csr_wvalue_1 = rkd_value_1;
 
   function [3:0] make_br_op;
     input inst_beq;
@@ -424,7 +439,11 @@ module ISSUE_stage(
                            ds_br_offs_0,
                            is_cpucfg_0,
                            is_cacop_0,
-                           cacop_code_0
+                           cacop_code_0,
+                           is_csr_0,
+                           csr_num_0,
+                           csr_wmask_0,
+                           csr_wvalue_0
                           };
 
   assign ds_to_es_bus_1 = {ds_pc_1,
@@ -450,7 +469,11 @@ module ISSUE_stage(
                            ds_br_offs_1,
                            is_cpucfg_1,
                            is_cacop_1,
-                           cacop_code_1
+                           cacop_code_1,
+                           is_csr_1,
+                           csr_num_1,
+                           csr_wmask_1,
+                           csr_wvalue_1
                           };
 
 endmodule

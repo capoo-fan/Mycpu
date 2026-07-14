@@ -16,7 +16,7 @@ iverilog: $(IVERILOG_OUT)
 $(IVERILOG_OUT):
 	mkdir -p $(IVERILOG_DIR) && iverilog -g2005-sv -Wall -o $(IVERILOG_OUT) \
 		$(MYCPU_DIR)/*.v $(RTL_DIR)/*.v $(RTL_DIR)/*/*.v \
-		$(MAKEFILE_DIR)/sync_ram.v $(MAKEFILE_DIR)/mycpu_tb.v \
+		$(MAKEFILE_DIR)/sync_ram.v $(MAKEFILE_DIR)/mycpu_tb.v -s tb_top \
 		-I $(MYCPU_DIR)
 
 clean:

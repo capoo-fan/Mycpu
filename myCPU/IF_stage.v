@@ -6,6 +6,7 @@ module IF_stage(
     // PC 接口
     input  wire        pc_inst_req,
     input  wire [31:0] pc,
+    input  wire [31:0] pc_paddr,
     // BPU 预测
     input  wire        bpu_pred_taken_0,
     input  wire [31:0] bpu_pred_target_0,
@@ -39,18 +40,20 @@ module IF_stage(
 
   // IF0 分支预测并取指
   wire        s0_valid          = pc_inst_req;
-  wire [31:0] s0_addr           = pc;
+  wire [31:0] s0_vaddr          = pc;
+  wire [31:0] s0_paddr          = pc_paddr;
   wire        s0_pred_taken_0   = bpu_pred_taken_0;
   wire [31:0] s0_pred_target_0  = bpu_pred_target_0;
   wire        s0_pred_taken_1   = bpu_pred_taken_1;
   wire [31:0] s0_pred_target_1  = bpu_pred_target_1;
-  wire [2:0]  s0_index          = s0_addr[6:4];
-  wire [24:0] s0_tag            = s0_addr[31:7];
-  wire [1:0]  s0_offset_word    = s0_addr[3:2];
+  wire [2:0]  s0_index          = s0_paddr[6:4];
+  wire [24:0] s0_tag            = s0_paddr[31:7];
+  wire [1:0]  s0_offset_word    = s0_paddr[3:2];
 
   // S1 本周期返回缓存行数据和存储的 Tag 并判断是否命中
   reg         s1_valid;
-  reg [31:0]  s1_addr;
+  reg [31:0]  s1_vaddr;
+  reg [31:0]  s1_paddr;
   reg         s1_pred_taken_0;
   reg [31:0]  s1_pred_target_0;
   reg         s1_pred_taken_1;
@@ -76,15 +79,16 @@ module IF_stage(
   reg         s2_hit;
   reg         s2_hit_way;
   reg [127:0] s2_line_data;
-  reg [31:0]  s2_addr;
+  reg [31:0]  s2_vaddr;
+  reg [31:0]  s2_paddr;
   reg         s2_pred_taken_0;
   reg [31:0]  s2_pred_target_0;
   reg         s2_pred_taken_1;
   reg [31:0]  s2_pred_target_1;
   reg [1:0]   s2_offset_word;
 
-  wire [2:0]  s2_index = s2_addr[6:4];
-  wire [24:0] s2_tag   = s2_addr[31:7];
+  wire [2:0]  s2_index = s2_paddr[6:4];
+  wire [24:0] s2_tag   = s2_paddr[31:7];
 
   // 从 128bit 行中提取 32bit 字
   function [31:0] extract_word;
@@ -123,7 +127,7 @@ module IF_stage(
   wire [127:0] s2_effective_line   = (state == FSM_DONE) ? refill_data_reg : s2_line_data;
   wire [31:0]  s2_effective_inst_0 = extract_word(s2_effective_line, s2_offset_word);
   wire [31:0]  s2_effective_inst_1 = extract_word(s2_effective_line, s2_offset_word + 2'b01);
-  wire [31:0]  s2_pc_1             = s2_addr + 32'h4;
+  wire [31:0]  s2_pc_1             = s2_vaddr + 32'h4;
   wire         s2_can_take_two     = (s2_offset_word != 2'b11) && !s2_pred_taken_0; //跨 cache line 或 slot0预测跳转的时候不取第二条
 
   // S3 缓存行数据对齐后发送给 IBUF
@@ -201,7 +205,8 @@ module IF_stage(
   begin
     if (reset)
     begin
-      s1_addr          <= 32'b0;
+      s1_vaddr         <= 32'b0;
+      s1_paddr         <= 32'b0;
       s1_pred_taken_0  <= 1'b0;
       s1_pred_target_0 <= 32'b0;
       s1_pred_taken_1  <= 1'b0;
@@ -212,7 +217,8 @@ module IF_stage(
     end
     else if (!s1_stall)
     begin
-      s1_addr          <= s0_addr;
+      s1_vaddr         <= s0_vaddr;
+      s1_paddr         <= s0_paddr;
       s1_pred_taken_0  <= s0_pred_taken_0;
       s1_pred_target_0 <= s0_pred_target_0;
       s1_pred_taken_1  <= s0_pred_taken_1;
@@ -240,7 +246,8 @@ module IF_stage(
       s2_hit           <= 1'b0;
       s2_hit_way       <= 1'b0;
       s2_line_data     <= 128'b0;
-      s2_addr          <= 32'b0;
+      s2_vaddr         <= 32'b0;
+      s2_paddr         <= 32'b0;
       s2_pred_taken_0  <= 1'b0;
       s2_pred_target_0 <= 32'b0;
       s2_pred_taken_1  <= 1'b0;
@@ -252,7 +259,8 @@ module IF_stage(
       s2_hit           <= s1_hit;
       s2_hit_way       <= s1_hit_way;
       s2_line_data     <= s1_hit_line;
-      s2_addr          <= s1_addr;
+      s2_vaddr         <= s1_vaddr;
+      s2_paddr         <= s1_paddr;
       s2_pred_taken_0  <= s1_pred_taken_0;
       s2_pred_target_0 <= s1_pred_target_0;
       s2_pred_taken_1  <= s1_pred_taken_1;
@@ -299,7 +307,7 @@ module IF_stage(
     begin
       s3_inst_0        <= s2_effective_inst_0;
       s3_inst_1        <= s2_effective_inst_1;
-      s3_pc_0          <= s2_addr;
+      s3_pc_0          <= s2_vaddr;
       s3_pc_1          <= s2_pc_1;
       s3_pred_taken_0  <= s2_pred_taken_0;
       s3_pred_target_0 <= s2_pred_target_0;
@@ -309,7 +317,7 @@ module IF_stage(
   end
 
   assign rd_req  = (state == FSM_MISS_REQ);
-  assign rd_addr = {s2_addr[31:4], 4'b0000};
+  assign rd_addr = {s2_paddr[31:4], 4'b0000};
 
   wire lfsr_feedback = lfsr[7] ^ lfsr[5] ^ lfsr[4] ^ lfsr[3];
   wire        icacop_is_icache = icacop_valid && (icacop_code[2:0] == 3'b000);
