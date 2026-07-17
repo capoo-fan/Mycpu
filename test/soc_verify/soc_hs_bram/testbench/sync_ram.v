@@ -19,7 +19,7 @@ module sync_ram #(
   input wire en;
 
   output reg  [DATA_WIDTH-1:0] rdata;
-  output wire [DATA_WIDTH-1:0] wdata;
+  input wire [DATA_WIDTH-1:0] wdata;
 
   reg [DATA_WIDTH-1:0] ram[DEPTH];
 
