@@ -51,7 +51,8 @@ module thinpad_sram_uart_bridge(
     localparam [1:0] S_IDLE   = 2'd0;
     localparam [1:0] S_ACCESS = 2'd1;
     localparam [1:0] S_DONE   = 2'd2;
-    localparam [1:0] SRAM_WAIT_LAST = 2'd2;
+    // One accepted cycle + one ACCESS cycle; read keeps CE/OE active in DONE.
+    localparam [1:0] SRAM_WAIT_LAST = 2'd0;
 
     // CPU 导出翻译后的物理地址。
     //解码完整的窗口，以便 UART 和未映射的外设不能与 SRAM 别名。
@@ -80,8 +81,10 @@ module thinpad_sram_uart_bridge(
                                  base_grant_inst ? 1'b0            : base_wr_reg;
     wire [31:0] base_cur_addr  = base_grant_data ? data_sram_addr  :
                                  base_grant_inst ? inst_sram_addr  : base_addr_reg;
-    wire [31:0] base_cur_wdata = base_grant_data ? data_sram_wdata : base_wdata_reg;
-    wire [3:0]  base_cur_wstrb = base_grant_data ? data_sram_wstrb : base_wstrb_reg;
+    wire [31:0] base_cur_wdata = base_grant_data ? data_sram_wdata :
+                                 base_grant_inst ? 32'b0           : base_wdata_reg;
+    wire [3:0]  base_cur_wstrb = base_grant_data ? data_sram_wstrb :
+                                 base_grant_inst ? 4'b0            : base_wstrb_reg;
     wire        base_active    = base_grant | (base_state == S_ACCESS) |
                                  (base_done & ~base_wr_reg);
 

@@ -148,6 +148,174 @@ module thinpad_sram_uart_bridge_tb;
     end
   endtask
 
+  task check_base_pins;
+    input        wr_value;
+    input [31:0] addr_value;
+    input [31:0] wdata_value;
+    input [3:0]  wstrb_value;
+    begin
+      if (base_addr !== addr_value[21:2])
+        fail("BaseRAM address changed during active window");
+      if (wr_value && base_wdata !== wdata_value)
+        fail("BaseRAM write data changed during active window");
+      if (wr_value) begin
+        if (base_be_n !== ~wstrb_value)
+          fail("BaseRAM byte enable changed during write window");
+        if (base_we_n !== 1'b0 || base_oe_n !== 1'b1)
+          fail("BaseRAM write control pins are incorrect");
+      end else begin
+        if (base_be_n !== 4'b0000)
+          fail("BaseRAM byte enable changed during read window");
+        if (base_we_n !== 1'b1 || base_oe_n !== 1'b0)
+          fail("BaseRAM read control pins are incorrect");
+      end
+    end
+  endtask
+
+  task check_ext_pins;
+    input        wr_value;
+    input [31:0] addr_value;
+    input [31:0] wdata_value;
+    input [3:0]  wstrb_value;
+    begin
+      if (ext_addr !== addr_value[21:2])
+        fail("ExtRAM address changed during active window");
+      if (wr_value && ext_wdata !== wdata_value)
+        fail("ExtRAM write data changed during active window");
+      if (wr_value) begin
+        if (ext_be_n !== ~wstrb_value)
+          fail("ExtRAM byte enable changed during write window");
+        if (ext_we_n !== 1'b0 || ext_oe_n !== 1'b1)
+          fail("ExtRAM write control pins are incorrect");
+      end else begin
+        if (ext_be_n !== 4'b0000)
+          fail("ExtRAM byte enable changed during read window");
+        if (ext_we_n !== 1'b1 || ext_oe_n !== 1'b0)
+          fail("ExtRAM read control pins are incorrect");
+      end
+    end
+  endtask
+
+  task sram_data_access;
+    input        wr_value;
+    input        base_target;
+    input [31:0] addr_value;
+    input [31:0] wdata_value;
+    input [3:0]  wstrb_value;
+    output [31:0] rdata_value;
+    integer addr_ok_count_local;
+    integer data_ok_count_local;
+    integer active_count_local;
+    integer cycle_count_local;
+    integer expected_active_count;
+    reg     request_dropped;
+    reg     saw_active;
+    reg [31:0] active_wdata_sample;
+    begin
+      @(negedge clk);
+      data_req   = 1'b1;
+      data_wr    = wr_value;
+      data_addr  = addr_value;
+      data_wdata = wdata_value;
+      data_wstrb = wstrb_value;
+
+      addr_ok_count_local = 0;
+      data_ok_count_local = 0;
+      active_count_local  = 0;
+      cycle_count_local   = 0;
+      request_dropped     = 1'b0;
+      saw_active          = 1'b0;
+      active_wdata_sample = 32'b0;
+
+      begin : wait_sram_data_done
+        while (1) begin
+          @(posedge clk);
+          cycle_count_local = cycle_count_local + 1;
+
+          if (data_addr_ok)
+            addr_ok_count_local = addr_ok_count_local + 1;
+          if (data_data_ok)
+            data_ok_count_local = data_ok_count_local + 1;
+
+          if (base_target) begin
+            if (!base_ce_n) begin
+              active_count_local = active_count_local + 1;
+              if (!saw_active) begin
+                saw_active = 1'b1;
+                active_wdata_sample = base_wdata;
+              end else if (base_wdata !== active_wdata_sample) begin
+                fail("BaseRAM write data did not stay stable");
+              end
+              check_base_pins(wr_value, addr_value, wdata_value, wstrb_value);
+            end
+            if (!ext_ce_n)
+              fail("ExtRAM active during BaseRAM data access");
+          end else begin
+            if (!ext_ce_n) begin
+              active_count_local = active_count_local + 1;
+              if (!saw_active) begin
+                saw_active = 1'b1;
+                active_wdata_sample = ext_wdata;
+              end else if (ext_wdata !== active_wdata_sample) begin
+                fail("ExtRAM write data did not stay stable");
+              end
+              check_ext_pins(wr_value, addr_value, wdata_value, wstrb_value);
+            end
+            if (!base_ce_n)
+              fail("BaseRAM active during ExtRAM data access");
+          end
+
+          if (data_addr_ok && !request_dropped) begin
+            @(negedge clk);
+            data_req = 1'b0;
+            request_dropped = 1'b1;
+          end
+
+          if (data_data_ok) begin
+            rdata_value = data_rdata;
+            if (cycle_count_local != 3)
+              fail("SRAM data response timing is incorrect");
+            if (wr_value) begin
+              if (base_target && !base_ce_n)
+                fail("BaseRAM write stayed active during response");
+              if (!base_target && !ext_ce_n)
+                fail("ExtRAM write stayed active during response");
+            end else begin
+              if (base_target && base_ce_n)
+                fail("BaseRAM read was inactive during response");
+              if (!base_target && ext_ce_n)
+                fail("ExtRAM read was inactive during response");
+            end
+            disable wait_sram_data_done;
+          end
+
+          if (cycle_count_local > 12)
+            fail("SRAM data response timeout");
+        end
+      end
+
+      expected_active_count = wr_value ? 2 : 3;
+      if (addr_ok_count_local != 1)
+        fail("SRAM data address handshake count is incorrect");
+      if (data_ok_count_local != 1)
+        fail("SRAM data response count is incorrect");
+      if (active_count_local != expected_active_count)
+        fail("SRAM data active cycle count is incorrect");
+
+      @(negedge clk);
+      data_wr    = 1'b0;
+      data_addr  = 32'b0;
+      data_wdata = 32'b0;
+      data_wstrb = 4'b0;
+
+      @(posedge clk);
+      if (data_data_ok)
+        fail("SRAM data response repeated");
+      if (!base_ce_n || !ext_ce_n)
+        fail("SRAM data access did not return idle");
+    end
+  endtask
+
   task uart_write;
     input [2:0] offset;
     input [7:0] byte_value;
@@ -192,6 +360,90 @@ module thinpad_sram_uart_bridge_tb;
     end
   endtask
 
+  task inst_read_timed;
+    input [31:0] addr_value;
+    output [31:0] rdata_value;
+    integer addr_ok_count_local;
+    integer data_ok_count_local;
+    integer active_count_local;
+    integer cycle_count_local;
+    reg     request_dropped;
+    reg     saw_active;
+    reg [31:0] active_wdata_sample;
+    begin
+      @(negedge clk);
+      inst_req  = 1'b1;
+      inst_addr = addr_value;
+
+      addr_ok_count_local = 0;
+      data_ok_count_local = 0;
+      active_count_local  = 0;
+      cycle_count_local   = 0;
+      request_dropped     = 1'b0;
+      saw_active          = 1'b0;
+      active_wdata_sample = 32'b0;
+
+      begin : wait_sram_inst_done
+        while (1) begin
+          @(posedge clk);
+          cycle_count_local = cycle_count_local + 1;
+
+          if (inst_addr_ok)
+            addr_ok_count_local = addr_ok_count_local + 1;
+          if (inst_data_ok)
+            data_ok_count_local = data_ok_count_local + 1;
+
+          if (!base_ce_n) begin
+            active_count_local = active_count_local + 1;
+            if (!saw_active) begin
+              saw_active = 1'b1;
+              active_wdata_sample = base_wdata;
+            end else if (base_wdata !== active_wdata_sample) begin
+              fail("BaseRAM instruction write data did not stay stable");
+            end
+            check_base_pins(1'b0, addr_value, 32'b0, 4'b0);
+          end
+          if (!ext_ce_n)
+            fail("ExtRAM active during instruction access");
+
+          if (inst_addr_ok && !request_dropped) begin
+            @(negedge clk);
+            inst_req = 1'b0;
+            request_dropped = 1'b1;
+          end
+
+          if (inst_data_ok) begin
+            rdata_value = inst_rdata;
+            if (cycle_count_local != 3)
+              fail("SRAM instruction response timing is incorrect");
+            if (base_ce_n)
+              fail("BaseRAM instruction read was inactive during response");
+            disable wait_sram_inst_done;
+          end
+
+          if (cycle_count_local > 12)
+            fail("SRAM instruction response timeout");
+        end
+      end
+
+      if (addr_ok_count_local != 1)
+        fail("SRAM instruction address handshake count is incorrect");
+      if (data_ok_count_local != 1)
+        fail("SRAM instruction response count is incorrect");
+      if (active_count_local != 3)
+        fail("SRAM instruction active cycle count is incorrect");
+
+      @(negedge clk);
+      inst_addr = 32'b0;
+
+      @(posedge clk);
+      if (inst_data_ok)
+        fail("SRAM instruction response repeated");
+      if (!base_ce_n || !ext_ce_n)
+        fail("SRAM instruction access did not return idle");
+    end
+  endtask
+
   initial begin
     clk               = 1'b0;
     resetn            = 1'b0;
@@ -218,24 +470,28 @@ module thinpad_sram_uart_bridge_tb;
     repeat (4) @(posedge clk);
     resetn = 1'b1;
 
-    data_access(1'b0, 32'h1c00_0004, 32'b0, 4'b0, read_value);
+    sram_data_access(1'b0, 1'b1, 32'h1c00_0004, 32'b0, 4'b0, read_value);
     if (read_value !== 32'ha5a5_0001)
       fail("BaseRAM range or read data is incorrect");
-    data_access(1'b0, 32'h1c3f_fffc, 32'b0, 4'b0, read_value);
+    sram_data_access(1'b0, 1'b1, 32'h1c3f_fffc, 32'b0, 4'b0, read_value);
     if (read_value !== 32'ha5a5_ffff)
       fail("BaseRAM upper boundary is incorrect");
+    sram_data_access(1'b1, 1'b1, 32'h1c00_0010,
+                     32'h1122_3344, 4'b0101, read_value);
 
-    data_access(1'b0, 32'h1c40_0008, 32'b0, 4'b0, read_value);
+    sram_data_access(1'b0, 1'b0, 32'h1c40_0008, 32'b0, 4'b0, read_value);
     if (read_value !== 32'h5a5a_0002)
       fail("ExtRAM range or read data is incorrect");
-    data_access(1'b0, 32'h1c7f_fffc, 32'b0, 4'b0, read_value);
+    sram_data_access(1'b0, 1'b0, 32'h1c7f_fffc, 32'b0, 4'b0, read_value);
     if (read_value !== 32'h5a5a_ffff)
       fail("ExtRAM upper boundary is incorrect");
+    sram_data_access(1'b1, 1'b0, 32'h1c40_0014,
+                     32'h5566_7788, 4'b1010, read_value);
 
-    inst_read(32'h1c00_000c, read_value);
+    inst_read_timed(32'h1c00_000c, read_value);
     if (read_value !== 32'ha5a5_0003)
       fail("BaseRAM instruction read is incorrect");
-    inst_read(32'h1c3f_fffc, read_value);
+    inst_read_timed(32'h1c3f_fffc, read_value);
     if (read_value !== 32'ha5a5_ffff)
       fail("BaseRAM instruction upper boundary is incorrect");
     inst_read(32'h1c40_0000, read_value);
