@@ -18,6 +18,9 @@ module IF_stage(
     input  wire        icacop_valid,
     input  wire [ 4:0] icacop_code,
     input  wire [31:0] icacop_addr,
+    
+    input  wire        store_inv_valid,
+    input  wire [31:0] store_inv_addr,
     // IBUF 接收握手
     input  wire        ibuf_allowin,
     output wire        fs_to_ds_valid_0,
@@ -73,6 +76,10 @@ module IF_stage(
   wire        s1_hit            = s1_tag_match_way0 || s1_tag_match_way1;
   wire        s1_hit_way        = s1_tag_match_way1;
   wire [127:0] s1_hit_line      = s1_hit_way ? cache_data[1][s1_index] : cache_data[0][s1_index];
+  wire [2:0]  store_inv_index   = store_inv_addr[6:4];
+  wire [24:0] store_inv_tag     = store_inv_addr[31:7];
+  wire        store_conflict_s1 = store_inv_valid && s1_valid &&
+       (store_inv_addr[31:4] == s1_paddr[31:4]);
 
   // S2 Cache miss 发读请求，Cache hit 则将数据和控制信号发送下一级
   reg         s2_valid;
@@ -121,6 +128,7 @@ module IF_stage(
   reg [127:0] refill_data_reg;
   reg [127:0] refill_line;
   reg [1:0]   refill_beat;
+  reg         refill_poisoned;
 
   reg [7:0] lfsr;
 
@@ -153,9 +161,11 @@ module IF_stage(
   begin
     if (!resetn)
       miss_replace_way <= 1'b0;
-    else if (s2_valid && !s2_hit && state == FSM_IDLE)
+    else if (s2_valid && (!s2_hit || store_conflict_s2) && state == FSM_IDLE)
     begin
-      if (!cache_valid[0][s2_index])
+      if (store_conflict_s2 && s2_hit)
+        miss_replace_way <= s2_hit_way;
+      else if (!cache_valid[0][s2_index])
         miss_replace_way <= 1'b0;
       else if (!cache_valid[1][s2_index])
         miss_replace_way <= 1'b1;
@@ -164,13 +174,20 @@ module IF_stage(
     end
   end
 
+  wire store_conflict_s2 = store_inv_valid && s2_valid &&
+       (store_inv_addr[31:4] == s2_paddr[31:4]);
+  wire refill_retry_now = refill_poisoned || store_conflict_s2;
+  wire s2_cache_hit_ready = (state == FSM_IDLE) && s2_hit && !store_conflict_s2;
+  wire s2_refill_ready = (state == FSM_DONE) && !refill_retry_now;
+  wire s2_data_ready = s2_cache_hit_ready || s2_refill_ready;
   wire s3_hold   = (s3_valid_0 || s3_valid_1) && !ibuf_allowin;
-  wire miss_hold = s2_valid && !s2_hit && state != FSM_DONE;
+  wire miss_hold = s2_valid && !s2_data_ready;
   wire s2_stall  = s3_hold || miss_hold;
   wire s1_stall  = s2_stall;
   assign if_suspend = s3_hold || miss_hold;
 
-  wire trigger_miss = s2_valid && !s2_hit && (state == FSM_IDLE);
+  wire trigger_miss = s2_valid && (!s2_hit || store_conflict_s2) &&
+       (state == FSM_IDLE);
 
   always @(*)
   begin
@@ -183,9 +200,10 @@ module IF_stage(
       FSM_MISS_REFILL:
         next_state = (ret_valid && ret_last[0]) ? FSM_RECOVERY : FSM_MISS_REFILL;
       FSM_RECOVERY:
-        next_state = FSM_DONE;
+        next_state = refill_retry_now ? FSM_MISS_REQ : FSM_DONE;
       FSM_DONE:
-        next_state = s3_hold ? FSM_DONE : FSM_IDLE;
+        next_state = store_conflict_s2 ? FSM_MISS_REQ :
+                     (s3_hold ? FSM_DONE : FSM_IDLE);
       default:
         next_state = FSM_IDLE;
     endcase
@@ -256,7 +274,7 @@ module IF_stage(
     end
     else if (!s2_stall)
     begin
-      s2_hit           <= s1_hit;
+      s2_hit           <= s1_hit && !store_conflict_s1;
       s2_hit_way       <= s1_hit_way;
       s2_line_data     <= s1_hit_line;
       s2_vaddr         <= s1_vaddr;
@@ -268,8 +286,6 @@ module IF_stage(
       s2_offset_word   <= s1_offset_word;
     end
   end
-
-  wire s2_data_ready = s2_hit || (state == FSM_DONE);
 
   always @(posedge clk)
   begin
@@ -347,6 +363,22 @@ module IF_stage(
       state <= next_state;
   end
 
+  // A BaseRAM store may interleave with the four single-word refill reads.
+  // Poison the line until that transaction drains, then fetch it again so an
+  // early refill beat can never resurrect pre-store instruction data.
+  always @(posedge clk)
+  begin
+    if (!resetn || br_taken)
+      refill_poisoned <= 1'b0;
+    else
+    begin
+      if (state == FSM_MISS_REQ && rd_rdy)
+        refill_poisoned <= 1'b0;
+      if (store_conflict_s2 && state != FSM_IDLE)
+        refill_poisoned <= 1'b1;
+    end
+  end
+
   integer i, j;
   always @(posedge clk)
   begin
@@ -394,7 +426,7 @@ module IF_stage(
       end
 
       // RECOVERY: 写入 Cache + 锁存 refill_data_reg
-      if (state == FSM_RECOVERY)
+      if (state == FSM_RECOVERY && !refill_retry_now)
       begin
         cache_valid[miss_replace_way][s2_index] <= 1'b1;
         cache_tag[miss_replace_way][s2_index]   <= s2_tag;
@@ -410,6 +442,15 @@ module IF_stage(
           cache_valid[0][icacop_index] <= 1'b0;
         if (icacop_hit_way1)
           cache_valid[1][icacop_index] <= 1'b0;
+      end
+      if (store_inv_valid)
+      begin
+        if (cache_valid[0][store_inv_index] &&
+            (cache_tag[0][store_inv_index] == store_inv_tag))
+          cache_valid[0][store_inv_index] <= 1'b0;
+        if (cache_valid[1][store_inv_index] &&
+            (cache_tag[1][store_inv_index] == store_inv_tag))
+          cache_valid[1][store_inv_index] <= 1'b0;
       end
     end
   end

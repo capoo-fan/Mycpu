@@ -124,6 +124,18 @@ module csr_dmw_unit_tb;
     check32(crmd, 32'h0000_000b, "CRMD masked exchange");
     check32(paddr, 32'he123_4567, "return to direct mode");
 
+    // Exact supervisor mapping: low 512 MiB cacheable DMW0 plus the
+    // 0xa0000000 uncached alias in DMW1.
+    csr_write(14'h0180, 32'hffff_ffff, 32'h0000_0019);
+    csr_write(14'h0181, 32'hffff_ffff, 32'ha000_0009);
+    csr_write(14'h0000, 32'h0000_001b, 32'h0000_0010);
+    vaddr = 32'h1c00_1234;
+    #1;
+    check32(paddr, 32'h1c00_1234, "supervisor DMW0 identity map");
+    vaddr = 32'hbf00_0000;
+    #1;
+    check32(paddr, 32'h1f00_0000, "supervisor UART DMW1 map");
+
     raddr = 14'h0123;
     #1;
     check32(rdata, 32'h0000_0000, "unsupported CSR read");

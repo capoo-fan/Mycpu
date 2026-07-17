@@ -132,6 +132,7 @@ module mycpu_top(
   wire [ 4:0] icacop_code;
   wire [31:0] icacop_addr;
   wire [31:0] icacop_paddr;
+  wire        store_inv_valid;
 
   // PC 模块信号
   wire [31:0] pc_out;
@@ -147,6 +148,8 @@ module mycpu_top(
   assign bpu_pred_target_0 = bpu_pred_target;
   assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
   assign bpu_pred_target_1 = bpu_pred_target;
+  assign store_inv_valid = data_sram_data_ok && data_sram_wr &&
+       ((data_sram_addr & 32'hffc0_0000) == 32'h1c00_0000);
 
   csr u_csr(
         .clk    (clk),
@@ -229,6 +232,8 @@ module mycpu_top(
              .icacop_valid      (icacop_valid),
              .icacop_code       (icacop_code),
              .icacop_addr       (icacop_paddr),
+             .store_inv_valid   (store_inv_valid),
+             .store_inv_addr    (data_sram_addr),
              .ibuf_allowin      (ibuf_push_ready),
              .fs_to_ds_valid_0  (if_to_ibuf_valid_0),
              .fs_to_ds_valid_1  (if_to_ibuf_valid_1),

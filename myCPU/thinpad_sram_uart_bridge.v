@@ -53,9 +53,13 @@ module thinpad_sram_uart_bridge(
     localparam [1:0] S_DONE   = 2'd2;
     localparam [1:0] SRAM_WAIT_LAST = 2'd2;
 
-    wire data_is_uart = data_sram_addr[29];
-    wire data_is_ext  = data_sram_addr[22] & ~data_is_uart;
-    wire data_is_base = ~data_sram_addr[22] & ~data_is_uart;
+    // CPU 导出翻译后的物理地址。
+    //解码完整的窗口，以便 UART 和未映射的外设不能与 SRAM 别名。
+    wire inst_is_base = (inst_sram_addr & 32'hffc0_0000) == 32'h1c00_0000;
+    wire data_is_base = (data_sram_addr & 32'hffc0_0000) == 32'h1c00_0000;
+    wire data_is_ext  = (data_sram_addr & 32'hffc0_0000) == 32'h1c40_0000;
+    wire data_is_uart = (data_sram_addr & 32'hfff0_0000) == 32'h1f00_0000;
+    wire data_is_unmapped = ~(data_is_base | data_is_ext | data_is_uart);
 
     reg  [1:0]  base_state;
     reg  [1:0]  base_cnt;
@@ -66,7 +70,7 @@ module thinpad_sram_uart_bridge(
     reg  [3:0]  base_wstrb_reg;
 
     wire base_data_req   = data_sram_req & data_is_base;
-    wire base_inst_req   = inst_sram_req & ~inst_sram_wr;
+    wire base_inst_req   = inst_sram_req & ~inst_sram_wr & inst_is_base;
     wire base_grant_data = (base_state == S_IDLE) & base_data_req;
     wire base_grant_inst = (base_state == S_IDLE) & ~base_data_req & base_inst_req;
     wire base_grant      = base_grant_data | base_grant_inst;
@@ -135,9 +139,21 @@ module thinpad_sram_uart_bridge(
     wire base_data_data_ok = base_done &  base_client_data;
     wire base_inst_data_ok = base_done & ~base_client_data;
 
-    assign inst_sram_addr_ok = base_grant_inst;
-    assign inst_sram_data_ok = base_inst_data_ok;
-    assign inst_sram_rdata   = base_ram_rdata;
+ 
+    // 不支持的指令地址返回零，而不是死锁 类SRAM 接口。监视代码本身始终位于 BaseRAM 中。
+    wire inst_unmapped_grant = inst_sram_req & ~inst_sram_wr & ~inst_is_base;
+    reg  inst_unmapped_resp_valid;
+
+    always @(posedge clk) begin
+        if (!resetn)
+            inst_unmapped_resp_valid <= 1'b0;
+        else
+            inst_unmapped_resp_valid <= inst_unmapped_grant;
+    end
+
+    assign inst_sram_addr_ok = base_grant_inst | inst_unmapped_grant;
+    assign inst_sram_data_ok = base_inst_data_ok | inst_unmapped_resp_valid;
+    assign inst_sram_rdata   = base_inst_data_ok ? base_ram_rdata : 32'b0;
 
     reg  [1:0]  ext_state;
     reg  [1:0]  ext_cnt;
@@ -207,9 +223,32 @@ module thinpad_sram_uart_bridge(
     wire ext_data_addr_ok = ext_grant;
     wire ext_data_data_ok = ext_done;
 
-    wire uart_req       = data_sram_req & data_is_uart;
-    wire uart_can_write = ~uart_tx_busy;
-    wire uart_grant     = uart_req & (~data_sram_wr | uart_can_write);
+    wire [2:0] uart_offset = data_sram_addr[2:0];
+    reg        uart_dlab;
+
+    wire [7:0] uart_write_byte = data_sram_wstrb[0] ? data_sram_wdata[ 7: 0] :
+                                  data_sram_wstrb[1] ? data_sram_wdata[15: 8] :
+                                  data_sram_wstrb[2] ? data_sram_wdata[23:16] :
+                                                        data_sram_wdata[31:24];
+    wire       uart_req       = data_sram_req & data_is_uart;
+    wire       uart_tx_write  = data_sram_wr & (uart_offset == 3'd0) & ~uart_dlab;
+    wire       uart_grant     = uart_req & (~uart_tx_write | ~uart_tx_busy);
+    wire [7:0] uart_status    = {2'b0, ~uart_tx_busy, 4'b0, uart_rx_ready};
+    wire [7:0] uart_read_byte = (uart_offset == 3'd0) ? uart_rx_data :
+                                  (uart_offset == 3'd5) ? uart_status : 8'b0;
+
+    function [31:0] place_uart_byte;
+        input [7:0] byte_value;
+        input [1:0] byte_offset;
+        begin
+            case (byte_offset)
+                2'd0: place_uart_byte = {24'b0, byte_value};
+                2'd1: place_uart_byte = {16'b0, byte_value, 8'b0};
+                2'd2: place_uart_byte = {8'b0, byte_value, 16'b0};
+                default: place_uart_byte = {byte_value, 24'b0};
+            endcase
+        end
+    endfunction
 
     reg        uart_resp_valid;
     reg [31:0] uart_rdata_reg;
@@ -224,22 +263,26 @@ module thinpad_sram_uart_bridge(
             uart_tx_start_reg <= 1'b0;
             uart_tx_data_reg  <= 8'b0;
             uart_rx_clear_reg <= 1'b0;
+            uart_dlab         <= 1'b0;
         end else begin
             uart_resp_valid   <= uart_grant;
-            uart_tx_start_reg <= uart_grant & data_sram_wr;
-            uart_rx_clear_reg <= uart_grant & ~data_sram_wr & ~data_sram_addr[2];
+            uart_tx_start_reg <= uart_grant & uart_tx_write;
+            uart_rx_clear_reg <= uart_grant & ~data_sram_wr &
+                                 (uart_offset == 3'd0) & uart_rx_ready;
 
-            if (uart_grant & data_sram_wr)
-                uart_tx_data_reg <= data_sram_wdata[7:0];
+            if (uart_grant & uart_tx_write)
+                uart_tx_data_reg <= uart_write_byte;
 
-            if (uart_grant & ~data_sram_wr) begin
-                if (data_sram_addr[2])
-                    uart_rdata_reg <= {30'b0, uart_rx_ready, ~uart_tx_busy};
-                else
-                    uart_rdata_reg <= {24'b0, uart_rx_data};
-            end else if (uart_grant) begin
-                uart_rdata_reg <= 32'b0;
+            if (uart_grant & data_sram_wr) begin
+                if (uart_offset == 3'd3)
+                    uart_dlab <= uart_write_byte[7];
             end
+
+            if (uart_grant & ~data_sram_wr)
+                uart_rdata_reg <= place_uart_byte(uart_read_byte,
+                                                   data_sram_addr[1:0]);
+            else if (uart_grant)
+                uart_rdata_reg <= 32'b0;
         end
     end
 
@@ -250,10 +293,21 @@ module thinpad_sram_uart_bridge(
     wire uart_data_addr_ok = uart_grant;
     wire uart_data_data_ok = uart_resp_valid;
 
-    assign data_sram_addr_ok = (data_is_base & base_data_addr_ok) |
-                               (data_is_ext  & ext_data_addr_ok)  |
-                               (data_is_uart & uart_data_addr_ok);
-    assign data_sram_data_ok = base_data_data_ok | ext_data_data_ok | uart_data_data_ok;
+  
+    wire unmapped_grant = data_sram_req & data_is_unmapped;
+    reg  unmapped_resp_valid;
+
+    always @(posedge clk) begin
+        if (!resetn)
+            unmapped_resp_valid <= 1'b0;
+        else
+            unmapped_resp_valid <= unmapped_grant;
+    end
+
+    assign data_sram_addr_ok = base_data_addr_ok | ext_data_addr_ok |
+                               uart_data_addr_ok | unmapped_grant;
+    assign data_sram_data_ok = base_data_data_ok | ext_data_data_ok |
+                               uart_data_data_ok | unmapped_resp_valid;
     assign data_sram_rdata   = base_data_data_ok ? base_ram_rdata :
                                ext_data_data_ok  ? ext_ram_rdata  :
                                uart_data_data_ok ? uart_rdata_reg  : 32'b0;

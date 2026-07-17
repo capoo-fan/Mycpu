@@ -55,7 +55,7 @@ module thinpad_top(
 );
 
 
-localparam integer CPU_CLK_FREQ = 151000000;
+localparam integer CPU_CLK_FREQ = 148000000;
 
 
 wire cpu_clk;
@@ -206,7 +206,7 @@ pll_example clock_gen
 
     async_receiver #(
         .ClkFrequency(CPU_CLK_FREQ),
-        .Baud(9600)
+        .Baud(115200)
     ) u_uart_rx (
         .clk            (cpu_clk),
         .RxD            (rxd),
@@ -217,7 +217,7 @@ pll_example clock_gen
 
     async_transmitter #(
         .ClkFrequency(CPU_CLK_FREQ),
-        .Baud(9600)
+        .Baud(115200)
     ) u_uart_tx (
         .clk       (cpu_clk),
         .TxD_start (uart_tx_start),
