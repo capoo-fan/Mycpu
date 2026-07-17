@@ -269,7 +269,11 @@ mixed_join:
     b           FLUSH_DCACHE_AND_RETURN
     /* End of test */
 
-FLUSH_DCACHE_AND_RETURN:
+    .global FLUSH_DCACHE
+FLUSH_DCACHE:
+#ifdef SUPERVISOR_FORCE_UNCACHE
+    jirl        zero,ra,0x0
+#else
     // CachePathFlag is non-zero only when an L1 D-cache exists. The geometry
     // values are captured by START before DMW/PG setup and written after bss
     // initialization, so this path avoids re-reading CPUCFG after user code.
@@ -311,4 +315,9 @@ FLUSH_DCACHE_AND_RETURN:
 
     andi        zero, zero, 0x0
 3:
+    jirl        zero,ra,0x0
+#endif
+
+    .global FLUSH_DCACHE_AND_RETURN
+FLUSH_DCACHE_AND_RETURN:
     jirl        zero,ra,0x0

@@ -1,0 +1,30 @@
+
+fibonacci.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+1c300000 <fibonacci>:
+fibonacci():
+././utility/fibonacci/fibonacci.S:10
+1c300000:	0280040c 	addi.w	$r12,$r0,1(0x1)
+././utility/fibonacci/fibonacci.S:11
+1c300004:	0280040d 	addi.w	$r13,$r0,1(0x1)
+././utility/fibonacci/fibonacci.S:12
+1c300008:	14388004 	lu12i.w	$r4,115712(0x1c400)
+././utility/fibonacci/fibonacci.S:13
+1c30000c:	02808085 	addi.w	$r5,$r4,32(0x20)
+././utility/fibonacci/fibonacci.S:16
+1c300010:	0010358e 	add.w	$r14,$r12,$r13
+././utility/fibonacci/fibonacci.S:17
+1c300014:	028001ac 	addi.w	$r12,$r13,0
+././utility/fibonacci/fibonacci.S:18
+1c300018:	028001cd 	addi.w	$r13,$r14,0
+././utility/fibonacci/fibonacci.S:19
+1c30001c:	2980008e 	st.w	$r14,$r4,0
+././utility/fibonacci/fibonacci.S:20
+1c300020:	02801084 	addi.w	$r4,$r4,4(0x4)
+././utility/fibonacci/fibonacci.S:21
+1c300024:	5fffec85 	bne	$r4,$r5,-20(0x3ffec) # 1c300010 <fibonacci+0x10>
+././utility/fibonacci/fibonacci.S:22
+1c300028:	4c000020 	jirl	$r0,$r1,0

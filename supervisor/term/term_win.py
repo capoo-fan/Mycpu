@@ -131,22 +131,27 @@ def run_F(addr, filepath):
         print("file %s does not exist" % filepath)
         return
     print("reading from file %s" % filepath)
-    binfile = open(filepath, 'rb')
     size = os.path.getsize(filepath)
+    if size % 4 != 0:
+        print("binary file size should be a multiple of 4 bytes")
+        return
     try:
-        for i in range(0,size,4):
-            data = binfile.read(4)
-            outp.write(b'A')
-            outp.write(int_to_byte_string(addr+i))
-            outp.write(int_to_byte_string(4))
-            outp.write(data)
-    except:
+        with open(filepath, 'rb') as binfile:
+            for i in range(0, size, 4):
+                data = binfile.read(4)
+                outp.write(b'A')
+                outp.write(int_to_byte_string(addr+i))
+                outp.write(int_to_byte_string(4))
+                outp.write(data)
+    except OSError as error:
         print('')
+        print(error)
         return
 
 
 def run_R():
     outp.write(b'R')
+    inp.read(4)  # uregs[0] stores the supervisor return address
     for i in range(2, 32):
         val_raw = inp.read(4)
         val = byte_string_to_int(val_raw)
@@ -301,8 +306,8 @@ def EmptyBuf():
 
 def InitializeTCP(host_port):
     
-    ValidIpAddressRegex = re.compile("^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])):(\d+)$");
-    ValidHostnameRegex = re.compile("^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])):(\d+)$");
+    ValidIpAddressRegex = re.compile(r"^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])):(\d+)$");
+    ValidHostnameRegex = re.compile(r"^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])):(\d+)$");
 
     if ValidIpAddressRegex.search(host_port) is None and \
         ValidHostnameRegex.search(host_port) is None:

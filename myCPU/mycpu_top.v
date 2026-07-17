@@ -23,7 +23,7 @@ module mycpu_top(
     input  wire        data_sram_addr_ok,
     input  wire        data_sram_data_ok,
     input  wire [31:0] data_sram_rdata,
-    // 调试信号
+    // SoC 兼容端口：内部 debug 状态和布线已删除。
     output wire [31:0] debug_wb_pc,
     output wire [ 3:0] debug_wb_rf_we,
     output wire [ 4:0] debug_wb_rf_wnum,
@@ -143,6 +143,13 @@ module mycpu_top(
   wire        pc_cross_line = (pc_out[3:2] == 2'b11);
   wire [31:0] pc_next_seq   = pc_out + (pc_cross_line ? 32'h4 : 32'h8);
   wire [31:0] pc_next       = bpu_pred_taken ? bpu_pred_target : pc_next_seq;
+
+  // Keep the standard Loongson SoC port list source-compatible.  Constant
+  // outputs synthesize away and do not feed back into the CPU pipeline.
+  assign debug_wb_pc       = 32'b0;
+  assign debug_wb_rf_we    = 4'b0;
+  assign debug_wb_rf_wnum  = 5'b0;
+  assign debug_wb_rf_wdata = 32'b0;
 
   assign bpu_pred_taken_0  = bpu_pred_taken && !bpu_pred_lane;
   assign bpu_pred_target_0 = bpu_pred_target;
@@ -381,11 +388,7 @@ module mycpu_top(
              .csr_wmask          (csr_wmask),
              .csr_wdata          (csr_wdata),
              .csr_flush          (csr_flush),
-             .csr_flush_target   (csr_flush_target),
-             .debug_wb_pc        (debug_wb_pc),
-             .debug_wb_rf_we     (debug_wb_rf_we),
-             .debug_wb_rf_wnum   (debug_wb_rf_wnum),
-             .debug_wb_rf_wdata  (debug_wb_rf_wdata)
+             .csr_flush_target   (csr_flush_target)
            );
 
   icache_refill u_icache_refill(

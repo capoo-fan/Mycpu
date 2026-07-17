@@ -1,0 +1,67 @@
+
+/Users/qianfu/Mycpu/supervisor/build/kernel/auto/kernel.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+1c002030 <UTEST_MATRIX>:
+1c002030:	14388004 	lu12i.w	$r4,115712(0x1c400)
+1c002034:	14388205 	lu12i.w	$r5,115728(0x1c410)
+1c002038:	14388406 	lu12i.w	$r6,115744(0x1c420)
+1c00203c:	03818007 	ori	$r7,$r0,0x60
+1c002040:	00150014 	move	$r20,$r0
+
+1c002044 <loop1>:
+1c002044:	5800aa87 	beq	$r20,$r7,168(0xa8) # 1c0020ec <loop1end>
+1c002048:	00408a8c 	slli.w	$r12,$r20,0x2
+1c00204c:	0040a68e 	slli.w	$r14,$r20,0x9
+1c002050:	0010308c 	add.w	$r12,$r4,$r12
+1c002054:	001038ae 	add.w	$r14,$r5,$r14
+1c002058:	0015000d 	move	$r13,$r0
+
+1c00205c <loop2>:
+1c00205c:	580089a7 	beq	$r13,$r7,136(0x88) # 1c0020e4 <loop2end>
+1c002060:	28800193 	ld.w	$r19,$r12,0
+1c002064:	0040a5a8 	slli.w	$r8,$r13,0x9
+1c002068:	001020c8 	add.w	$r8,$r6,$r8
+1c00206c:	001501d0 	move	$r16,$r14
+1c002070:	0015000f 	move	$r15,$r0
+
+1c002074 <loop3>:
+1c002074:	580065e7 	beq	$r15,$r7,100(0x64) # 1c0020d8 <loop3end>
+1c002078:	28800211 	ld.w	$r17,$r16,0
+1c00207c:	28801212 	ld.w	$r18,$r16,4(0x4)
+1c002080:	28802217 	ld.w	$r23,$r16,8(0x8)
+1c002084:	28803218 	ld.w	$r24,$r16,12(0xc)
+1c002088:	28800119 	ld.w	$r25,$r8,0
+1c00208c:	2880111a 	ld.w	$r26,$r8,4(0x4)
+1c002090:	2880211b 	ld.w	$r27,$r8,8(0x8)
+1c002094:	2880311c 	ld.w	$r28,$r8,12(0xc)
+1c002098:	001c4671 	mul.w	$r17,$r19,$r17
+1c00209c:	001c4a72 	mul.w	$r18,$r19,$r18
+1c0020a0:	001c5e77 	mul.w	$r23,$r19,$r23
+1c0020a4:	001c6278 	mul.w	$r24,$r19,$r24
+1c0020a8:	00104739 	add.w	$r25,$r25,$r17
+1c0020ac:	00104b5a 	add.w	$r26,$r26,$r18
+1c0020b0:	00105f7b 	add.w	$r27,$r27,$r23
+1c0020b4:	0010639c 	add.w	$r28,$r28,$r24
+1c0020b8:	29800119 	st.w	$r25,$r8,0
+1c0020bc:	2980111a 	st.w	$r26,$r8,4(0x4)
+1c0020c0:	2980211b 	st.w	$r27,$r8,8(0x8)
+1c0020c4:	2980311c 	st.w	$r28,$r8,12(0xc)
+1c0020c8:	028011ef 	addi.w	$r15,$r15,4(0x4)
+1c0020cc:	02804108 	addi.w	$r8,$r8,16(0x10)
+1c0020d0:	02804210 	addi.w	$r16,$r16,16(0x10)
+1c0020d4:	53ffa3ff 	b	-96(0xfffffa0) # 1c002074 <loop3>
+
+1c0020d8 <loop3end>:
+1c0020d8:	028005ad 	addi.w	$r13,$r13,1(0x1)
+1c0020dc:	0288018c 	addi.w	$r12,$r12,512(0x200)
+1c0020e0:	53ff7fff 	b	-132(0xfffff7c) # 1c00205c <loop2>
+
+1c0020e4 <loop2end>:
+1c0020e4:	02800694 	addi.w	$r20,$r20,1(0x1)
+1c0020e8:	53ff5fff 	b	-164(0xfffff5c) # 1c002044 <loop1>
+
+1c0020ec <loop1end>:
+1c0020ec:	50020000 	b	512(0x200) # 1c0022ec <FLUSH_DCACHE_AND_RETURN>

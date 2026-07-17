@@ -1,5 +1,26 @@
 #include <regdef.h>
 
+#define CSR_CRMD 0x0
+#define CSR_DMW0 0x180
+#define CSR_DMW1 0x181
+
+#define CRMD_IE 0x4
+#define CRMD_DA 0x8
+#define CRMD_PG 0x10
+#define CRMD_DA_PG_MASK 0x18
+
+    /*
+     * DMW format used here:
+     *   VA[31:29] must match VSEG, then PA = {PSEG, VA[28:0]}.
+     *   MAT=1 is cacheable in this SoC/CPU, MAT=0 is uncached.
+     *
+     * DMW0: VA 0x00000000-0x1fffffff -> PA 0x00000000-0x1fffffff, cacheable.
+     * DMW1: VA 0xa0000000-0xbfffffff -> PA 0x00000000-0x1fffffff, uncached.
+     *       UART uses this alias: VA 0xbf000000 -> PA 0x1f000000.
+     */
+#define DMW0_LOW512M_CACHEABLE 0x00000019
+#define DMW1_LOW512M_UNCACHED 0xa0000009
+
     .section .rodata
     .p2align 2
 monitor_version:
@@ -77,6 +98,12 @@ monitor_version:
 
     .global START
 START:                                  // kernel init
+#ifdef SUPERVISOR_FORCE_UNCACHE
+    /* Forced uncache build: do not read CPUCFG or touch cache/MMU CSRs. */
+    li.w        s6, 0x0
+    li.w        s7, 0x0
+    b           runtime_init
+#else
     /* 1. CPUCFG: only enable cache path when L1 I-cache or D-cache exists. */
     li.w        t0, 0x10
     cpucfg      t0, t0
@@ -105,21 +132,21 @@ START:                                  // kernel init
     srli.w      s4,s4,16                // max_way
 dcache_regs_done:
 
-    /* 3. 配置 DMW */
-    li.w        t0,0x8
-    li.w        t1,0x18
-    csrxchg     t0,t1,0x0               // open da mode
+    /* 3. 配置 DMW：进入 PG 模式后用 DMW 做固定窗口映射。 */
+    li.w        t0,CRMD_DA
+    li.w        t1,CRMD_DA_PG_MASK
+    csrxchg     t0,t1,CSR_CRMD          // temporarily use direct-address mode
 
-    csrwr       zero,0x180
-    csrwr       zero,0x181              // clear dmw0, dmw1
-    li.w        t0,0x19
-    csrwr       t0,0x180                // config dmw0 (MAT=1, Cached)
-    li.w        t0,0xa0000009
-    csrwr       t0,0x181                // config dmw1
+    csrwr       zero,CSR_DMW0
+    csrwr       zero,CSR_DMW1           // clear dmw0, dmw1
+    li.w        t0,DMW0_LOW512M_CACHEABLE
+    csrwr       t0,CSR_DMW0             // low 512 MiB identity map, cacheable
+    li.w        t0,DMW1_LOW512M_UNCACHED
+    csrwr       t0,CSR_DMW1             // 0xa0000000 alias to low 512 MiB, uncached
 
-    li.w        t0,0x10
-    li.w        t1,0x18
-    csrxchg     t0,t1,0x0               // open pg mode
+    li.w        t0,CRMD_PG
+    li.w        t1,CRMD_DA_PG_MASK
+    csrxchg     t0,t1,CSR_CRMD          // enable PG mode so DMW entries take effect
     b           crmd_init
 
 no_cache_mmu:
@@ -130,8 +157,9 @@ no_cache_mmu:
 
 crmd_init:
     /* 4. 配置 CSR.CRMD */
-    li.w        t1, 0x4
-    csrxchg     t1, t1, 0x0             // csr_crmd
+    li.w        t1, CRMD_IE
+    csrxchg     t1, t1, CSR_CRMD        // csr_crmd
+#endif
 
 runtime_init:
     /* 5. 运行程序 */

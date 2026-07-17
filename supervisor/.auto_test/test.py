@@ -1,7 +1,7 @@
 #=# oj.resources.kernel_bin = http://58.213.25.72:18003/nscscc/la/kernel/kernel.bin
 #=# oj.resources.matrix_bin = http://58.213.25.72:18003/nscscc/la/perf/matrix.bin
 #=# oj.resources.crypto_bin = http://58.213.25.72:18003/nscscc/la/perf/crypto.bin
-#=# oj.board.n = 3
+#=# oj.board.n = 4
 #=# oj.run_time.max = 40000 
 
 from TestcaseBase import *
@@ -164,7 +164,7 @@ class Testcase(TestcaseBase):
         +Reset
         self.preloadTestData()
         BaseRAM[:] = kernel_bin
-        Serial.open(1, baud=9600) # NSCSCC
+        Serial.open(1, baud=115200) # NSCSCC
         -Reset
         # booting timeout in 10 seconds
         Timer.oneshot(10000)
@@ -178,6 +178,9 @@ class Testcase(TestcaseBase):
             ExtRAM[:0x30000:False] = self.testdata[:0x30000]
         elif self.utest[0] == 'CRYPTONIGHT':
             self.testdata = base64.b64decode(RESOURCES['crypto_bin'])
+        elif self.utest[0] == 'MIXED':
+            self.testdata = bytes.fromhex(
+                '0e314edb26c4f59e00f0ff0f000000008451c064')
 
     def verifyTestData(self) -> bool:
         if self.utest[0] == 'STREAM':
@@ -186,14 +189,18 @@ class Testcase(TestcaseBase):
             return ExtRAM[0x20000:0x30000:False] == self.testdata[0x30000:]
         elif self.utest[0] == 'CRYPTONIGHT':
             return ExtRAM[:0x200000:False] == self.testdata
+        elif self.utest[0] == 'MIXED':
+            return ExtRAM[0x120000:0x120014:False] == self.testdata
 
 # > make ON_FPGA=y
 # 1:1c002000 <UTEST_SIMPLE>:
 # 2:1c002008 <UTEST_STREAM>:
 # 3:1c002030 <UTEST_MATRIX>:
-# 4:1c0020b4 <UTEST_CRYPTONIGHT>:
+# 4:1c0020f0 <UTEST_CRYPTONIGHT>:
+# 5:1c002184 <UTEST_MIXED>:
 
 #              name, offset in kernel.bin, length
 UTEST_ENTRY = [('STREAM', 0x2008, 0x28),
-                ('MATRIX', 0x2030, 0x84),
-                ('CRYPTONIGHT', 0x20b4, 0x94)]
+                ('MATRIX', 0x2030, 0xc0),
+                ('CRYPTONIGHT', 0x20f0, 0x94),
+                ('MIXED', 0x2184, 0x104)]

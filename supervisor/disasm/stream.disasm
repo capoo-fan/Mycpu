@@ -1,0 +1,19 @@
+
+/Users/qianfu/Mycpu/supervisor/build/kernel/auto/kernel.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+1c002008 <UTEST_STREAM>:
+1c002008:	14382004 	lu12i.w	$r4,114944(0x1c100)
+1c00200c:	14388005 	lu12i.w	$r5,115712(0x1c400)
+1c002010:	14006006 	lu12i.w	$r6,768(0x300)
+1c002014:	00101886 	add.w	$r6,$r4,$r6
+
+1c002018 <stream_next>:
+1c002018:	2880008c 	ld.w	$r12,$r4,0
+1c00201c:	298000ac 	st.w	$r12,$r5,0
+1c002020:	02801084 	addi.w	$r4,$r4,4(0x4)
+1c002024:	028010a5 	addi.w	$r5,$r5,4(0x4)
+1c002028:	5ffff086 	bne	$r4,$r6,-16(0x3fff0) # 1c002018 <stream_next>
+1c00202c:	5002c000 	b	704(0x2c0) # 1c0022ec <FLUSH_DCACHE_AND_RETURN>

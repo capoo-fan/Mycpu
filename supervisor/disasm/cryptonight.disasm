@@ -1,0 +1,50 @@
+
+/Users/qianfu/Mycpu/supervisor/build/kernel/auto/kernel.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+1c0020f0 <UTEST_CRYPTONIGHT>:
+1c0020f0:	14388004 	lu12i.w	$r4,115712(0x1c400)
+1c0020f4:	15bd5b65 	lu12i.w	$r5,-136485(0xdeadb)
+1c0020f8:	03bbbca5 	ori	$r5,$r5,0xeef
+1c0020fc:	15f59d66 	lu12i.w	$r6,-21269(0xfaceb)
+1c002100:	038030c6 	ori	$r6,$r6,0xc
+1c002104:	14002007 	lu12i.w	$r7,256(0x100)
+1c002108:	00151010 	or	$r16,$r0,$r4
+1c00210c:	0015000f 	move	$r15,$r0
+1c002110:	1400100c 	lu12i.w	$r12,128(0x80)
+
+1c002114 <fill_next>:
+1c002114:	2980020f 	st.w	$r15,$r16,0
+1c002118:	028005ef 	addi.w	$r15,$r15,1(0x1)
+1c00211c:	02801210 	addi.w	$r16,$r16,4(0x4)
+1c002120:	5ffff5ec 	bne	$r15,$r12,-12(0x3fff4) # 1c002114 <fill_next>
+1c002124:	0015000d 	move	$r13,$r0
+1c002128:	14000fee 	lu12i.w	$r14,127(0x7f)
+1c00212c:	03bffdce 	ori	$r14,$r14,0xfff
+
+1c002130 <crn_hext>:
+1c002130:	0014b8ac 	and	$r12,$r5,$r14
+1c002134:	0040898c 	slli.w	$r12,$r12,0x2
+1c002138:	0010308c 	add.w	$r12,$r4,$r12
+1c00213c:	2880018f 	ld.w	$r15,$r12,0
+1c002140:	004484b0 	srli.w	$r16,$r5,0x1
+1c002144:	004085ef 	slli.w	$r15,$r15,0x1
+1c002148:	0015c1ef 	xor	$r15,$r15,$r16
+1c00214c:	0014b9f0 	and	$r16,$r15,$r14
+1c002150:	001599e6 	xor	$r6,$r15,$r6
+1c002154:	00408a10 	slli.w	$r16,$r16,0x2
+1c002158:	29800186 	st.w	$r6,$r12,0
+1c00215c:	00104090 	add.w	$r16,$r4,$r16
+1c002160:	2880020c 	ld.w	$r12,$r16,0
+1c002164:	00153c06 	or	$r6,$r0,$r15
+1c002168:	001c31ef 	mul.w	$r15,$r15,$r12
+1c00216c:	028005ad 	addi.w	$r13,$r13,1(0x1)
+1c002170:	001015e5 	add.w	$r5,$r15,$r5
+1c002174:	29800205 	st.w	$r5,$r16,0
+1c002178:	00159585 	xor	$r5,$r12,$r5
+1c00217c:	5fffb4ed 	bne	$r7,$r13,-76(0x3ffb4) # 1c002130 <crn_hext>
+
+1c002180 <crn_end>:
+1c002180:	50016c00 	b	364(0x16c) # 1c0022ec <FLUSH_DCACHE_AND_RETURN>

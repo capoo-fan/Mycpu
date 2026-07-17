@@ -1,0 +1,82 @@
+
+/Users/qianfu/Mycpu/supervisor/build/kernel/auto/kernel.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+1c002184 <UTEST_MIXED>:
+1c002184:	1438a004 	lu12i.w	$r4,115968(0x1c500)
+1c002188:	1438a205 	lu12i.w	$r5,115984(0x1c510)
+1c00218c:	14000086 	lu12i.w	$r6,4(0x4)
+1c002190:	0015000c 	move	$r12,$r0
+1c002194:	1400012d 	lu12i.w	$r13,9(0x9)
+1c002198:	03b8ddad 	ori	$r13,$r13,0xe37
+
+1c00219c <mixed_fill>:
+1c00219c:	0015b58e 	xor	$r14,$r12,$r13
+1c0021a0:	00408d8f 	slli.w	$r15,$r12,0x3
+1c0021a4:	0015bdce 	xor	$r14,$r14,$r15
+1c0021a8:	2980008e 	st.w	$r14,$r4,0
+1c0021ac:	02801084 	addi.w	$r4,$r4,4(0x4)
+1c0021b0:	0280058c 	addi.w	$r12,$r12,1(0x1)
+1c0021b4:	5fffe986 	bne	$r12,$r6,-24(0x3ffe8) # 1c00219c <mixed_fill>
+1c0021b8:	1438a004 	lu12i.w	$r4,115968(0x1c500)
+1c0021bc:	1438a205 	lu12i.w	$r5,115984(0x1c510)
+1c0021c0:	0015000c 	move	$r12,$r0
+1c0021c4:	00150017 	move	$r23,$r0
+1c0021c8:	00150018 	move	$r24,$r0
+1c0021cc:	00150019 	move	$r25,$r0
+1c0021d0:	0015001a 	move	$r26,$r0
+
+1c0021d4 <mixed_stream>:
+1c0021d4:	28800090 	ld.w	$r16,$r4,0
+1c0021d8:	28801091 	ld.w	$r17,$r4,4(0x4)
+1c0021dc:	28802092 	ld.w	$r18,$r4,8(0x8)
+1c0021e0:	28803093 	ld.w	$r19,$r4,12(0xc)
+1c0021e4:	001042f7 	add.w	$r23,$r23,$r16
+1c0021e8:	0015c718 	xor	$r24,$r24,$r17
+1c0021ec:	00104b39 	add.w	$r25,$r25,$r18
+1c0021f0:	0015cf5a 	xor	$r26,$r26,$r19
+1c0021f4:	298000b7 	st.w	$r23,$r5,0
+1c0021f8:	298010b8 	st.w	$r24,$r5,4(0x4)
+1c0021fc:	298020b9 	st.w	$r25,$r5,8(0x8)
+1c002200:	298030ba 	st.w	$r26,$r5,12(0xc)
+1c002204:	02804084 	addi.w	$r4,$r4,16(0x10)
+1c002208:	028040a5 	addi.w	$r5,$r5,16(0x10)
+1c00220c:	0280118c 	addi.w	$r12,$r12,4(0x4)
+1c002210:	5fffc586 	bne	$r12,$r6,-60(0x3ffc4) # 1c0021d4 <mixed_stream>
+1c002214:	1438a004 	lu12i.w	$r4,115968(0x1c500)
+1c002218:	1400004c 	lu12i.w	$r12,2(0x2)
+1c00221c:	14000074 	lu12i.w	$r20,3(0x3)
+1c002220:	03bffe94 	ori	$r20,$r20,0xfff
+1c002224:	0015e2ed 	xor	$r13,$r23,$r24
+
+1c002228 <mixed_stride>:
+1c002228:	0014d1ae 	and	$r14,$r13,$r20
+1c00222c:	004089ce 	slli.w	$r14,$r14,0x2
+1c002230:	0010388f 	add.w	$r15,$r4,$r14
+1c002234:	288001f0 	ld.w	$r16,$r15,0
+1c002238:	0015c1ad 	xor	$r13,$r13,$r16
+1c00223c:	004095b1 	slli.w	$r17,$r13,0x5
+1c002240:	0015c5ad 	xor	$r13,$r13,$r17
+1c002244:	00449db1 	srli.w	$r17,$r13,0x7
+1c002248:	0015c5ad 	xor	$r13,$r13,$r17
+1c00224c:	034005b1 	andi	$r17,$r13,0x1
+1c002250:	58000e20 	beq	$r17,$r0,12(0xc) # 1c00225c <mixed_even>
+1c002254:	001042f7 	add.w	$r23,$r23,$r16
+1c002258:	50000800 	b	8(0x8) # 1c002260 <mixed_join>
+
+1c00225c <mixed_even>:
+1c00225c:	0015c318 	xor	$r24,$r24,$r16
+
+1c002260 <mixed_join>:
+1c002260:	298001ed 	st.w	$r13,$r15,0
+1c002264:	02bffd8c 	addi.w	$r12,$r12,-1(0xfff)
+1c002268:	5fffc180 	bne	$r12,$r0,-64(0x3ffc0) # 1c002228 <mixed_stride>
+1c00226c:	1438a404 	lu12i.w	$r4,116000(0x1c520)
+1c002270:	29800097 	st.w	$r23,$r4,0
+1c002274:	29801098 	st.w	$r24,$r4,4(0x4)
+1c002278:	29802099 	st.w	$r25,$r4,8(0x8)
+1c00227c:	2980309a 	st.w	$r26,$r4,12(0xc)
+1c002280:	2980408d 	st.w	$r13,$r4,16(0x10)
+1c002284:	50006800 	b	104(0x68) # 1c0022ec <FLUSH_DCACHE_AND_RETURN>

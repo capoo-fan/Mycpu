@@ -106,11 +106,6 @@ pll_example clock_gen
     wire        data_sram_data_ok;
     wire [31:0] data_sram_rdata;
 
-    wire [31:0] debug_wb_pc;
-    wire [3:0]  debug_wb_rf_we;
-    wire [4:0]  debug_wb_rf_wnum;
-    wire [31:0] debug_wb_rf_wdata;
-
     mycpu_top u_cpu (
         .clk                (cpu_clk),
         .resetn             (cpu_resetn),
@@ -135,10 +130,10 @@ pll_example clock_gen
         .data_sram_data_ok  (data_sram_data_ok),
         .data_sram_rdata    (data_sram_rdata),
 
-        .debug_wb_pc        (debug_wb_pc),
-        .debug_wb_rf_we     (debug_wb_rf_we),
-        .debug_wb_rf_wnum   (debug_wb_rf_wnum),
-        .debug_wb_rf_wdata  (debug_wb_rf_wdata)
+        .debug_wb_pc        (),
+        .debug_wb_rf_we     (),
+        .debug_wb_rf_wnum   (),
+        .debug_wb_rf_wdata  ()
     );
 
     wire [31:0] base_ram_rdata = base_ram_data;
@@ -235,11 +230,11 @@ pll_example clock_gen
     assign flash_we_n   = 1'b1;
     assign flash_byte_n = 1'b1;
 
-    wire [7:0] number = debug_wb_pc[7:0];
+    wire [7:0] number = 8'b0;
     SEG7_LUT segL(.oSEG1(dpy0), .iDIG(number[3:0]));
     SEG7_LUT segH(.oSEG1(dpy1), .iDIG(number[7:4]));
 
-    assign leds = {debug_wb_rf_we, debug_wb_rf_wnum, debug_wb_pc[6:0]};
+    assign leds = 16'b0;
 
     wire [11:0] hdata;
     assign video_red   = hdata < 12'd266 ? 3'b111 : 3'b000;
@@ -256,8 +251,7 @@ pll_example clock_gen
         .data_enable (video_de)
     );
 
-    wire unused_inputs = clk_11M0592 | clock_btn | (|touch_btn) | (|dip_sw) | clk_20M |
-                         (|debug_wb_rf_wdata);
+    wire unused_inputs = clk_11M0592 | clock_btn | (|touch_btn) | (|dip_sw) | clk_20M;
 endmodule
 
 `default_nettype wire

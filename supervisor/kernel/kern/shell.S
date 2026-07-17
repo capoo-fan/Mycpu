@@ -68,6 +68,8 @@ SHELL:
     jirl        ra,t0,0x0
     or          s1,a0,zero              // 获得num
 
+    beq         s1,zero,.OP_D_DONE
+
 .LC1:
     ld.b        a0,s0,0x0               // 读取字节
     addi.w      s1,s1,-1                // 滚动计数器
@@ -76,6 +78,7 @@ SHELL:
     addi.w      s0,s0,0x1               // 移动打印指针
     bne         s1,zero,.LC1            // 打印循环
 
+.OP_D_DONE:
     ld.w        s0,sp,0x0               // 恢复s0,s1
     ld.w        s1,sp,0x4
     addi.w      sp,sp,0x8
@@ -92,6 +95,10 @@ SHELL:
     la.global    t0,READSERIALWORD
     jirl        ra,t0,0x0
     or          s1,a0,zero              // 获得num
+    beq         s1,zero,.OP_A_DONE
+    or          t0,s0,s1
+    andi        t0,t0,0x3               // addr和num都必须4字节对齐
+    bne         t0,zero,.OP_A_DROP
     srli.w      s1,s1,2                 // num除4，获得字数
 .LC2:                                   // 每次写入一字
     la.global    t0,READSERIALWORD       // 从串口读入一字
@@ -101,6 +108,15 @@ SHELL:
     addi.w      s0,s0,0x4               // 移动写指针
     bne         s1,zero,.LC2            // 写循环
 
+    b           .OP_A_DONE
+
+.OP_A_DROP:                             // 丢弃非法包载荷，保持串口协议同步
+    la.global    t0,READSERIAL
+    jirl        ra,t0,0x0
+    addi.w      s1,s1,-1
+    bne         s1,zero,.OP_A_DROP
+
+.OP_A_DONE:
     ld.w        s0,sp,0x0               // 恢复s0,s1
     ld.w        s1,sp,0x4
     addi.w      sp,sp,0x8
@@ -184,6 +200,9 @@ SHELL:
     la.local    a0,.USERRET2
     st.w        a0,ra,0<<2
     ld.w        sp,ra,31<<2
+
+    la.global    t0,FLUSH_DCACHE         // 用户程序返回后统一写回 D-cache
+    jirl        ra,t0,0x0
     
     ori         a0,zero,TIMETOKEN       // 发送TIMETOKEN(0x07)信号
     la.global    t0,WRITESERIAL          // 告诉终端用户程序结束运行

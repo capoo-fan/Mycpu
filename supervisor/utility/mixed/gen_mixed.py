@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- encoding=utf-8 -*-
 
+import argparse
 from pathlib import Path
 import struct
 
@@ -77,7 +78,17 @@ def run_mixed():
 
 
 def main():
-    out_dir = Path(__file__).resolve().parent
+    parser = argparse.ArgumentParser(description="Generate MIXED reference images.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent,
+        help="directory for generated files",
+    )
+    args = parser.parse_args()
+
+    out_dir = args.output_dir.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
     src, dst, signature = run_mixed()
 
     image = pack_words(src) + pack_words(dst) + pack_words(signature)

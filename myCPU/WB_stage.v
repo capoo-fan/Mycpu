@@ -16,12 +16,7 @@ module WB_stage(
     output wire [31:0]                  csr_wmask,
     output wire [31:0]                  csr_wdata,
     output wire                         csr_flush,
-    output wire [31:0]                  csr_flush_target,
-
-    output reg  [31:0]                  debug_wb_pc,
-    output reg  [ 3:0]                  debug_wb_rf_we,
-    output reg  [ 4:0]                  debug_wb_rf_wnum,
-    output reg  [31:0]                  debug_wb_rf_wdata
+    output wire [31:0]                  csr_flush_target
   );
 
   reg reset;
@@ -43,7 +38,6 @@ module WB_stage(
   reg  [31:0] ws_csr_wvalue_0;
 
   reg         ws_valid_1;
-  reg  [31:0] ws_pc_1;
   reg  [31:0] ws_alu_result_1;
   reg  [31:0] ws_mem_result_1;
   reg         ws_res_from_mem_1;
@@ -76,7 +70,7 @@ module WB_stage(
           ms_mem_rdata_0, ms_is_csr_0, ms_csr_num_0,
           ms_csr_wmask_0, ms_csr_wvalue_0} = ms_to_ws_bus_0;
 
-  wire [31:0] ms_pc_1;
+  wire [31:0] unused_ms_pc_1;
   wire [31:0] ms_alu_result_1;
   wire        ms_res_from_mem_1;
   wire        ms_gr_we_1;
@@ -90,7 +84,7 @@ module WB_stage(
   wire [31:0] ms_csr_wmask_1;
   wire [31:0] ms_csr_wvalue_1;
 
-  assign {ms_pc_1, ms_alu_result_1, ms_res_from_mem_1, ms_gr_we_1, ms_dest_1,
+  assign {unused_ms_pc_1, ms_alu_result_1, ms_res_from_mem_1, ms_gr_we_1, ms_dest_1,
           ms_ld_byte_1, ms_ld_half_1, ms_ld_sign_ext_1,
           ms_mem_rdata_1, ms_is_csr_1, ms_csr_num_1,
           ms_csr_wmask_1, ms_csr_wvalue_1} = ms_to_ws_bus_1;
@@ -124,26 +118,12 @@ module WB_stage(
   wire [31:0] final_result_0 = ws_res_from_mem_0 ? ws_load_result_0 : ws_alu_result_0;
   wire [31:0] final_result_1 = ws_res_from_mem_1 ? ws_load_result_1 : ws_alu_result_1;
 
-  wire packet_valid = ws_valid_0 || ws_valid_1;
-
-  localparam DBG_DEPTH = 4;
-  reg [68:0] dbg_queue [0:DBG_DEPTH-1];
-  reg [2:0]  dbg_cnt;
-
-  wire dbg_pop = (dbg_cnt != 3'd0);
-  wire [2:0] dbg_cnt_after_pop = dbg_cnt - {2'b0, dbg_pop};
-
-  wire commit_dbg_0 = packet_valid && ws_valid_0 && ws_gr_we_0 && (ws_dest_0 != 5'b0);
-  wire commit_dbg_1 = packet_valid && ws_valid_1 && ws_gr_we_1 && (ws_dest_1 != 5'b0);
-  wire [1:0] commit_dbg_num = {1'b0, commit_dbg_0} + {1'b0, commit_dbg_1};
-  wire [2:0] dbg_free_after_pop = DBG_DEPTH - dbg_cnt + {2'b0, dbg_pop};
-  wire dbg_commit_ready = (dbg_free_after_pop >= {1'b0, commit_dbg_num});
-
-  wire ws_fire = packet_valid && dbg_commit_ready;
-  assign ws_allowin = !packet_valid || ws_fire;
+  // WB has no functional backpressure after the simulation-only debug FIFO
+  // is removed.  Both issue lanes can retire in the same cycle.
+  assign ws_allowin = 1'b1;
 
   assign csr_busy         = ws_valid_0 && ws_is_csr_0;
-  assign csr_we           = ws_fire && ws_valid_0 && ws_is_csr_0;
+  assign csr_we           = ws_valid_0 && ws_is_csr_0;
   assign csr_waddr        = ws_csr_num_0;
   assign csr_wmask        = ws_csr_wmask_0;
   assign csr_wdata        = ws_csr_wvalue_0;
@@ -160,87 +140,6 @@ module WB_stage(
 
   assign ws_to_rf_bus = {ws_rf_we_0, ws_rf_waddr_0, ws_rf_wdata_0,
                          ws_rf_we_1, ws_rf_waddr_1, ws_rf_wdata_1};
-
-  wire [68:0] dbg_event_0 = {ws_pc_0, ws_dest_0, final_result_0};
-  wire [68:0] dbg_event_1 = {ws_pc_1, ws_dest_1, final_result_1};
-
-  always @(posedge clk)
-  begin
-    if (reset)
-    begin
-      debug_wb_pc       <= 32'b0;
-      debug_wb_rf_we    <= 4'b0;
-      debug_wb_rf_wnum  <= 5'b0;
-      debug_wb_rf_wdata <= 32'b0;
-      dbg_cnt           <= 3'b0;
-    end
-    else
-    begin
-      if (dbg_pop)
-      begin
-        debug_wb_pc       <= dbg_queue[0][68:37];
-        debug_wb_rf_wnum  <= dbg_queue[0][36:32];
-        debug_wb_rf_wdata <= dbg_queue[0][31:0];
-        debug_wb_rf_we    <= 4'b1111;
-        dbg_queue[0]      <= dbg_queue[1];
-        dbg_queue[1]      <= dbg_queue[2];
-        dbg_queue[2]      <= dbg_queue[3];
-      end
-      else
-      begin
-        debug_wb_pc       <= 32'b0;
-        debug_wb_rf_we    <= 4'b0;
-        debug_wb_rf_wnum  <= 5'b0;
-        debug_wb_rf_wdata <= 32'b0;
-      end
-
-      if (ws_fire)
-      begin
-        if (commit_dbg_0)
-        begin
-          case (dbg_cnt_after_pop)
-            3'd0:
-              dbg_queue[0] <= dbg_event_0;
-            3'd1:
-              dbg_queue[1] <= dbg_event_0;
-            3'd2:
-              dbg_queue[2] <= dbg_event_0;
-            default:
-              dbg_queue[3] <= dbg_event_0;
-          endcase
-
-          if (commit_dbg_1)
-          begin
-            case (dbg_cnt_after_pop + 3'd1)
-              3'd0:
-                dbg_queue[0] <= dbg_event_1;
-              3'd1:
-                dbg_queue[1] <= dbg_event_1;
-              3'd2:
-                dbg_queue[2] <= dbg_event_1;
-              default:
-                dbg_queue[3] <= dbg_event_1;
-            endcase
-          end
-        end
-        else if (commit_dbg_1)
-        begin
-          case (dbg_cnt_after_pop)
-            3'd0:
-              dbg_queue[0] <= dbg_event_1;
-            3'd1:
-              dbg_queue[1] <= dbg_event_1;
-            3'd2:
-              dbg_queue[2] <= dbg_event_1;
-            default:
-              dbg_queue[3] <= dbg_event_1;
-          endcase
-        end
-      end
-
-      dbg_cnt <= dbg_cnt_after_pop + {1'b0, (ws_fire ? commit_dbg_num : 2'b0)};
-    end
-  end
 
   always @(posedge clk)
   begin
@@ -274,7 +173,6 @@ module WB_stage(
       ws_csr_wmask_0    <= 32'b0;
       ws_csr_wvalue_0   <= 32'b0;
 
-      ws_pc_1           <= 32'b0;
       ws_gr_we_1        <= 1'b0;
       ws_res_from_mem_1 <= 1'b0;
       ws_dest_1         <= 5'b0;
@@ -315,7 +213,6 @@ module WB_stage(
 
       if (ms_to_ws_valid_1)
       begin
-        ws_pc_1           <= ms_pc_1;
         ws_alu_result_1   <= ms_alu_result_1;
         ws_mem_result_1   <= ms_mem_rdata_1;
         ws_res_from_mem_1 <= ms_res_from_mem_1;
