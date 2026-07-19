@@ -422,91 +422,66 @@ module EXE_stage(
     end
     else if (es_allowin)
     begin
-      if (ds_to_es_valid_0)
-      begin
-        es_pc_0           <= ds_pc_0;
-        es_alu_op_0       <= ds_alu_op_0;
-        es_alu_src1_0     <= ds_alu_src1_0;
-        es_alu_src2_0     <= ds_alu_src2_0;
-        es_rkd_value_0    <= ds_rkd_value_0;
-        es_res_from_mem_0 <= ds_res_from_mem_0;
-        es_gr_we_0        <= ds_gr_we_0;
-        es_mem_we_0       <= ds_mem_we_0;
-        es_dest_0         <= ds_dest_0;
-        es_is_mul_0       <= ds_is_mul_0;
-        es_mul_signed_0   <= ds_mul_signed_0;
-        es_mul_hi_0       <= ds_mul_hi_0;
-        es_ld_byte_0      <= ds_ld_byte_0;
-        es_ld_half_0      <= ds_ld_half_0;
-        es_ld_sign_ext_0  <= ds_ld_sign_ext_0;
-        es_st_byte_0      <= ds_st_byte_0;
-        es_st_half_0      <= ds_st_half_0;
-        es_pred_taken_0   <= ds_pred_taken_0;
-        es_pred_target_0  <= ds_pred_target_0;
-        es_br_op_0        <= ds_br_op_0;
-        es_br_offs_0      <= ds_br_offs_0;
-        es_is_cpucfg_0    <= ds_is_cpucfg_0;
-        es_is_cacop_0     <= ds_is_cacop_0;
-        es_cacop_code_0   <= ds_cacop_code_0;
-        es_is_csr_0       <= ds_is_csr_0;
-        es_csr_num_0      <= ds_csr_num_0;
-        es_csr_wmask_0    <= ds_csr_wmask_0;
-        es_csr_wvalue_0   <= ds_csr_wvalue_0;
-      end
-      else
-      begin
-        es_gr_we_0        <= 1'b0;
-        es_mem_we_0       <= 1'b0;
-        es_res_from_mem_0 <= 1'b0;
-        es_is_mul_0       <= 1'b0;
-        es_br_op_0        <= `BR_NONE;
-        es_is_cpucfg_0    <= 1'b0;
-        es_is_cacop_0     <= 1'b0;
-        es_is_csr_0       <= 1'b0;
-      end
+      // Payload follows es_allowin only.  The issue decision is captured by
+      // es_valid_* and must not become the CE of the wide EX register banks.
+      // Architectural side-effect controls remain zero for an invalid lane.
+      es_pc_0           <= ds_pc_0;
+      es_alu_op_0       <= ds_alu_op_0;
+      es_alu_src1_0     <= ds_alu_src1_0;
+      es_alu_src2_0     <= ds_alu_src2_0;
+      es_rkd_value_0    <= ds_rkd_value_0;
+      es_res_from_mem_0 <= ds_to_es_valid_0 && ds_res_from_mem_0;
+      es_gr_we_0        <= ds_to_es_valid_0 && ds_gr_we_0;
+      es_mem_we_0       <= ds_to_es_valid_0 && ds_mem_we_0;
+      es_dest_0         <= ds_dest_0;
+      es_is_mul_0       <= ds_to_es_valid_0 && ds_is_mul_0;
+      es_mul_signed_0   <= ds_mul_signed_0;
+      es_mul_hi_0       <= ds_mul_hi_0;
+      es_ld_byte_0      <= ds_ld_byte_0;
+      es_ld_half_0      <= ds_ld_half_0;
+      es_ld_sign_ext_0  <= ds_ld_sign_ext_0;
+      es_st_byte_0      <= ds_st_byte_0;
+      es_st_half_0      <= ds_st_half_0;
+      es_pred_taken_0   <= ds_pred_taken_0;
+      es_pred_target_0  <= ds_pred_target_0;
+      es_br_op_0        <= ds_to_es_valid_0 ? ds_br_op_0 : `BR_NONE;
+      es_br_offs_0      <= ds_br_offs_0;
+      es_is_cpucfg_0    <= ds_to_es_valid_0 && ds_is_cpucfg_0;
+      es_is_cacop_0     <= ds_to_es_valid_0 && ds_is_cacop_0;
+      es_cacop_code_0   <= ds_cacop_code_0;
+      es_is_csr_0       <= ds_to_es_valid_0 && ds_is_csr_0;
+      es_csr_num_0      <= ds_csr_num_0;
+      es_csr_wmask_0    <= ds_csr_wmask_0;
+      es_csr_wvalue_0   <= ds_csr_wvalue_0;
 
-      if (ds_to_es_valid_1)
-      begin
-        es_pc_1           <= ds_pc_1;
-        es_alu_op_1       <= ds_alu_op_1;
-        es_alu_src1_1     <= ds_alu_src1_1;
-        es_alu_src2_1     <= ds_alu_src2_1;
-        es_rkd_value_1    <= ds_rkd_value_1;
-        es_res_from_mem_1 <= ds_res_from_mem_1;
-        es_gr_we_1        <= ds_gr_we_1;
-        es_mem_we_1       <= ds_mem_we_1;
-        es_dest_1         <= ds_dest_1;
-        es_is_mul_1       <= ds_is_mul_1;
-        es_mul_signed_1   <= ds_mul_signed_1;
-        es_mul_hi_1       <= ds_mul_hi_1;
-        es_ld_byte_1      <= ds_ld_byte_1;
-        es_ld_half_1      <= ds_ld_half_1;
-        es_ld_sign_ext_1  <= ds_ld_sign_ext_1;
-        es_st_byte_1      <= ds_st_byte_1;
-        es_st_half_1      <= ds_st_half_1;
-        es_pred_taken_1   <= ds_pred_taken_1;
-        es_pred_target_1  <= ds_pred_target_1;
-        es_br_op_1        <= ds_br_op_1;
-        es_br_offs_1      <= ds_br_offs_1;
-        es_is_cpucfg_1    <= ds_is_cpucfg_1;
-        es_is_cacop_1     <= ds_is_cacop_1;
-        es_cacop_code_1   <= ds_cacop_code_1;
-        es_is_csr_1       <= ds_is_csr_1;
-        es_csr_num_1      <= ds_csr_num_1;
-        es_csr_wmask_1    <= ds_csr_wmask_1;
-        es_csr_wvalue_1   <= ds_csr_wvalue_1;
-      end
-      else
-      begin
-        es_gr_we_1        <= 1'b0;
-        es_mem_we_1       <= 1'b0;
-        es_res_from_mem_1 <= 1'b0;
-        es_is_mul_1       <= 1'b0;
-        es_br_op_1        <= `BR_NONE;
-        es_is_cpucfg_1    <= 1'b0;
-        es_is_cacop_1     <= 1'b0;
-        es_is_csr_1       <= 1'b0;
-      end
+      es_pc_1           <= ds_pc_1;
+      es_alu_op_1       <= ds_alu_op_1;
+      es_alu_src1_1     <= ds_alu_src1_1;
+      es_alu_src2_1     <= ds_alu_src2_1;
+      es_rkd_value_1    <= ds_rkd_value_1;
+      es_res_from_mem_1 <= ds_to_es_valid_1 && ds_res_from_mem_1;
+      es_gr_we_1        <= ds_to_es_valid_1 && ds_gr_we_1;
+      es_mem_we_1       <= ds_to_es_valid_1 && ds_mem_we_1;
+      es_dest_1         <= ds_dest_1;
+      es_is_mul_1       <= ds_to_es_valid_1 && ds_is_mul_1;
+      es_mul_signed_1   <= ds_mul_signed_1;
+      es_mul_hi_1       <= ds_mul_hi_1;
+      es_ld_byte_1      <= ds_ld_byte_1;
+      es_ld_half_1      <= ds_ld_half_1;
+      es_ld_sign_ext_1  <= ds_ld_sign_ext_1;
+      es_st_byte_1      <= ds_st_byte_1;
+      es_st_half_1      <= ds_st_half_1;
+      es_pred_taken_1   <= ds_pred_taken_1;
+      es_pred_target_1  <= ds_pred_target_1;
+      es_br_op_1        <= ds_to_es_valid_1 ? ds_br_op_1 : `BR_NONE;
+      es_br_offs_1      <= ds_br_offs_1;
+      es_is_cpucfg_1    <= ds_to_es_valid_1 && ds_is_cpucfg_1;
+      es_is_cacop_1     <= ds_to_es_valid_1 && ds_is_cacop_1;
+      es_cacop_code_1   <= ds_cacop_code_1;
+      es_is_csr_1       <= ds_to_es_valid_1 && ds_is_csr_1;
+      es_csr_num_1      <= ds_csr_num_1;
+      es_csr_wmask_1    <= ds_csr_wmask_1;
+      es_csr_wvalue_1   <= ds_csr_wvalue_1;
     end
   end
 

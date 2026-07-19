@@ -156,6 +156,45 @@ module mul_issue_timing_tb;
     inst_0 = 32'b0;
     inst_1 = 32'b0;
 
+    // A same-packet RAW dependency issues lane0 only.  Lane1 payload may be
+    // sampled, but its valid and every architectural side-effect control must
+    // remain clear.
+    reset_dut();
+    inst_0 = make_addi(5'd5, 5'd0);
+    inst_1 = make_addi(5'd6, 5'd5);
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
+    expect_pop(1'b1, 1'b0, "same-packet RAW did not reduce issue to lane0");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_valid_1 !== 1'b0 || es_to_ms_valid_1 !== 1'b0 ||
+        u_exe.es_gr_we_1 !== 1'b0 || u_exe.es_mem_we_1 !== 1'b0 ||
+        u_exe.es_res_from_mem_1 !== 1'b0 ||
+        u_exe.es_is_mul_1 !== 1'b0 || u_exe.mul_pending_1 !== 1'b0)
+      fail("invalid lane1 retained an architectural side effect");
+
+    // Backpressure must hold both valid and payload even though the ISSUE
+    // inputs continue to change while EX cannot accept a new packet.
+    reset_dut();
+    inst_0 = make_addi(5'd10, 5'd0);
+    inst_1 = make_addi(5'd11, 5'd0);
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
+    expect_pop(1'b1, 1'b1, "ordinary pair did not issue before backpressure");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_valid_1 !== 1'b1 || u_exe.es_dest_1 !== 5'd11)
+      fail("lane1 payload was not captured before backpressure");
+    @(negedge clk);
+    inst_0 = make_addi(5'd12, 5'd0);
+    inst_1 = make_addi(5'd13, 5'd0);
+    ms_allowin = 1'b0;
+    expect_pop(1'b0, 1'b0, "MEM backpressure did not stop ISSUE");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_valid_1 !== 1'b1 || u_exe.es_dest_1 !== 5'd11)
+      fail("EX payload changed while es_allowin was low");
+
     // Lane0 multiply followed immediately by a RAW consumer. The consumer
     // must issue in the same cycle that the three-cycle multiply becomes ready.
     reset_dut();
