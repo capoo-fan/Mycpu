@@ -83,6 +83,8 @@ module inst_buffer_timing_tb;
     input do_pop_0;
     input do_pop_1;
     begin
+      if (do_pop_1 && !do_pop_0)
+        fail("pop1 asserted without pop0");
       @(negedge clk);
       push_valid_0 = do_push_0;
       push_valid_1 = do_push_1;
@@ -158,6 +160,30 @@ module inst_buffer_timing_tb;
     check_front(1'b0, 8'd0, 1'b0, 8'd0, "flush state");
     if (!push_ready)
       fail("buffer did not become ready after flush");
+
+    // Fill the two-entry queued portion completely, then combine a wrapped
+    // dual push with a dual pop.  This also checks the empty/full boundary.
+    drive_cycle(1'b1, 8'd21, 1'b1, 8'd22, 1'b0, 1'b0);
+    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b0, 1'b0);
+    check_front(1'b1, 8'd21, 1'b1, 8'd22, "boundary initial refill");
+    drive_cycle(1'b1, 8'd23, 1'b1, 8'd24, 1'b0, 1'b0);
+    check_front(1'b1, 8'd21, 1'b1, 8'd22, "queued portion full");
+    if (push_ready || !full)
+      fail("full buffer still accepted a two-entry push");
+
+    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b1, 1'b0);
+    check_front(1'b1, 8'd22, 1'b1, 8'd23, "full boundary single pop");
+    if (!push_ready)
+      fail("single pop did not restore push readiness");
+
+    drive_cycle(1'b1, 8'd25, 1'b1, 8'd26, 1'b1, 1'b1);
+    check_front(1'b1, 8'd24, 1'b0, 8'd0,
+                "simultaneous wrapped dual pop and push");
+    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b0, 1'b0);
+    check_front(1'b1, 8'd24, 1'b1, 8'd25,
+                "refill after simultaneous dual pop and push");
+    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b1, 1'b1);
+    check_front(1'b1, 8'd26, 1'b0, 8'd0, "final wrapped entry");
 
     $display("PASS inst_buffer_timing_tb");
     $finish;

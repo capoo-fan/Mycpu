@@ -33,6 +33,23 @@ module issue_special_tb;
   localparam [31:0] INST_CACOP = {6'h01, 4'h8, 12'h000, 5'd0, 5'h10};
   localparam [31:0] INST_CPUCFG = {17'b0, 5'h1b, 5'd2, 5'd3};
 
+  function [31:0] make_addi;
+    input [4:0] rd;
+    input [4:0] rj;
+    begin
+      make_addi = 32'h0280_0400 | {22'b0, rj, rd};
+    end
+  endfunction
+
+  function [31:0] make_add;
+    input [4:0] rd;
+    input [4:0] rj;
+    input [4:0] rk;
+    begin
+      make_add = 32'h0010_0000 | {17'b0, rk, rj, rd};
+    end
+  endfunction
+
   inst_decoder dec0(.inst(inst_0), .dec_bus(dec_0));
   inst_decoder dec1(.inst(inst_1), .dec_bus(dec_1));
 
@@ -58,12 +75,84 @@ module issue_special_tb;
     input [255:0] name;
     begin
       #1;
+      if (pop_1 && !pop_0) begin
+        $display("FAIL %0s pop1 asserted without pop0", name);
+        $fatal(1, "issue_special_tb failed");
+      end
       if (issue_0 !== expected_0 || issue_1 !== expected_1 ||
           pop_0 !== expected_0 || pop_1 !== expected_1) begin
         $display("FAIL %0s issue=%b%b pop=%b%b", name,
                  issue_0, issue_1, pop_0, pop_1);
         $fatal(1, "issue_special_tb failed");
       end
+    end
+  endtask
+
+  task clear_producers;
+    begin
+      es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
+      es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
+      ms_fwd_bus_0 = {`MS_FWD_BUS_WD{1'b0}};
+      ms_fwd_bus_1 = {`MS_FWD_BUS_WD{1'b0}};
+    end
+  endtask
+
+  task set_producer;
+    input integer producer_slot;
+    input         producer_ready;
+    input [4:0]   producer_dest;
+    begin
+      clear_producers();
+      case (producer_slot)
+        0: es_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b0,
+                            producer_dest, 32'h1000_0000};
+        1: es_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b0,
+                            producer_dest, 32'h2000_0000};
+        2: ms_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b1,
+                            producer_dest, 32'h3000_0000};
+        3: ms_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b1,
+                            producer_dest, 32'h4000_0000};
+        default: $fatal(1, "invalid producer slot");
+      endcase
+    end
+  endtask
+
+  task check_raw_matrix;
+    integer producer_slot;
+    begin
+      for (producer_slot = 0; producer_slot < 4;
+           producer_slot = producer_slot + 1) begin
+        // lane0 rj
+        inst_0 = make_addi(5'd10, 5'd2);
+        inst_1 = make_addi(5'd11, 5'd0);
+        set_producer(producer_slot, 1'b0, 5'd2);
+        check_issue(1'b0, 1'b0, "lane0 rj unready RAW");
+        set_producer(producer_slot, 1'b1, 5'd2);
+        check_issue(1'b1, 1'b1, "lane0 rj ready RAW");
+
+        // lane0 rkd
+        inst_0 = make_add(5'd10, 5'd0, 5'd2);
+        set_producer(producer_slot, 1'b0, 5'd2);
+        check_issue(1'b0, 1'b0, "lane0 rkd unready RAW");
+        set_producer(producer_slot, 1'b1, 5'd2);
+        check_issue(1'b1, 1'b1, "lane0 rkd ready RAW");
+
+        // lane1 rj: lane0 remains independently issuable while lane1 waits.
+        inst_0 = make_addi(5'd10, 5'd0);
+        inst_1 = make_addi(5'd11, 5'd2);
+        set_producer(producer_slot, 1'b0, 5'd2);
+        check_issue(1'b1, 1'b0, "lane1 rj unready RAW");
+        set_producer(producer_slot, 1'b1, 5'd2);
+        check_issue(1'b1, 1'b1, "lane1 rj ready RAW");
+
+        // lane1 rkd
+        inst_1 = make_add(5'd11, 5'd0, 5'd2);
+        set_producer(producer_slot, 1'b0, 5'd2);
+        check_issue(1'b1, 1'b0, "lane1 rkd unready RAW");
+        set_producer(producer_slot, 1'b1, 5'd2);
+        check_issue(1'b1, 1'b1, "lane1 rkd ready RAW");
+      end
+      clear_producers();
     end
   endtask
 
@@ -125,6 +214,8 @@ module issue_special_tb;
     check_issue(1'b1, 1'b0, "unready MEM producer blocks lane1 only");
     ms_fwd_bus_0 = {1'b1, 1'b1, 1'b1, 1'b1, 5'd2, 32'h89ab_cdef};
     check_issue(1'b1, 1'b1, "MEM producer forwards without extra stall");
+
+    check_raw_matrix();
 
     $display("PASS issue_special_tb");
     $finish;

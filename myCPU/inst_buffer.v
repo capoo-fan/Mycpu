@@ -37,8 +37,29 @@ module inst_buffer(
 
   reg                          front_valid_0_r;
   reg                          front_valid_1_r;
-  reg [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0_r;
-  reg [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1_r;
+
+
+  reg [44:0] front_bus_0_g0;
+  reg [44:0] front_bus_0_g1;
+  reg [44:0] front_bus_0_g2;
+  reg [44:0] front_bus_0_g3;
+  reg [44:0] front_bus_0_g4;
+  reg [42:0] front_bus_0_g5;
+  reg [44:0] front_bus_1_g0;
+  reg [44:0] front_bus_1_g1;
+  reg [44:0] front_bus_1_g2;
+  reg [44:0] front_bus_1_g3;
+  reg [44:0] front_bus_1_g4;
+  reg [42:0] front_bus_1_g5;
+
+  wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0_r;
+  wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1_r;
+  assign front_bus_0_r = {front_bus_0_g5, front_bus_0_g4,
+                          front_bus_0_g3, front_bus_0_g2,
+                          front_bus_0_g1, front_bus_0_g0};
+  assign front_bus_1_r = {front_bus_1_g5, front_bus_1_g4,
+                          front_bus_1_g3, front_bus_1_g2,
+                          front_bus_1_g1, front_bus_1_g0};
 
   assign front_valid_0 = front_valid_0_r;
   assign front_valid_1 = front_valid_1_r;
@@ -51,22 +72,15 @@ module inst_buffer(
   reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_0;
   reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_1;
 
-  // pop_shift 只消耗一条指令，pop_clear 消耗两条指令。宽数据装载
-  // 控制给出明确的扇出上限，允许 Vivado 在各个 payload 分区附近复制逻辑。
-  (* keep = "true", max_fanout = 8 *) wire pop_shift;
-  (* keep = "true", max_fanout = 8 *) wire pop_clear;
-  (* keep = "true", max_fanout = 8 *) reg [1:0] head_step;
-  
-  assign pop_shift = pop_0 && !pop_1;
-  assign pop_clear = pop_1;
+  reg [1:0] head_step;
 
   always @(*)
   begin
     head_step = 2'd0;
-    if (pop_clear)
+    if (pop_1)
       head_step = (cnt > CNT_ONE) ? 2'd2 :
                 (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
-    else if (pop_shift)
+    else if (pop_0)
     begin
       if (front_valid_1_r)
         head_step = (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
@@ -90,14 +104,14 @@ module inst_buffer(
     next_front_bus_0   = front_bus_0_r;
     next_front_bus_1   = front_bus_1_r;
 
-    if (pop_clear)
+    if (pop_1)
     begin
       next_front_valid_0 = (cnt != CNT_ZERO);
       next_front_valid_1 = (cnt > CNT_ONE);
       next_front_bus_0   = fifo_front_0;
       next_front_bus_1   = fifo_front_1;
     end
-    else if (pop_shift)
+    else if (pop_0)
     begin
       if (front_valid_1_r)
       begin
@@ -132,6 +146,45 @@ module inst_buffer(
       next_front_bus_1   = fifo_front_0;
     end
   end
+
+
+  (* keep = "true", max_fanout = 48 *) wire front0_we_g0 = pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 48 *) wire front0_we_g1 = pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 48 *) wire front0_we_g2 = pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 48 *) wire front0_we_g3 = pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 48 *) wire front0_we_g4 = pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 48 *) wire front0_we_g5 = pop_0 || !front_valid_0_r;
+
+  (* keep = "true", max_fanout = 48 *) wire front1_we_g0 =
+  pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* keep = "true", max_fanout = 48 *) wire front1_we_g1 =
+  pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* keep = "true", max_fanout = 48 *) wire front1_we_g2 =
+  pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* keep = "true", max_fanout = 48 *) wire front1_we_g3 =
+  pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* keep = "true", max_fanout = 48 *) wire front1_we_g4 =
+  pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* keep = "true", max_fanout = 48 *) wire front1_we_g5 =
+  pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
 
   always @(posedge clk)
   begin
@@ -174,8 +227,30 @@ module inst_buffer(
       cnt <= cnt + {1'b0, push_count} - {1'b0, head_step};
       front_valid_0_r <= next_front_valid_0;
       front_valid_1_r <= next_front_valid_1;
-      front_bus_0_r   <= next_front_bus_0;
-      front_bus_1_r   <= next_front_bus_1;
+      if (front0_we_g0)
+        front_bus_0_g0 <= next_front_bus_0[44:0];
+      if (front0_we_g1)
+        front_bus_0_g1 <= next_front_bus_0[89:45];
+      if (front0_we_g2)
+        front_bus_0_g2 <= next_front_bus_0[134:90];
+      if (front0_we_g3)
+        front_bus_0_g3 <= next_front_bus_0[179:135];
+      if (front0_we_g4)
+        front_bus_0_g4 <= next_front_bus_0[224:180];
+      if (front0_we_g5)
+        front_bus_0_g5 <= next_front_bus_0[267:225];
+      if (front1_we_g0)
+        front_bus_1_g0 <= next_front_bus_1[44:0];
+      if (front1_we_g1)
+        front_bus_1_g1 <= next_front_bus_1[89:45];
+      if (front1_we_g2)
+        front_bus_1_g2 <= next_front_bus_1[134:90];
+      if (front1_we_g3)
+        front_bus_1_g3 <= next_front_bus_1[179:135];
+      if (front1_we_g4)
+        front_bus_1_g4 <= next_front_bus_1[224:180];
+      if (front1_we_g5)
+        front_bus_1_g5 <= next_front_bus_1[267:225];
     end
   end
 
