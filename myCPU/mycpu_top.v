@@ -99,8 +99,8 @@ module mycpu_top(
   wire        ws_csr_busy;
   wire        es_cacop_busy;
   wire        ms_cacop_busy;
-  wire        special_inflight = es_csr_busy || ms_csr_busy || ws_csr_busy ||
-              es_cacop_busy || ms_cacop_busy;
+  reg         special_block;
+  wire        special_fire;
   wire [13:0] csr_raddr;
   wire [31:0] csr_rdata;
   wire        csr_we;
@@ -119,6 +119,18 @@ module mycpu_top(
   wire        pipeline_flush = csr_flush || cacop_flush || br_taken;
   wire [31:0] pipeline_flush_target = csr_flush ? csr_flush_target :
        cacop_flush ? cacop_flush_target : br_target;
+
+  // CSR/CACOP 发射后用一个本地 scoreboard 阻止年轻指令。不再将
+  // ES/MEM/WB 各级 busy 组合后跨级送回 ISSUE。
+  always @(posedge clk)
+  begin
+    if (!resetn)
+      special_block <= 1'b0;
+    else if (pipeline_flush)
+      special_block <= 1'b0;
+    else if (special_fire)
+      special_block <= 1'b1;
+  end
 
   // BPU 预测与训练信号
   wire        bpu_pred_taken;
@@ -306,8 +318,9 @@ module mycpu_top(
                 .front_bus_1      (ibuf_front_bus_1),
                 .pop_0            (issue_pop_0),
                 .pop_1            (issue_pop_1),
+                .special_fire     (special_fire),
                 .br_taken         (pipeline_flush),
-                .special_inflight (special_inflight),
+                .special_block    (special_block),
                 .es_allowin       (es_allowin),
                 .es_fwd_bus_0     (es_fwd_bus_0),
                 .es_fwd_bus_1     (es_fwd_bus_1),

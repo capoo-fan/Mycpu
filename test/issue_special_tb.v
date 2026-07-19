@@ -8,7 +8,7 @@ module issue_special_tb;
   reg         front_valid_1;
   reg  [31:0] inst_0;
   reg  [31:0] inst_1;
-  reg         special_inflight;
+  reg         special_block;
   wire [`DS_DEC_BUS_WD-1:0] dec_0;
   wire [`DS_DEC_BUS_WD-1:0] dec_1;
   wire [`FS_TO_DS_BUS_WD-1:0] fs_0 = {32'h1c00_0000, inst_0, 1'b0, 32'b0};
@@ -19,11 +19,13 @@ module issue_special_tb;
   wire pop_1;
   wire issue_0;
   wire issue_1;
+  wire special_fire;
 
   localparam [31:0] INST_ADDI_R2 = 32'h0280_0402;
   localparam [31:0] INST_ADDI_R3 = 32'h0280_0803;
   localparam [31:0] INST_CSRWR = {8'h04, 14'h0180, 5'd1, 5'd7};
   localparam [31:0] INST_CACOP = {6'h01, 4'h8, 12'h000, 5'd0, 5'h10};
+  localparam [31:0] INST_CPUCFG = {17'b0, 5'h1b, 5'd2, 5'd3};
 
   inst_decoder dec0(.inst(inst_0), .dec_bus(dec_0));
   inst_decoder dec1(.inst(inst_1), .dec_bus(dec_1));
@@ -33,7 +35,8 @@ module issue_special_tb;
     .front_valid_0(front_valid_0), .front_bus_0(front_bus_0),
     .front_valid_1(front_valid_1), .front_bus_1(front_bus_1),
     .pop_0(pop_0), .pop_1(pop_1), .br_taken(1'b0),
-    .special_inflight(special_inflight), .es_allowin(1'b1),
+    .special_fire(special_fire), .special_block(special_block),
+    .es_allowin(1'b1),
     .es_fwd_bus_0({`ES_FWD_BUS_WD{1'b0}}),
     .es_fwd_bus_1({`ES_FWD_BUS_WD{1'b0}}),
     .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
@@ -69,7 +72,7 @@ module issue_special_tb;
     resetn = 1'b0;
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
-    special_inflight = 1'b0;
+    special_block = 1'b0;
     inst_0 = INST_ADDI_R2;
     inst_1 = INST_ADDI_R3;
     #1;
@@ -86,9 +89,21 @@ module issue_special_tb;
 
     inst_0 = INST_CACOP;
     check_issue(1'b1, 1'b0, "lane0 CACOP issues alone");
+    if (special_fire !== 1'b1)
+      $fatal(1, "CACOP did not set special_fire");
 
     inst_0 = INST_ADDI_R2;
-    special_inflight = 1'b1;
+    inst_1 = INST_CPUCFG;
+    check_issue(1'b1, 1'b0, "front1 CPUCFG remains in IBUF");
+
+    inst_0 = INST_CPUCFG;
+    inst_1 = INST_ADDI_R3;
+    check_issue(1'b1, 1'b0, "lane0 CPUCFG issues alone");
+    if (special_fire !== 1'b0)
+      $fatal(1, "CPUCFG incorrectly occupied special scoreboard");
+
+    inst_0 = INST_ADDI_R2;
+    special_block = 1'b1;
     check_issue(1'b0, 1'b0, "special busy blocks younger issue");
 
     $display("PASS issue_special_tb");

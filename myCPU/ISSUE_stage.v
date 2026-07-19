@@ -10,8 +10,9 @@ module ISSUE_stage(
     input  wire [`IBUF_ENTRY_BUS_WD-1:0]  front_bus_1,
     output wire                           pop_0,
     output wire                           pop_1,
+    output wire                           special_fire,
     input  wire                           br_taken,
-    input  wire                           special_inflight,
+    input  wire                           special_block,
 
     input  wire                           es_allowin,
     // 前递信息
@@ -358,10 +359,10 @@ module ISSUE_stage(
         (src1_rkd_valid && (dest_0 == rf_raddr2_1)));  // 两条指令相互依赖
   wire mem_op_0 = res_from_mem_0 || mem_we_0;
   wire mem_op_1 = res_from_mem_1 || mem_we_1;
-  wire special_0 = is_csr_0 || is_cacop_0;
-  wire special_1 = is_csr_1 || is_cacop_1;
+  wire special_0 = is_csr_0 || is_cacop_0 || is_cpucfg_0;
+  wire special_1 = is_csr_1 || is_cacop_1 || is_cpucfg_1;
 
-  wire issue0_ok = front_valid_0 && !stall_0 && !special_inflight;
+  wire issue0_ok = front_valid_0 && !stall_0 && !special_block;
   wire issue1_ok = front_valid_1 && issue0_ok && !stall_1 &&
        !raw_0_to_1 && !(mem_op_0 && mem_op_1) &&
        !(is_bj_0 && is_bj_1) && !special_0 && !special_1;
@@ -370,6 +371,9 @@ module ISSUE_stage(
   assign ds_to_es_valid_1 = es_allowin && !br_taken && issue1_ok;
   assign pop_0            = ds_to_es_valid_0;
   assign pop_1            = ds_to_es_valid_1;
+  // CPUCFG 只需单发，但不改变机器状态，不占用全局特殊指令
+  // scoreboard。CSR/CACOP 则一直阻止年轻指令直到它们的 flush。
+  assign special_fire = ds_to_es_valid_0 && (is_csr_0 || is_cacop_0);
 
   wire [31:0] ds_alu_src1_0 = src1_is_pc_0  ? ds_pc_0 : rj_value_0;
   wire [31:0] ds_alu_src2_0 = src2_is_imm_0 ? imm_0   : rkd_value_0;
@@ -468,13 +472,13 @@ module ISSUE_stage(
                            ds_pred_target_1,
                            ds_br_op_1,
                            ds_br_offs_1,
-                           is_cpucfg_1,
-                           is_cacop_1,
-                           cacop_code_1,
-                           is_csr_1,
-                           csr_num_1,
-                           csr_wmask_1,
-                           csr_wvalue_1
+                           1'b0,
+                           1'b0,
+                           5'b0,
+                           1'b0,
+                           14'b0,
+                           32'b0,
+                           32'b0
                           };
 
 endmodule

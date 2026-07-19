@@ -45,45 +45,80 @@ module inst_buffer(
   assign front_bus_0   = front_bus_0_r;
   assign front_bus_1   = front_bus_1_r;
 
-  // 记录 front 发射后的状态，作为 refill 的依据
-  wire                          temp_front_valid_0;
-  wire                          temp_front_valid_1;
-  wire [`IBUF_ENTRY_BUS_WD-1:0] temp_front_bus_0;
-  wire [`IBUF_ENTRY_BUS_WD-1:0] temp_front_bus_1;
+  // next=>front_vaild_*_r
+  reg                           next_front_valid_0;
+  reg                           next_front_valid_1;
+  reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_0;
+  reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_1;
+  reg  [1:0]                    refill_count;
 
-  // next=>front_vaild_*_r  
-  wire                          next_front_valid_0;
-  wire                          next_front_valid_1;
-  wire [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_0;
-  wire [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_1;
+  // pop_shift 只消耗一条指令，pop_clear 消耗两条指令。宽数据装载
+  // 控制给出明确的扇出上限，允许 Vivado 在各个 payload 分区附近复制逻辑。
+  (* max_fanout = 32 *) wire pop_shift;
+  (* max_fanout = 32 *) wire pop_clear;
+  assign pop_shift = pop_0 && !pop_1;
+  assign pop_clear = pop_1;
 
-  wire                          refill_0;
-  wire                          refill_1;
-  wire [1:0]                    refill_count;
+  // valid 和 payload 分开推导。特别是双 pop 时直接从 FIFO 头两项
+  // 装载，不再经过 temp_valid -> refill -> 宽总线 mux 级联。
+  always @(*)
+  begin
+    next_front_valid_0 = front_valid_0_r;
+    next_front_valid_1 = front_valid_1_r;
+    next_front_bus_0   = front_bus_0_r;
+    next_front_bus_1   = front_bus_1_r;
+    refill_count       = 2'd0;
 
-
-  // pop_shift 只消耗一条指令，pop_clear 消耗两条指令
-  wire                          pop_shift = pop_0 && !pop_1;
-  wire                          pop_clear = pop_1;
-  assign temp_front_valid_0 = pop_shift ? front_valid_1_r :
-         pop_clear ? 1'b0 :
-         front_valid_0_r;
-  assign temp_front_bus_0   = pop_shift ? front_bus_1_r :
-         front_bus_0_r;
-  assign temp_front_valid_1 = (pop_0 || pop_1) ? 1'b0 : front_valid_1_r;
-  assign temp_front_bus_1   = front_bus_1_r;
-
-  // 判断指令是否需要从fifo中补充到front
-  assign refill_0 = !temp_front_valid_0 && (cnt != CNT_ZERO);
-  assign refill_1 = !temp_front_valid_1 &&
-         ((!temp_front_valid_0 && (cnt > CNT_ONE)) ||
-          ( temp_front_valid_0 && (cnt != CNT_ZERO)));
-  assign refill_count = {1'b0, refill_0} + {1'b0, refill_1};
-
-  assign next_front_valid_0 = refill_0 ? 1'b1 : temp_front_valid_0;
-  assign next_front_bus_0   = refill_0 ? fifo_front_0 : temp_front_bus_0;
-  assign next_front_valid_1 = refill_1 ? 1'b1 : temp_front_valid_1;
-  assign next_front_bus_1   = refill_1 ? (refill_0 ? fifo_front_1 : fifo_front_0) :temp_front_bus_1;
+    if (pop_clear)
+    begin
+      next_front_valid_0 = (cnt != CNT_ZERO);
+      next_front_valid_1 = (cnt > CNT_ONE);
+      next_front_bus_0   = fifo_front_0;
+      next_front_bus_1   = fifo_front_1;
+      refill_count       = (cnt > CNT_ONE) ? 2'd2 :
+                           (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+    end
+    else if (pop_shift)
+    begin
+      if (front_valid_1_r)
+      begin
+        next_front_valid_0 = 1'b1;
+        next_front_bus_0   = front_bus_1_r;
+        if (cnt != CNT_ZERO)
+        begin
+          next_front_valid_1 = 1'b1;
+          next_front_bus_1   = fifo_front_0;
+          refill_count       = 2'd1;
+        end
+        else
+          next_front_valid_1 = 1'b0;
+      end
+      else
+      begin
+        next_front_valid_0 = (cnt != CNT_ZERO);
+        next_front_valid_1 = (cnt > CNT_ONE);
+        next_front_bus_0   = fifo_front_0;
+        next_front_bus_1   = fifo_front_1;
+        refill_count       = (cnt > CNT_ONE) ? 2'd2 :
+                             (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+      end
+    end
+    else if (!front_valid_0_r)
+    begin
+      next_front_valid_0 = (cnt != CNT_ZERO);
+      next_front_valid_1 = (cnt > CNT_ONE);
+      next_front_bus_0   = fifo_front_0;
+      next_front_bus_1   = fifo_front_1;
+      refill_count       = (cnt > CNT_ONE) ? 2'd2 :
+                           (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+    end
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+    begin
+      next_front_valid_1 = 1'b1;
+      next_front_bus_1   = fifo_front_0;
+      refill_count       = 2'd1;
+    end
+  end
 
   always @(posedge clk)
   begin

@@ -51,6 +51,13 @@ module MEM_stage(
   always @(posedge clk) reset <= ~resetn;
 
   reg         ms_valid_0;
+  localparam [1:0] WAIT_NONE  = 2'd0;
+  localparam [1:0] WAIT_DATA  = 2'd1;
+  localparam [1:0] WAIT_CACOP = 2'd2;
+
+  reg  [ 1:0] ms_wait_kind;
+  (* max_fanout = 32 *) reg ms_mem_lane1;
+
   reg  [31:0] ms_pc_0;
   reg  [31:0] ms_alu_result_0;
   reg  [31:0] ms_rkd_value_0;
@@ -181,14 +188,18 @@ module MEM_stage(
   assign csr_busy = ms_valid_0 && ms_is_csr_0;
   assign cacop_busy = ms_valid_0 && ms_is_cacop_0;
 
-  wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0; // 分支预测错误，刷掉 lane1 的指令
+  // lane0 的误预测在进入 MEM 时已经杀掉 lane1，避免分支恢复信号继续
+  // 参与访存选择和全流水级反压。
+  wire es_redirect_0_raw = es_to_ms_valid_0 && es_is_bj_0 &&
+       es_redirect_miss_0;
+  wire es_lane1_eff_valid = es_to_ms_valid_1 && !es_redirect_0_raw;
 
-  wire ms_lane1_eff_valid = ms_valid_1 && !ms_redirect_0_raw;  // 如果 lane0 分支预测错误，lane1 的指令就无效了
+  wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0;
+
+  wire ms_lane1_eff_valid = ms_valid_1;
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
-  wire lane0_mem_op = ms_valid_0 && (ms_res_from_mem_0 || ms_mem_we_0);
-  wire lane1_mem_op = ms_lane1_eff_valid && (ms_res_from_mem_1 || ms_mem_we_1);
-  wire select_lane1 = lane1_mem_op;
+  wire select_lane1 = ms_mem_lane1;
 
   wire selected_mem_we         = select_lane1 ? ms_mem_we_1          : ms_mem_we_0;
   wire [31:0] selected_addr    = select_lane1 ? ms_alu_result_1      : ms_alu_result_0;
@@ -197,8 +208,8 @@ module MEM_stage(
   wire        selected_ld_half = select_lane1 ? ms_ld_half_1         : ms_ld_half_0;
   wire        selected_st_byte = select_lane1 ? ms_st_byte_1         : ms_st_byte_0;
   wire        selected_st_half = select_lane1 ? ms_st_half_1         : ms_st_half_0;
-  wire ms_has_mem_op = lane0_mem_op || lane1_mem_op;
-  wire ms_has_cacop = ms_valid_0 && ms_is_cacop_0;
+  wire ms_has_mem_op = (ms_wait_kind == WAIT_DATA);
+  wire ms_has_cacop = (ms_wait_kind == WAIT_CACOP);
 
   // 处理 SRAM 的握手
   reg  ms_addr_sent;
@@ -215,7 +226,9 @@ module MEM_stage(
   wire cacop_ready_go = cacop_req_sent && icacop_done;
   wire ms_ready_go  = ms_has_cacop ? cacop_ready_go :
        (!ms_has_mem_op || mem_data_ready);
-  assign ms_allowin = !packet_valid || (ms_ready_go && ws_allowin);
+  // WB 在本设计中恒可接收。空包和普通 ALU/分支包的 wait_kind 均为
+  // WAIT_NONE，因此无需再把 packet_valid 接回全局 ready 链。
+  assign ms_allowin = ms_ready_go && ws_allowin;
   wire ms_fire      = packet_valid && ms_ready_go && ws_allowin;
 
   assign icacop_req_valid = ms_has_cacop && !cacop_req_sent;
@@ -349,7 +362,33 @@ module MEM_stage(
     else if (ms_allowin)
     begin
       ms_valid_0 <= es_to_ms_valid_0;
-      ms_valid_1 <= es_to_ms_valid_1;
+      ms_valid_1 <= es_lane1_eff_valid;
+    end
+  end
+
+  // 将当前 MEM 包需要等待的资源以及访存所在 lane 寄存下来。这样
+  // ms_allowin 只读取本地状态，不再重算 lane1 有效性、分支恢复与访存类型。
+  always @(posedge clk)
+  begin
+    if (reset || br_taken)
+    begin
+      ms_wait_kind <= WAIT_NONE;
+      ms_mem_lane1 <= 1'b0;
+    end
+    else if (ms_allowin)
+    begin
+      if (es_to_ms_valid_0 && es_is_cacop_0)
+        ms_wait_kind <= WAIT_CACOP;
+      else if ((es_to_ms_valid_0 &&
+                (es_res_from_mem_0 || es_mem_we_0)) ||
+               (es_lane1_eff_valid &&
+                (es_res_from_mem_1 || es_mem_we_1)))
+        ms_wait_kind <= WAIT_DATA;
+      else
+        ms_wait_kind <= WAIT_NONE;
+
+      ms_mem_lane1 <= es_lane1_eff_valid &&
+           (es_res_from_mem_1 || es_mem_we_1);
     end
   end
 
