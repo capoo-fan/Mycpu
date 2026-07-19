@@ -16,8 +16,12 @@ module inst_buffer(
     input  wire                          pop_1,
     output wire                          front_valid_0,
     output wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0,
+    output wire [4:0]                    front_raddr1_0_hot,
+    output wire [4:0]                    front_raddr2_0_hot,
     output wire                          front_valid_1,
-    output wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1
+    output wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1,
+    output wire [4:0]                    front_raddr1_1_hot,
+    output wire [4:0]                    front_raddr2_1_hot
   );
   localparam pointer_width = 2;
   localparam [pointer_width:0] CNT_ZERO = {(pointer_width+1){1'b0}};
@@ -52,6 +56,15 @@ module inst_buffer(
   reg [44:0] front_bus_1_g4;
   reg [42:0] front_bus_1_g5;
 
+  (* keep = "true", equivalent_register_removal = "no" *)
+  reg [4:0] front_raddr1_0_hot_r;
+  (* keep = "true", equivalent_register_removal = "no" *)
+  reg [4:0] front_raddr2_0_hot_r;
+  (* keep = "true", equivalent_register_removal = "no" *)
+  reg [4:0] front_raddr1_1_hot_r;
+  (* keep = "true", equivalent_register_removal = "no" *)
+  reg [4:0] front_raddr2_1_hot_r;
+
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0_r;
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1_r;
   assign front_bus_0_r = {front_bus_0_g5, front_bus_0_g4,
@@ -65,6 +78,13 @@ module inst_buffer(
   assign front_valid_1 = front_valid_1_r;
   assign front_bus_0   = front_bus_0_r;
   assign front_bus_1   = front_bus_1_r;
+  assign front_raddr1_0_hot = front_raddr1_0_hot_r;
+  assign front_raddr2_0_hot = front_raddr2_0_hot_r;
+  assign front_raddr1_1_hot = front_raddr1_1_hot_r;
+  assign front_raddr2_1_hot = front_raddr2_1_hot_r;
+
+  localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 58;
+  localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 53;
 
   // next=>front_vaild_*_r
   reg                           next_front_valid_0;
@@ -186,6 +206,23 @@ module inst_buffer(
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
 
+  // Four independent final enables keep the hot address flops local to the
+  // consume cone instead of extending a wide payload CE net.
+  (* keep = "true", max_fanout = 8 *) wire front0_hot_raddr1_we =
+        pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 8 *) wire front0_hot_raddr2_we =
+        pop_0 || !front_valid_0_r;
+  (* keep = "true", max_fanout = 8 *) wire front1_hot_raddr1_we =
+        pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* keep = "true", max_fanout = 8 *) wire front1_hot_raddr2_we =
+        pop_1 ||
+        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
+        (!pop_0 &&
+         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+
   always @(posedge clk)
   begin
     if (!resetn)
@@ -251,6 +288,14 @@ module inst_buffer(
         front_bus_1_g4 <= next_front_bus_1[224:180];
       if (front1_we_g5)
         front_bus_1_g5 <= next_front_bus_1[267:225];
+      if (front0_hot_raddr1_we)
+        front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
+      if (front0_hot_raddr2_we)
+        front_raddr2_0_hot_r <= next_front_bus_0[HOT_RADDR2_LSB +: 5];
+      if (front1_hot_raddr1_we)
+        front_raddr1_1_hot_r <= next_front_bus_1[HOT_RADDR1_LSB +: 5];
+      if (front1_hot_raddr2_we)
+        front_raddr2_1_hot_r <= next_front_bus_1[HOT_RADDR2_LSB +: 5];
     end
   end
 

@@ -17,6 +17,13 @@ module inst_buffer_timing_tb;
   wire front_valid_1;
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0;
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1;
+  wire [4:0] front_raddr1_0_hot;
+  wire [4:0] front_raddr2_0_hot;
+  wire [4:0] front_raddr1_1_hot;
+  wire [4:0] front_raddr2_1_hot;
+
+  localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 58;
+  localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 53;
 
   inst_buffer dut(
     .clk(clk), .resetn(resetn), .flush(flush),
@@ -25,7 +32,11 @@ module inst_buffer_timing_tb;
     .push_ready(push_ready), .full(full),
     .pop_0(pop_0), .pop_1(pop_1),
     .front_valid_0(front_valid_0), .front_bus_0(front_bus_0),
-    .front_valid_1(front_valid_1), .front_bus_1(front_bus_1)
+    .front_raddr1_0_hot(front_raddr1_0_hot),
+    .front_raddr2_0_hot(front_raddr2_0_hot),
+    .front_valid_1(front_valid_1), .front_bus_1(front_bus_1),
+    .front_raddr1_1_hot(front_raddr1_1_hot),
+    .front_raddr2_1_hot(front_raddr2_1_hot)
   );
 
   always #5 clk = ~clk;
@@ -68,6 +79,18 @@ module inst_buffer_timing_tb;
       if (expected_valid_1 &&
           front_bus_1[`FS_TO_DS_BUS_WD-1:0] !== make_fetch(expected_id_1))
         fail(name);
+      if (expected_valid_0 &&
+          ((front_raddr1_0_hot !==
+            front_bus_0[HOT_RADDR1_LSB +: 5]) ||
+           (front_raddr2_0_hot !==
+            front_bus_0[HOT_RADDR2_LSB +: 5])))
+        fail("lane0 hot fields are not synchronized");
+      if (expected_valid_1 &&
+          ((front_raddr1_1_hot !==
+            front_bus_1[HOT_RADDR1_LSB +: 5]) ||
+           (front_raddr2_1_hot !==
+            front_bus_1[HOT_RADDR2_LSB +: 5])))
+        fail("lane1 hot fields are not synchronized");
       if (front_valid_1 && !front_valid_0)
         fail("front1 valid without front0");
       if (full === push_ready)

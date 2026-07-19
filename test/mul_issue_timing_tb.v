@@ -17,6 +17,14 @@ module mul_issue_timing_tb;
   wire [`FS_TO_DS_BUS_WD-1:0] fs_1 = {32'h1c00_0004, inst_1, 1'b0, 32'b0};
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0 = {dec_0, fs_0};
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1 = {dec_1, fs_1};
+  wire [4:0] front_raddr1_0_hot =
+       front_bus_0[`FS_TO_DS_BUS_WD + 58 +: 5];
+  wire [4:0] front_raddr2_0_hot =
+       front_bus_0[`FS_TO_DS_BUS_WD + 53 +: 5];
+  wire [4:0] front_raddr1_1_hot =
+       front_bus_1[`FS_TO_DS_BUS_WD + 58 +: 5];
+  wire [4:0] front_raddr2_1_hot =
+       front_bus_1[`FS_TO_DS_BUS_WD + 53 +: 5];
 
   wire pop_0;
   wire pop_1;
@@ -55,7 +63,11 @@ module mul_issue_timing_tb;
   ISSUE_stage u_issue(
     .clk(clk), .resetn(resetn),
     .front_valid_0(front_valid_0), .front_bus_0(front_bus_0),
+    .front_raddr1_0_hot(front_raddr1_0_hot),
+    .front_raddr2_0_hot(front_raddr2_0_hot),
     .front_valid_1(front_valid_1), .front_bus_1(front_bus_1),
+    .front_raddr1_1_hot(front_raddr1_1_hot),
+    .front_raddr2_1_hot(front_raddr2_1_hot),
     .pop_0(pop_0), .pop_1(pop_1), .special_fire(),
     .br_taken(flush), .special_block(1'b0), .es_allowin(es_allowin),
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),

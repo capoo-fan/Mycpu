@@ -54,6 +54,10 @@ module mycpu_top(
   wire        ibuf_front_valid_1;
   wire [`IBUF_ENTRY_BUS_WD-1:0] ibuf_front_bus_0;
   wire [`IBUF_ENTRY_BUS_WD-1:0] ibuf_front_bus_1;
+  wire [4:0]  ibuf_front_raddr1_0_hot;
+  wire [4:0]  ibuf_front_raddr2_0_hot;
+  wire [4:0]  ibuf_front_raddr1_1_hot;
+  wire [4:0]  ibuf_front_raddr2_1_hot;
   wire        issue_pop_0;
   wire        issue_pop_1;
 
@@ -296,8 +300,12 @@ module mycpu_top(
                 .pop_1         (issue_pop_1),
                 .front_valid_0 (ibuf_front_valid_0),
                 .front_bus_0   (ibuf_front_bus_0),
+                .front_raddr1_0_hot(ibuf_front_raddr1_0_hot),
+                .front_raddr2_0_hot(ibuf_front_raddr2_0_hot),
                 .front_valid_1 (ibuf_front_valid_1),
-                .front_bus_1   (ibuf_front_bus_1)
+                .front_bus_1   (ibuf_front_bus_1),
+                .front_raddr1_1_hot(ibuf_front_raddr1_1_hot),
+                .front_raddr2_1_hot(ibuf_front_raddr2_1_hot)
               );
 
   ISSUE_stage u_issue(
@@ -305,8 +313,12 @@ module mycpu_top(
                 .resetn           (resetn),
                 .front_valid_0    (ibuf_front_valid_0),
                 .front_bus_0      (ibuf_front_bus_0),
+                .front_raddr1_0_hot(ibuf_front_raddr1_0_hot),
+                .front_raddr2_0_hot(ibuf_front_raddr2_0_hot),
                 .front_valid_1    (ibuf_front_valid_1),
                 .front_bus_1      (ibuf_front_bus_1),
+                .front_raddr1_1_hot(ibuf_front_raddr1_1_hot),
+                .front_raddr2_1_hot(ibuf_front_raddr2_1_hot),
                 .pop_0            (issue_pop_0),
                 .pop_1            (issue_pop_1),
                 .special_fire     (special_fire),

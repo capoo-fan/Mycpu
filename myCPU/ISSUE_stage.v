@@ -6,8 +6,12 @@ module ISSUE_stage(
     // 来自 IF 阶段的指令信息
     input  wire                           front_valid_0,
     input  wire [`IBUF_ENTRY_BUS_WD-1:0]  front_bus_0,
+    input  wire [4:0]                     front_raddr1_0_hot,
+    input  wire [4:0]                     front_raddr2_0_hot,
     input  wire                           front_valid_1,
     input  wire [`IBUF_ENTRY_BUS_WD-1:0]  front_bus_1,
+    input  wire [4:0]                     front_raddr1_1_hot,
+    input  wire [4:0]                     front_raddr2_1_hot,
     output wire                           pop_0,
     output wire                           pop_1,
     output wire                           special_fire,
@@ -345,32 +349,118 @@ module ISSUE_stage(
   wire raw_0_to_1 = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid  && (dest_0 == rf_raddr1_1)) ||
         (src1_rkd_valid && (dest_0 == rf_raddr2_1)));  // 两条指令相互依赖
+
+  wire src0_rj_valid_for_consume =
+       need_rj_0 && (front_raddr1_0_hot != 5'b0);
+  wire src0_rkd_valid_for_consume =
+       need_rkd_0 && (front_raddr2_0_hot != 5'b0);
+  wire src1_rj_valid_for_consume =
+       need_rj_1 && (front_raddr1_1_hot != 5'b0);
+  wire src1_rkd_valid_for_consume =
+       need_rkd_1 && (front_raddr2_1_hot != 5'b0);
+
+  wire rj0_wait_for_consume = src0_rj_valid_for_consume &&
+       ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
+         (es_dest_0 == front_raddr1_0_hot)) ||
+        (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+         (es_dest_1 == front_raddr1_0_hot)) ||
+        (ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+         (ms_dest_0 == front_raddr1_0_hot)) ||
+        (ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+         (ms_dest_1 == front_raddr1_0_hot)));
+  wire rkd0_wait_for_consume = src0_rkd_valid_for_consume &&
+       ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
+         (es_dest_0 == front_raddr2_0_hot)) ||
+        (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+         (es_dest_1 == front_raddr2_0_hot)) ||
+        (ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+         (ms_dest_0 == front_raddr2_0_hot)) ||
+        (ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+         (ms_dest_1 == front_raddr2_0_hot)));
+  wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
+       ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
+         (es_dest_0 == front_raddr1_1_hot)) ||
+        (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+         (es_dest_1 == front_raddr1_1_hot)) ||
+        (ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+         (ms_dest_0 == front_raddr1_1_hot)) ||
+        (ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+         (ms_dest_1 == front_raddr1_1_hot)));
+  wire rkd1_wait_for_consume = src1_rkd_valid_for_consume &&
+       ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
+         (es_dest_0 == front_raddr2_1_hot)) ||
+        (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+         (es_dest_1 == front_raddr2_1_hot)) ||
+        (ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+         (ms_dest_0 == front_raddr2_1_hot)) ||
+        (ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+         (ms_dest_1 == front_raddr2_1_hot)));
+
+  (* keep = "true" *) wire stall_0_for_consume =
+  rj0_wait_for_consume || rkd0_wait_for_consume;
+  (* keep = "true" *) wire stall_1_for_consume =
+  rj1_wait_for_consume || rkd1_wait_for_consume;
+  wire raw_0_to_1_for_consume = gr_we_0 && (dest_0 != 5'b0) &&
+       ((src1_rj_valid_for_consume &&
+         (dest_0 == front_raddr1_1_hot)) ||
+        (src1_rkd_valid_for_consume &&
+         (dest_0 == front_raddr2_1_hot)));
+
   wire mem_op_0 = res_from_mem_0 || mem_we_0;
   wire mem_op_1 = res_from_mem_1 || mem_we_1;
   wire special_0 = is_csr_0 || is_cacop_0 || is_cpucfg_0;
   wire special_1 = is_csr_1 || is_cacop_1 || is_cpucfg_1;
 
-  wire issue0_ok = front_valid_0 && !stall_0 && !special_block;
 
-  // 双发控制独立展开 lane0 条件，不再通过 issue0_ok/pop_0 串接。
-  // KEEP 阻止综合重新抽取共享单发项，低扇出上限允许在 IBuffer
-  // 的窄状态和宽 payload 分区附近分别复制控制逻辑。
-  (* keep = "true", max_fanout = 8 *) wire pair_fire_fast;
-  assign pair_fire_fast = es_allowin && !br_taken &&
-       front_valid_0 && !stall_0 && !special_block &&
-       front_valid_1 && !stall_1 && !raw_0_to_1 &&
-       !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
-       !special_0 && !special_1;
+  (* keep = "true", max_fanout = 16 *) wire issue0_fire_for_ex =
+  es_allowin && !br_taken && front_valid_0 && !stall_0 && !special_block;
+  (* keep = "true", max_fanout = 16 *) wire issue1_fire_for_ex =
+  es_allowin && !br_taken &&
+             front_valid_0 && !stall_0 && !special_block &&
+             front_valid_1 && !stall_1 && !raw_0_to_1 &&
+             !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
+             !special_0 && !special_1;
+  (* keep = "true", max_fanout = 16 *) wire issue0_fire_for_consume =
+  es_allowin && !br_taken &&
+             front_valid_0 && !stall_0_for_consume && !special_block;
+  (* keep = "true", max_fanout = 16 *) wire issue1_fire_for_consume =
+  es_allowin && !br_taken &&
+             front_valid_0 && !stall_0_for_consume && !special_block &&
+             front_valid_1 && !stall_1_for_consume &&
+             !raw_0_to_1_for_consume &&
+             !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
+             !special_0 && !special_1;
 
-  assign ds_to_es_valid_0 = es_allowin && !br_taken && issue0_ok;
-  assign ds_to_es_valid_1 = pair_fire_fast;
-  assign pop_0            = ds_to_es_valid_0;
-  assign pop_1            = ds_to_es_valid_1;
+  assign ds_to_es_valid_0 = issue0_fire_for_ex;
+  assign ds_to_es_valid_1 = issue1_fire_for_ex;
+  assign pop_0            = issue0_fire_for_consume;
+  assign pop_1            = issue1_fire_for_consume;
   // CPUCFG 只需单发，但不改变机器状态，不占用全局特殊指令
   // scoreboard。CSR/CACOP 则一直阻止年轻指令直到它们的 flush。
   assign special_fire = ds_to_es_valid_0 && (is_csr_0 || is_cacop_0);
 
-  wire [31:0] ds_alu_src1_0 = src1_is_pc_0  ? ds_pc_0 : rj_value_0;
+  `ifndef SYNTHESIS
+          // The hot fields and both issue decisions must be cycle-exact mirrors.
+          always @(posedge clk)
+          begin
+            if (resetn)
+            begin
+              if (front_valid_0 &&
+                  ((front_raddr1_0_hot !== rf_raddr1_0) ||
+                   (front_raddr2_0_hot !== rf_raddr2_0)))
+                $fatal(1, "lane0 IBuffer hot fields lost synchronization");
+              if (front_valid_1 &&
+                  ((front_raddr1_1_hot !== rf_raddr1_1) ||
+                   (front_raddr2_1_hot !== rf_raddr2_1)))
+                $fatal(1, "lane1 IBuffer hot fields lost synchronization");
+              if ((pop_0 !== ds_to_es_valid_0) ||
+                  (pop_1 !== ds_to_es_valid_1))
+                $fatal(1, "IBuffer consume and EX issue controls diverged");
+            end
+          end
+`endif
+
+          wire [31:0] ds_alu_src1_0 = src1_is_pc_0  ? ds_pc_0 : rj_value_0;
   wire [31:0] ds_alu_src2_0 = src2_is_imm_0 ? imm_0   : rkd_value_0;
   wire [31:0] ds_rkd_value_0 = inst_jirl_0 ? rj_value_0 : rkd_value_0;
 
