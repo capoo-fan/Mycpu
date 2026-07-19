@@ -15,6 +15,7 @@ module WB_stage(
     output wire [13:0]                  csr_waddr,
     output wire [31:0]                  csr_wmask,
     output wire [31:0]                  csr_wdata,
+    output wire                         csr_ctx_update,
     output wire                         csr_flush,
     output wire [31:0]                  csr_flush_target
   );
@@ -50,6 +51,17 @@ module WB_stage(
   reg  [13:0] ws_csr_num_1;
   reg  [31:0] ws_csr_wmask_1;
   reg  [31:0] ws_csr_wvalue_1;
+
+  localparam [2:0] CSR_IDLE       = 3'd0;
+  localparam [2:0] CSR_APPLY      = 3'd1;
+  localparam [2:0] CSR_DISTRIBUTE = 3'd2;
+  localparam [2:0] CSR_FLUSH      = 3'd3;
+
+  reg  [2:0]  csr_state;
+  reg  [13:0] csr_pending_addr;
+  reg  [31:0] csr_pending_mask;
+  reg  [31:0] csr_pending_data;
+  reg  [31:0] csr_pending_target;
 
   wire [31:0] ms_pc_0;
   wire [31:0] ms_alu_result_0;
@@ -118,17 +130,53 @@ module WB_stage(
   wire [31:0] final_result_0 = ws_res_from_mem_0 ? ws_load_result_0 : ws_alu_result_0;
   wire [31:0] final_result_1 = ws_res_from_mem_1 ? ws_load_result_1 : ws_alu_result_1;
 
-  // WB has no functional backpressure after the simulation-only debug FIFO
-  // is removed.  Both issue lanes can retire in the same cycle.
   assign ws_allowin = 1'b1;
 
-  assign csr_busy         = ws_valid_0 && ws_is_csr_0;
-  assign csr_we           = ws_valid_0 && ws_is_csr_0;
-  assign csr_waddr        = ws_csr_num_0;
-  assign csr_wmask        = ws_csr_wmask_0;
-  assign csr_wdata        = ws_csr_wvalue_0;
-  assign csr_flush        = csr_we;
-  assign csr_flush_target = ws_pc_0 + 32'd4;
+  assign csr_busy         = (ws_valid_0 && ws_is_csr_0) ||
+         (csr_state != CSR_IDLE);
+  assign csr_we           = (csr_state == CSR_APPLY);
+  assign csr_waddr        = csr_pending_addr;
+  assign csr_wmask        = csr_pending_mask;
+  assign csr_wdata        = csr_pending_data;
+  assign csr_ctx_update   = (csr_state == CSR_DISTRIBUTE);
+  assign csr_flush        = (csr_state == CSR_FLUSH);
+  assign csr_flush_target = csr_pending_target;
+
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
+      csr_state          <= CSR_IDLE;
+      csr_pending_addr   <= 14'b0;
+      csr_pending_mask   <= 32'b0;
+      csr_pending_data   <= 32'b0;
+      csr_pending_target <= 32'b0;
+    end
+    else
+    begin
+      case (csr_state)
+        CSR_IDLE:
+        begin
+          if (ws_valid_0 && ws_is_csr_0)
+          begin
+            csr_pending_addr   <= ws_csr_num_0;
+            csr_pending_mask   <= ws_csr_wmask_0;
+            csr_pending_data   <= ws_csr_wvalue_0;
+            csr_pending_target <= ws_pc_0 + 32'd4;
+            csr_state          <= CSR_APPLY;
+          end
+        end
+        CSR_APPLY:
+          csr_state <= CSR_DISTRIBUTE;
+        CSR_DISTRIBUTE:
+          csr_state <= CSR_FLUSH;
+        CSR_FLUSH:
+          csr_state <= CSR_IDLE;
+        default:
+          csr_state <= CSR_IDLE;
+      endcase
+    end
+  end
 
   wire ws_rf_we_0    = ws_valid_0 && ws_gr_we_0;
   wire [ 4:0] ws_rf_waddr_0 = ws_dest_0;

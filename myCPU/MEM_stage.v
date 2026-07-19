@@ -20,6 +20,7 @@ module MEM_stage(
     output wire                         ms_wait_valid_1,
     output wire [ 4:0]                  ms_wait_dest_1,
     output wire                         csr_busy,
+    output wire                         cacop_busy,
     output wire                         br_taken,
     output wire [31:0]                  br_target,
     output wire                         bpu_valid,
@@ -27,9 +28,13 @@ module MEM_stage(
     output wire [31:0]                  bpu_pc,
     output wire                         bpu_real_taken,
     output wire [31:0]                  bpu_real_target,
-    output wire                         icacop_valid,
-    output wire [ 4:0]                  icacop_code,
-    output wire [31:0]                  icacop_addr,
+    output wire                         icacop_req_valid,
+    output wire [ 4:0]                  icacop_req_code,
+    output wire [31:0]                  icacop_req_addr,
+    input  wire                         icacop_req_ready,
+    input  wire                         icacop_done,
+    output wire                         cacop_flush,
+    output wire [31:0]                  cacop_flush_target,
     // 类SRAM 数据接口
     output wire                         data_sram_req,
     output wire                         data_sram_wr,
@@ -174,18 +179,17 @@ module MEM_stage(
           es_csr_wvalue_1} = es_to_ms_bus_1;
 
   assign csr_busy = ms_valid_0 && ms_is_csr_0;
+  assign cacop_busy = ms_valid_0 && ms_is_cacop_0;
 
   wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0; // 分支预测错误，刷掉 lane1 的指令
 
   wire ms_lane1_eff_valid = ms_valid_1 && !ms_redirect_0_raw;  // 如果 lane0 分支预测错误，lane1 的指令就无效了
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
-  wire lane0_mem_op = ms_valid_0 && (ms_res_from_mem_0 || ms_mem_we_0 || ms_is_cacop_0);
-  wire lane1_mem_op = ms_lane1_eff_valid && (ms_res_from_mem_1 || ms_mem_we_1 || ms_is_cacop_1);
+  wire lane0_mem_op = ms_valid_0 && (ms_res_from_mem_0 || ms_mem_we_0);
+  wire lane1_mem_op = ms_lane1_eff_valid && (ms_res_from_mem_1 || ms_mem_we_1);
   wire select_lane1 = lane1_mem_op;
 
-  wire selected_valid          = select_lane1 ? ms_lane1_eff_valid   : ms_valid_0;
-  wire selected_res_from_mem   = select_lane1 ? ms_res_from_mem_1    : ms_res_from_mem_0;
   wire selected_mem_we         = select_lane1 ? ms_mem_we_1          : ms_mem_we_0;
   wire [31:0] selected_addr    = select_lane1 ? ms_alu_result_1      : ms_alu_result_0;
   wire [31:0] selected_rkd     = select_lane1 ? ms_rkd_value_1       : ms_rkd_value_0;
@@ -193,30 +197,32 @@ module MEM_stage(
   wire        selected_ld_half = select_lane1 ? ms_ld_half_1         : ms_ld_half_0;
   wire        selected_st_byte = select_lane1 ? ms_st_byte_1         : ms_st_byte_0;
   wire        selected_st_half = select_lane1 ? ms_st_half_1         : ms_st_half_0;
-  wire        selected_is_cacop = select_lane1 ? ms_is_cacop_1       : ms_is_cacop_0;
-  wire [ 4:0] selected_cacop_code = select_lane1 ? ms_cacop_code_1   : ms_cacop_code_0;
-
-  wire ms_has_mem_op = selected_valid && !selected_is_cacop &&
-       (selected_res_from_mem || selected_mem_we);
+  wire ms_has_mem_op = lane0_mem_op || lane1_mem_op;
+  wire ms_has_cacop = ms_valid_0 && ms_is_cacop_0;
 
   // 处理 SRAM 的握手
   reg  ms_addr_sent;
   reg  ms_data_pending;
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
+  reg  cacop_req_sent;
 
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
   wire ms_data_ok  = ms_addr_sent && data_sram_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
 
   wire packet_valid = ms_valid_0 || ms_valid_1;
-  wire ms_ready_go  = !ms_has_mem_op || mem_data_ready;
+  wire cacop_ready_go = cacop_req_sent && icacop_done;
+  wire ms_ready_go  = ms_has_cacop ? cacop_ready_go :
+       (!ms_has_mem_op || mem_data_ready);
   assign ms_allowin = !packet_valid || (ms_ready_go && ws_allowin);
   wire ms_fire      = packet_valid && ms_ready_go && ws_allowin;
 
-  assign icacop_valid = ms_fire && selected_valid && selected_is_cacop;
-  assign icacop_code  = selected_cacop_code;
-  assign icacop_addr  = selected_addr;
+  assign icacop_req_valid = ms_has_cacop && !cacop_req_sent;
+  assign icacop_req_code  = ms_cacop_code_0;
+  assign icacop_req_addr  = ms_alu_result_0;
+  assign cacop_flush      = ms_fire && ms_has_cacop;
+  assign cacop_flush_target = ms_pc_0 + 32'd4;
 
   assign ms_to_ws_valid_0 = ms_valid_0 && ms_ready_go;
   assign ms_to_ws_valid_1 = ms_lane1_eff_valid && ms_ready_go;
@@ -345,6 +351,16 @@ module MEM_stage(
       ms_valid_0 <= es_to_ms_valid_0;
       ms_valid_1 <= es_to_ms_valid_1;
     end
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset || br_taken)
+      cacop_req_sent <= 1'b0;
+    else if (ms_allowin)
+      cacop_req_sent <= 1'b0;
+    else if (icacop_req_valid && icacop_req_ready)
+      cacop_req_sent <= 1'b1;
   end
 
   always @(posedge clk)

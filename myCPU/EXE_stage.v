@@ -21,6 +21,7 @@ module EXE_stage(
     output wire                         es_wait_valid_1,
     output wire [ 4:0]                  es_wait_dest_1,
     output wire                         csr_busy,
+    output wire                         cacop_busy,
     output wire [13:0]                  csr_raddr,
     input  wire [31:0]                  csr_rdata
   );
@@ -206,6 +207,7 @@ module EXE_stage(
   wire [31:0] es_mul_result_1 = es_mul_hi_1 ? mul_product_1[63:32] : mul_product_1[31:0];
   assign csr_raddr = es_csr_num_0;
   assign csr_busy  = es_valid_0 && es_is_csr_0;
+  assign cacop_busy = es_valid_0 && es_is_cacop_0;
 
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) :

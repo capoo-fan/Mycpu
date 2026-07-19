@@ -97,7 +97,10 @@ module mycpu_top(
   wire        es_csr_busy;
   wire        ms_csr_busy;
   wire        ws_csr_busy;
-  wire        csr_inflight = es_csr_busy || ms_csr_busy || ws_csr_busy;
+  wire        es_cacop_busy;
+  wire        ms_cacop_busy;
+  wire        special_inflight = es_csr_busy || ms_csr_busy || ws_csr_busy ||
+              es_cacop_busy || ms_cacop_busy;
   wire [13:0] csr_raddr;
   wire [31:0] csr_rdata;
   wire        csr_we;
@@ -107,10 +110,15 @@ module mycpu_top(
   wire [31:0] csr_crmd;
   wire [31:0] csr_dmw0;
   wire [31:0] csr_dmw1;
+  wire [`TRANS_CTX_WD-1:0] csr_trans_ctx;
+  wire        csr_ctx_update;
   wire        csr_flush;
   wire [31:0] csr_flush_target;
-  wire        pipeline_flush = csr_flush || br_taken;
-  wire [31:0] pipeline_flush_target = csr_flush ? csr_flush_target : br_target;
+  wire        cacop_flush;
+  wire [31:0] cacop_flush_target;
+  wire        pipeline_flush = csr_flush || cacop_flush || br_taken;
+  wire [31:0] pipeline_flush_target = csr_flush ? csr_flush_target :
+       cacop_flush ? cacop_flush_target : br_target;
 
   // BPU 预测与训练信号
   wire        bpu_pred_taken;
@@ -128,11 +136,14 @@ module mycpu_top(
   wire [31:0] bpu_ex_real_target;
 
   // ICache 维护信号
-  wire        icacop_valid;
-  wire [ 4:0] icacop_code;
-  wire [31:0] icacop_addr;
+  wire        icacop_req_valid;
+  wire        icacop_req_ready;
+  wire [ 4:0] icacop_req_code;
+  wire [31:0] icacop_req_addr;
   wire [31:0] icacop_paddr;
+  wire        icacop_done;
   wire        store_inv_valid;
+  wire [31:0] store_inv_addr;
 
   // PC 模块信号
   wire [31:0] pc_out;
@@ -144,8 +155,6 @@ module mycpu_top(
   wire [31:0] pc_next_seq   = pc_out + (pc_cross_line ? 32'h4 : 32'h8);
   wire [31:0] pc_next       = bpu_pred_taken ? bpu_pred_target : pc_next_seq;
 
-  // Keep the standard Loongson SoC port list source-compatible.  Constant
-  // outputs synthesize away and do not feed back into the CPU pipeline.
   assign debug_wb_pc       = 32'b0;
   assign debug_wb_rf_we    = 4'b0;
   assign debug_wb_rf_wnum  = 5'b0;
@@ -155,8 +164,17 @@ module mycpu_top(
   assign bpu_pred_target_0 = bpu_pred_target;
   assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
   assign bpu_pred_target_1 = bpu_pred_target;
-  assign store_inv_valid = data_sram_data_ok && data_sram_wr &&
-       ((data_sram_addr & 32'hffc0_0000) == 32'h1c00_0000);
+  wire data_txn_accept = data_sram_req && data_sram_addr_ok;
+  data_txn_tracker u_data_txn_tracker(
+                     .clk            (clk),
+                     .resetn         (resetn),
+                     .txn_accept     (data_txn_accept),
+                     .txn_store      (data_sram_wr),
+                     .txn_paddr      (data_sram_addr),
+                     .txn_data_ok    (data_sram_data_ok),
+                     .store_inv_valid(store_inv_valid),
+                     .store_inv_addr (store_inv_addr)
+                   );
 
   csr u_csr(
         .clk    (clk),
@@ -169,30 +187,34 @@ module mycpu_top(
         .wdata  (csr_wdata),
         .crmd   (csr_crmd),
         .dmw0   (csr_dmw0),
-        .dmw1   (csr_dmw1)
+        .dmw1   (csr_dmw1),
+        .trans_ctx(csr_trans_ctx)
       );
 
   addr_translate u_inst_addr_translate(
+                   .clk   (clk),
+                   .resetn(resetn),
+                   .ctx_update(csr_ctx_update),
+                   .ctx_in(csr_trans_ctx),
                    .vaddr (pc_out),
-                   .crmd  (csr_crmd),
-                   .dmw0  (csr_dmw0),
-                   .dmw1  (csr_dmw1),
                    .paddr (pc_paddr)
                  );
 
   addr_translate u_icacop_addr_translate(
-                   .vaddr (icacop_addr),
-                   .crmd  (csr_crmd),
-                   .dmw0  (csr_dmw0),
-                   .dmw1  (csr_dmw1),
+                   .clk   (clk),
+                   .resetn(resetn),
+                   .ctx_update(csr_ctx_update),
+                   .ctx_in(csr_trans_ctx),
+                   .vaddr (icacop_req_addr),
                    .paddr (icacop_paddr)
                  );
 
   addr_translate u_data_addr_translate(
+                   .clk   (clk),
+                   .resetn(resetn),
+                   .ctx_update(csr_ctx_update),
+                   .ctx_in(csr_trans_ctx),
                    .vaddr (data_sram_vaddr),
-                   .crmd  (csr_crmd),
-                   .dmw0  (csr_dmw0),
-                   .dmw1  (csr_dmw1),
                    .paddr (data_sram_addr)
                  );
 
@@ -236,11 +258,13 @@ module mycpu_top(
              .bpu_pred_taken_1  (bpu_pred_taken_1),
              .bpu_pred_target_1 (bpu_pred_target_1),
              .br_taken          (pipeline_flush),
-             .icacop_valid      (icacop_valid),
-             .icacop_code       (icacop_code),
-             .icacop_addr       (icacop_paddr),
+             .icacop_req_valid  (icacop_req_valid),
+             .icacop_req_code   (icacop_req_code),
+             .icacop_req_addr   (icacop_paddr),
+             .icacop_req_ready  (icacop_req_ready),
+             .icacop_done       (icacop_done),
              .store_inv_valid   (store_inv_valid),
-             .store_inv_addr    (data_sram_addr),
+             .store_inv_addr    (store_inv_addr),
              .ibuf_allowin      (ibuf_push_ready),
              .fs_to_ds_valid_0  (if_to_ibuf_valid_0),
              .fs_to_ds_valid_1  (if_to_ibuf_valid_1),
@@ -283,7 +307,7 @@ module mycpu_top(
                 .pop_0            (issue_pop_0),
                 .pop_1            (issue_pop_1),
                 .br_taken         (pipeline_flush),
-                .csr_inflight     (csr_inflight),
+                .special_inflight (special_inflight),
                 .es_allowin       (es_allowin),
                 .es_fwd_bus_0     (es_fwd_bus_0),
                 .es_fwd_bus_1     (es_fwd_bus_1),
@@ -326,6 +350,7 @@ module mycpu_top(
               .es_wait_valid_1  (es_wait_valid_1),
               .es_wait_dest_1   (es_wait_dest_1),
               .csr_busy         (es_csr_busy),
+              .cacop_busy       (es_cacop_busy),
               .csr_raddr        (csr_raddr),
               .csr_rdata        (csr_rdata)
             );
@@ -351,6 +376,7 @@ module mycpu_top(
               .ms_wait_valid_1   (ms_wait_valid_1),
               .ms_wait_dest_1    (ms_wait_dest_1),
               .csr_busy          (ms_csr_busy),
+              .cacop_busy        (ms_cacop_busy),
               .br_taken          (br_taken),
               .br_target         (br_target),
               .bpu_valid         (bpu_ex_valid),
@@ -358,9 +384,13 @@ module mycpu_top(
               .bpu_pc            (bpu_ex_pc),
               .bpu_real_taken    (bpu_ex_real_taken),
               .bpu_real_target   (bpu_ex_real_target),
-              .icacop_valid      (icacop_valid),
-              .icacop_code       (icacop_code),
-              .icacop_addr       (icacop_addr),
+              .icacop_req_valid  (icacop_req_valid),
+              .icacop_req_code   (icacop_req_code),
+              .icacop_req_addr   (icacop_req_addr),
+              .icacop_req_ready  (icacop_req_ready),
+              .icacop_done       (icacop_done),
+              .cacop_flush       (cacop_flush),
+              .cacop_flush_target(cacop_flush_target),
               .data_sram_req     (data_sram_req),
               .data_sram_wr      (data_sram_wr),
               .data_sram_size    (data_sram_size),
@@ -387,6 +417,7 @@ module mycpu_top(
              .csr_waddr          (csr_waddr),
              .csr_wmask          (csr_wmask),
              .csr_wdata          (csr_wdata),
+             .csr_ctx_update     (csr_ctx_update),
              .csr_flush          (csr_flush),
              .csr_flush_target   (csr_flush_target)
            );

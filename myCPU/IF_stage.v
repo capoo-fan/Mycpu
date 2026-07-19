@@ -14,11 +14,13 @@ module IF_stage(
     input  wire [31:0] bpu_pred_target_1,
     // 分支冲刷
     input  wire        br_taken,
-    // ICache 维护
-    input  wire        icacop_valid,
-    input  wire [ 4:0] icacop_code,
-    input  wire [31:0] icacop_addr,
-    
+    // icacop 接口
+    input  wire        icacop_req_valid,
+    input  wire [ 4:0] icacop_req_code,
+    input  wire [31:0] icacop_req_addr,
+    output wire        icacop_req_ready,
+    output wire        icacop_done,
+
     input  wire        store_inv_valid,
     input  wire [31:0] store_inv_addr,
     // IBUF 接收握手
@@ -67,19 +69,21 @@ module IF_stage(
 
   // Cache 存储 (2-way 组相联, 8 组, 128-bit 行, 256B 总容量)
   reg         cache_valid [0:1][0:7];
-  reg [24:0]  cache_tag   [0:1][0:7];
-  reg [127:0] cache_data  [0:1][0:7];
+  (* ram_style = "distributed" *) reg [24:0]  cache_tag_way0  [0:7];
+  (* ram_style = "distributed" *) reg [24:0]  cache_tag_way1  [0:7];
+  (* ram_style = "distributed" *) reg [127:0] cache_data_way0 [0:7];
+  (* ram_style = "distributed" *) reg [127:0] cache_data_way1 [0:7];
 
   // Tag 比较
-  wire        s1_tag_match_way0 = cache_valid[0][s1_index] && (cache_tag[0][s1_index] == s1_tag);
-  wire        s1_tag_match_way1 = cache_valid[1][s1_index] && (cache_tag[1][s1_index] == s1_tag);
+  wire        s1_tag_match_way0 = cache_valid[0][s1_index] && (cache_tag_way0[s1_index] == s1_tag);
+  wire        s1_tag_match_way1 = cache_valid[1][s1_index] && (cache_tag_way1[s1_index] == s1_tag);
   wire        s1_hit            = s1_tag_match_way0 || s1_tag_match_way1;
   wire        s1_hit_way        = s1_tag_match_way1;
-  wire [127:0] s1_hit_line      = s1_hit_way ? cache_data[1][s1_index] : cache_data[0][s1_index];
+  wire [127:0] s1_hit_line      = s1_hit_way ? cache_data_way1[s1_index] : cache_data_way0[s1_index];
   wire [2:0]  store_inv_index   = store_inv_addr[6:4];
   wire [24:0] store_inv_tag     = store_inv_addr[31:7];
   wire        store_conflict_s1 = store_inv_valid && s1_valid &&
-       (store_inv_addr[31:4] == s1_paddr[31:4]);
+              (store_inv_addr[31:4] == s1_paddr[31:4]);
 
   // S2 Cache miss 发读请求，Cache hit 则将数据和控制信号发送下一级
   reg         s2_valid;
@@ -131,6 +135,22 @@ module IF_stage(
   reg         refill_poisoned;
 
   reg [7:0] lfsr;
+
+  localparam [2:0] MAINT_IDLE        = 3'd0;
+  localparam [2:0] MAINT_WAIT_REFILL = 3'd1;
+  localparam [2:0] MAINT_LOOKUP      = 3'd2;
+  localparam [2:0] MAINT_APPLY       = 3'd3;
+  localparam [2:0] MAINT_DONE        = 3'd4;
+
+  reg [2:0]  maint_state;
+  reg [4:0]  maint_code;
+  reg [31:0] maint_addr;
+  reg        maint_clear_way0;
+  reg        maint_clear_way1;
+
+  wire maint_busy = (maint_state != MAINT_IDLE);
+  assign icacop_req_ready = (maint_state == MAINT_IDLE);
+  assign icacop_done = (maint_state == MAINT_DONE);
 
   wire [127:0] s2_effective_line   = (state == FSM_DONE) ? refill_data_reg : s2_line_data;
   wire [31:0]  s2_effective_inst_0 = extract_word(s2_effective_line, s2_offset_word);
@@ -184,7 +204,7 @@ module IF_stage(
   wire miss_hold = s2_valid && !s2_data_ready;
   wire s2_stall  = s3_hold || miss_hold;
   wire s1_stall  = s2_stall;
-  assign if_suspend = s3_hold || miss_hold;
+  assign if_suspend = s3_hold || miss_hold || maint_busy;
 
   wire trigger_miss = s2_valid && (!s2_hit || store_conflict_s2) &&
        (state == FSM_IDLE);
@@ -203,7 +223,7 @@ module IF_stage(
         next_state = refill_retry_now ? FSM_MISS_REQ : FSM_DONE;
       FSM_DONE:
         next_state = store_conflict_s2 ? FSM_MISS_REQ :
-                     (s3_hold ? FSM_DONE : FSM_IDLE);
+          (s3_hold ? FSM_DONE : FSM_IDLE);
       default:
         next_state = FSM_IDLE;
     endcase
@@ -336,21 +356,69 @@ module IF_stage(
   assign rd_addr = {s2_paddr[31:4], 4'b0000};
 
   wire lfsr_feedback = lfsr[7] ^ lfsr[5] ^ lfsr[4] ^ lfsr[3];
-  wire        icacop_is_icache = icacop_valid && (icacop_code[2:0] == 3'b000);
-  wire        icacop_direct    = icacop_is_icache &&
-       ((icacop_code[4:3] == 2'b00) || (icacop_code[4:3] == 2'b01));
-  wire        icacop_hit       = icacop_is_icache && (icacop_code[4:3] == 2'b10);
-  wire        icacop_way       = icacop_addr[0];
-  wire [2:0]  icacop_index     = icacop_addr[6:4];
-  wire [24:0] icacop_tag       = icacop_addr[31:7];
-  wire        refill_hits_icacop =
-       (state == FSM_RECOVERY) && (s2_index == icacop_index) && (s2_tag == icacop_tag);
-  wire        icacop_hit_way0 =
-       (cache_valid[0][icacop_index] && (cache_tag[0][icacop_index] == icacop_tag)) ||
-       (refill_hits_icacop && !miss_replace_way);
-  wire        icacop_hit_way1 =
-       (cache_valid[1][icacop_index] && (cache_tag[1][icacop_index] == icacop_tag)) ||
-       (refill_hits_icacop &&  miss_replace_way);
+  wire        maint_is_icache = (maint_code[2:0] == 3'b000);
+  wire        maint_direct = maint_is_icache &&
+              ((maint_code[4:3] == 2'b00) || (maint_code[4:3] == 2'b01));
+  wire        maint_hit = maint_is_icache && (maint_code[4:3] == 2'b10);
+  wire        maint_way = maint_addr[0];
+  wire [2:0]  maint_index = maint_addr[6:4];
+  wire [24:0] maint_tag = maint_addr[31:7];
+  wire        refill_hits_maint =
+              (state == FSM_RECOVERY) && (s2_index == maint_index) &&
+              (s2_tag == maint_tag);
+  wire        maint_hit_way0 =
+              (cache_valid[0][maint_index] &&
+               (cache_tag_way0[maint_index] == maint_tag)) ||
+              (refill_hits_maint && !miss_replace_way);
+  wire        maint_hit_way1 =
+              (cache_valid[1][maint_index] &&
+               (cache_tag_way1[maint_index] == maint_tag)) ||
+              (refill_hits_maint && miss_replace_way);
+
+  always @(posedge clk)
+  begin
+    if (!resetn || br_taken)
+    begin
+      maint_state       <= MAINT_IDLE;
+      maint_code        <= 5'b0;
+      maint_addr        <= 32'b0;
+      maint_clear_way0  <= 1'b0;
+      maint_clear_way1  <= 1'b0;
+    end
+    else
+    begin
+      case (maint_state)
+        MAINT_IDLE:
+        begin
+          if (icacop_req_valid)
+          begin
+            maint_code  <= icacop_req_code;
+            maint_addr  <= icacop_req_addr;
+            maint_state <= MAINT_WAIT_REFILL;
+          end
+        end
+        MAINT_WAIT_REFILL:
+        begin
+          if ((state != FSM_MISS_REQ) && (state != FSM_MISS_REFILL))
+            maint_state <= MAINT_LOOKUP;
+        end
+        MAINT_LOOKUP:
+        begin
+          maint_clear_way0 <= maint_direct ? !maint_way :
+            (maint_hit && maint_hit_way0);
+          maint_clear_way1 <= maint_direct ? maint_way :
+            (maint_hit && maint_hit_way1);
+          maint_state <= MAINT_APPLY;
+        end
+        MAINT_APPLY:
+          maint_state <= MAINT_DONE;
+        MAINT_DONE:
+          maint_state <= MAINT_IDLE;
+        default:
+          maint_state <= MAINT_IDLE;
+      endcase
+    end
+  end
 
   // Miss FSM 与 Cache 管理
   always @(posedge clk)
@@ -363,9 +431,7 @@ module IF_stage(
       state <= next_state;
   end
 
-  // A BaseRAM store may interleave with the four single-word refill reads.
-  // Poison the line until that transaction drains, then fetch it again so an
-  // early refill beat can never resurrect pre-store instruction data.
+
   always @(posedge clk)
   begin
     if (!resetn || br_taken)
@@ -379,7 +445,7 @@ module IF_stage(
     end
   end
 
-  integer i, j;
+
   always @(posedge clk)
   begin
     if (!resetn)
@@ -388,15 +454,6 @@ module IF_stage(
       refill_data_reg <= 128'b0;
       refill_line     <= 128'b0;
       refill_beat     <= 2'b0;
-      for (i = 0; i < 2; i = i + 1)
-      begin
-        for (j = 0; j < 8; j = j + 1)
-        begin
-          cache_valid[i][j] <= 1'b0;
-          cache_tag[i][j]   <= 25'b0;
-          cache_data[i][j]  <= 128'b0;
-        end
-      end
     end
     else
     begin
@@ -425,31 +482,60 @@ module IF_stage(
         refill_beat <= refill_beat + 2'd1;
       end
 
-      // RECOVERY: 写入 Cache + 锁存 refill_data_reg
-      if (state == FSM_RECOVERY && !refill_retry_now)
-      begin
-        cache_valid[miss_replace_way][s2_index] <= 1'b1;
-        cache_tag[miss_replace_way][s2_index]   <= s2_tag;
-        cache_data[miss_replace_way][s2_index]  <= refill_line;
+      if (state == FSM_RECOVERY)
         refill_data_reg <= refill_line;
-      end
+    end
+  end
 
-      if (icacop_direct)
-        cache_valid[icacop_way][icacop_index] <= 1'b0;
-      else if (icacop_hit)
+  always @(posedge clk)
+  begin
+    if (state == FSM_RECOVERY)
+    begin
+      if (miss_replace_way)
+        cache_tag_way1[s2_index] <= s2_tag;
+      else
+        cache_tag_way0[s2_index] <= s2_tag;
+    end
+  end
+
+  always @(posedge clk)
+  begin
+    if (state == FSM_RECOVERY)
+    begin
+      if (miss_replace_way)
+        cache_data_way1[s2_index] <= refill_line;
+      else
+        cache_data_way0[s2_index] <= refill_line;
+    end
+  end
+
+  integer i, j;
+  always @(posedge clk)
+  begin
+    if (!resetn)
+    begin
+      for (i = 0; i < 2; i = i + 1)
+        for (j = 0; j < 8; j = j + 1)
+          cache_valid[i][j] <= 1'b0;
+    end
+    else
+    begin
+      if (state == FSM_RECOVERY)
+        cache_valid[miss_replace_way][s2_index] <= !refill_retry_now;
+      if (maint_state == MAINT_APPLY)
       begin
-        if (icacop_hit_way0)
-          cache_valid[0][icacop_index] <= 1'b0;
-        if (icacop_hit_way1)
-          cache_valid[1][icacop_index] <= 1'b0;
+        if (maint_clear_way0)
+          cache_valid[0][maint_index] <= 1'b0;
+        if (maint_clear_way1)
+          cache_valid[1][maint_index] <= 1'b0;
       end
       if (store_inv_valid)
       begin
         if (cache_valid[0][store_inv_index] &&
-            (cache_tag[0][store_inv_index] == store_inv_tag))
+            (cache_tag_way0[store_inv_index] == store_inv_tag))
           cache_valid[0][store_inv_index] <= 1'b0;
         if (cache_valid[1][store_inv_index] &&
-            (cache_tag[1][store_inv_index] == store_inv_tag))
+            (cache_tag_way1[store_inv_index] == store_inv_tag))
           cache_valid[1][store_inv_index] <= 1'b0;
       end
     end

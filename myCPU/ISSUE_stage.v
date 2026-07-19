@@ -11,7 +11,7 @@ module ISSUE_stage(
     output wire                           pop_0,
     output wire                           pop_1,
     input  wire                           br_taken,
-    input  wire                           csr_inflight,
+    input  wire                           special_inflight,
 
     input  wire                           es_allowin,
     // 前递信息
@@ -259,10 +259,10 @@ module ISSUE_stage(
     input [31:0] rf_data;
     begin
       select_fwd_data = ({32{sel[4]}} & es1_data) |
-                        ({32{sel[3]}} & es0_data) |
-                        ({32{sel[2]}} & ms1_data) |
-                        ({32{sel[1]}} & ms0_data) |
-                        ({32{sel[0]}} & rf_data);
+                      ({32{sel[3]}} & es0_data) |
+                      ({32{sel[2]}} & ms1_data) |
+                      ({32{sel[1]}} & ms0_data) |
+                      ({32{sel[0]}} & rf_data);
     end
   endfunction
 
@@ -281,13 +281,13 @@ module ISSUE_stage(
         (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr1_0)));
 
   wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1 && es_fwd_valid_1,
-                                         rj0_hit_es0 && es_fwd_valid_0,
-                                         rj0_hit_ms1 && ms_fwd_valid_1,
-                                         rj0_hit_ms0 && ms_fwd_valid_0);
+                                        rj0_hit_es0 && es_fwd_valid_0,
+                                        rj0_hit_ms1 && ms_fwd_valid_1,
+                                        rj0_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rj_value_0 = select_fwd_data(rj0_fwd_sel,
-                                           es_fwd_data_1, es_fwd_data_0,
-                                           ms_fwd_data_1, ms_fwd_data_0,
-                                           rf_rdata1_0);
+       es_fwd_data_1, es_fwd_data_0,
+       ms_fwd_data_1, ms_fwd_data_0,
+       rf_rdata1_0);
 
   wire rkd0_hit_es0 = src0_rkd_valid && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == rf_raddr2_0);
   wire rkd0_hit_es1 = src0_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == rf_raddr2_0);
@@ -302,13 +302,13 @@ module ISSUE_stage(
         (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr2_0)));
 
   wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
-                                          rkd0_hit_es0 && es_fwd_valid_0,
-                                          rkd0_hit_ms1 && ms_fwd_valid_1,
-                                          rkd0_hit_ms0 && ms_fwd_valid_0);
+                                         rkd0_hit_es0 && es_fwd_valid_0,
+                                         rkd0_hit_ms1 && ms_fwd_valid_1,
+                                         rkd0_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rkd_value_0 = select_fwd_data(rkd0_fwd_sel,
-                                            es_fwd_data_1, es_fwd_data_0,
-                                            ms_fwd_data_1, ms_fwd_data_0,
-                                            rf_rdata2_0);
+       es_fwd_data_1, es_fwd_data_0,
+       ms_fwd_data_1, ms_fwd_data_0,
+       rf_rdata2_0);
 
   // 第二条指令的前递检测
   wire rj1_hit_es0  = src1_rj_valid  && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == rf_raddr1_1);
@@ -323,13 +323,13 @@ module ISSUE_stage(
         (ms_wait_valid_1 && (ms_wait_dest_1 == rf_raddr1_1)) ||
         (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr1_1)));
   wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1 && es_fwd_valid_1,
-                                         rj1_hit_es0 && es_fwd_valid_0,
-                                         rj1_hit_ms1 && ms_fwd_valid_1,
-                                         rj1_hit_ms0 && ms_fwd_valid_0);
+                                        rj1_hit_es0 && es_fwd_valid_0,
+                                        rj1_hit_ms1 && ms_fwd_valid_1,
+                                        rj1_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rj_value_1 = select_fwd_data(rj1_fwd_sel,
-                                           es_fwd_data_1, es_fwd_data_0,
-                                           ms_fwd_data_1, ms_fwd_data_0,
-                                           rf_rdata1_1);
+       es_fwd_data_1, es_fwd_data_0,
+       ms_fwd_data_1, ms_fwd_data_0,
+       rf_rdata1_1);
 
   wire rkd1_hit_es0 = src1_rkd_valid && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == rf_raddr2_1);
   wire rkd1_hit_es1 = src1_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == rf_raddr2_1);
@@ -342,13 +342,13 @@ module ISSUE_stage(
         (ms_wait_valid_0 && (ms_wait_dest_0 == rf_raddr2_1)));
 
   wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
-                                          rkd1_hit_es0 && es_fwd_valid_0,
-                                          rkd1_hit_ms1 && ms_fwd_valid_1,
-                                          rkd1_hit_ms0 && ms_fwd_valid_0);
+                                         rkd1_hit_es0 && es_fwd_valid_0,
+                                         rkd1_hit_ms1 && ms_fwd_valid_1,
+                                         rkd1_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rkd_value_1 = select_fwd_data(rkd1_fwd_sel,
-                                            es_fwd_data_1, es_fwd_data_0,
-                                            ms_fwd_data_1, ms_fwd_data_0,
-                                            rf_rdata2_1);
+       es_fwd_data_1, es_fwd_data_0,
+       ms_fwd_data_1, ms_fwd_data_0,
+       rf_rdata2_1);
 
   wire stall_0 = rj0_wait || rkd0_wait;
   wire stall_1 = rj1_wait || rkd1_wait;
@@ -356,14 +356,15 @@ module ISSUE_stage(
   wire raw_0_to_1 = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid  && (dest_0 == rf_raddr1_1)) ||
         (src1_rkd_valid && (dest_0 == rf_raddr2_1)));  // 两条指令相互依赖
-  wire mem_op_0 = res_from_mem_0 || mem_we_0 || is_cacop_0;
-  wire mem_op_1 = res_from_mem_1 || mem_we_1 || is_cacop_1;
+  wire mem_op_0 = res_from_mem_0 || mem_we_0;
+  wire mem_op_1 = res_from_mem_1 || mem_we_1;
+  wire special_0 = is_csr_0 || is_cacop_0;
+  wire special_1 = is_csr_1 || is_cacop_1;
 
-  wire issue0_ok = front_valid_0 && !stall_0 && !csr_inflight;
+  wire issue0_ok = front_valid_0 && !stall_0 && !special_inflight;
   wire issue1_ok = front_valid_1 && issue0_ok && !stall_1 &&
        !raw_0_to_1 && !(mem_op_0 && mem_op_1) &&
-       !(is_bj_0 && is_bj_1) && !is_csr_0 && !is_csr_1;
-       // 指令有依赖、都是内存操作、都是跳转指令或包含 CSR 时不能发出第二条
+       !(is_bj_0 && is_bj_1) && !special_0 && !special_1;
 
   assign ds_to_es_valid_0 = es_allowin && !br_taken && issue0_ok;
   assign ds_to_es_valid_1 = es_allowin && !br_taken && issue1_ok;

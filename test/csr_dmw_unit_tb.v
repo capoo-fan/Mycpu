@@ -13,6 +13,8 @@ module csr_dmw_unit_tb;
   wire [31:0] crmd;
   wire [31:0] dmw0;
   wire [31:0] dmw1;
+  wire [`TRANS_CTX_WD-1:0] trans_ctx;
+  reg         ctx_update;
 
   reg  [31:0] vaddr;
   wire [31:0] paddr;
@@ -23,12 +25,14 @@ module csr_dmw_unit_tb;
   csr u_csr(
         .clk(clk), .resetn(resetn), .raddr(raddr), .rdata(rdata),
         .we(we), .waddr(waddr), .wmask(wmask), .wdata(wdata),
-        .crmd(crmd), .dmw0(dmw0), .dmw1(dmw1)
+        .crmd(crmd), .dmw0(dmw0), .dmw1(dmw1),
+        .trans_ctx(trans_ctx)
       );
 
   addr_translate u_addr_translate(
-                   .vaddr(vaddr), .crmd(crmd), .dmw0(dmw0),
-                   .dmw1(dmw1), .paddr(paddr)
+                   .clk(clk), .resetn(resetn),
+                   .ctx_update(ctx_update), .ctx_in(trans_ctx),
+                   .vaddr(vaddr), .paddr(paddr)
                  );
 
   inst_decoder u_inst_decoder(.inst(inst), .dec_bus(dec_bus));
@@ -45,6 +49,16 @@ module csr_dmw_unit_tb;
         $display("FAIL %0s: actual=%h expected=%h", name, actual, expected);
         $fatal(1, "csr_dmw_unit_tb failed");
       end
+    end
+  endtask
+
+  task distribute_ctx;
+    begin
+      @(negedge clk);
+      ctx_update = 1'b1;
+      @(posedge clk);
+      #1;
+      ctx_update = 1'b0;
     end
   endtask
 
@@ -73,6 +87,7 @@ module csr_dmw_unit_tb;
     waddr  = 14'b0;
     wmask  = 32'b0;
     wdata  = 32'b0;
+    ctx_update = 1'b0;
     vaddr  = 32'h8123_4567;
     inst   = 32'b0;
 
@@ -111,15 +126,19 @@ module csr_dmw_unit_tb;
     csr_write(14'h0000, 32'hffff_ffff, 32'h0000_0010);
     vaddr = 32'he123_4567;
     #1;
+    check32(paddr, 32'he123_4567, "context stays local before distribute");
+    distribute_ctx();
     check32(paddr, 32'hc123_4567, "DMW0 priority PLV0");
 
     csr_write(14'h0181, 32'hffff_ffff, 32'he400_0008);
     csr_write(14'h0180, 32'h0000_0008, 32'h0000_0000);
     csr_write(14'h0000, 32'h0000_0003, 32'h0000_0003);
+    distribute_ctx();
     #1;
     check32(paddr, 32'h4123_4567, "DMW1 PLV3");
 
     csr_write(14'h0000, 32'h0000_0018, 32'h0000_0008);
+    distribute_ctx();
     #1;
     check32(crmd, 32'h0000_000b, "CRMD masked exchange");
     check32(paddr, 32'he123_4567, "return to direct mode");
@@ -129,6 +148,7 @@ module csr_dmw_unit_tb;
     csr_write(14'h0180, 32'hffff_ffff, 32'h0000_0019);
     csr_write(14'h0181, 32'hffff_ffff, 32'ha000_0009);
     csr_write(14'h0000, 32'h0000_001b, 32'h0000_0010);
+    distribute_ctx();
     vaddr = 32'h1c00_1234;
     #1;
     check32(paddr, 32'h1c00_1234, "supervisor DMW0 identity map");
