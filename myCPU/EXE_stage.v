@@ -16,10 +16,6 @@ module EXE_stage(
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_1,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_0,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_1,
-    output wire                         es_wait_valid_0,
-    output wire [ 4:0]                  es_wait_dest_0,
-    output wire                         es_wait_valid_1,
-    output wire [ 4:0]                  es_wait_dest_1,
     output wire                         csr_busy,
     output wire                         cacop_busy,
     output wire [13:0]                  csr_raddr,
@@ -42,7 +38,8 @@ module EXE_stage(
   reg         es_is_mul_0;
   reg         es_mul_signed_0;
   reg         es_mul_hi_0;
-  reg  [ 2:0] mul_cnt_0;
+  reg  [ 1:0] mul_cnt_0;
+  reg         mul_pending_0;
   reg         es_ld_byte_0;
   reg         es_ld_half_0;
   reg         es_ld_sign_ext_0;
@@ -73,7 +70,8 @@ module EXE_stage(
   reg         es_is_mul_1;
   reg         es_mul_signed_1;
   reg         es_mul_hi_1;
-  reg  [ 2:0] mul_cnt_1;
+  reg  [ 1:0] mul_cnt_1;
+  reg         mul_pending_1;
   reg         es_ld_byte_1;
   reg         es_ld_half_1;
   reg         es_ld_sign_ext_1;
@@ -169,10 +167,11 @@ module EXE_stage(
           ds_is_csr_1, ds_csr_num_1, ds_csr_wmask_1,
           ds_csr_wvalue_1} = ds_to_es_bus_1;
 
-  localparam [2:0] MUL_LATENCY = 3'd3;
-
-  wire lane0_ready = !es_valid_0 || !es_is_mul_0 || (mul_cnt_0 == MUL_LATENCY);
-  wire lane1_ready = !es_valid_1 || !es_is_mul_1 || (mul_cnt_1 == MUL_LATENCY);
+  // 乘法 IP 的结果在进入 EX 后第三拍可用。mul_pending 在倒数一拍
+  // 的时钟沿清零，使完成状态先寄存，再送往 ISSUE，切断计数器到
+  // InstBuffer 的跨级组合控制链。
+  wire lane0_ready = !es_valid_0 || !mul_pending_0;
+  wire lane1_ready = !es_valid_1 || !mul_pending_1;
   wire es_ready_go = lane0_ready && lane1_ready;
   wire es_busy     = es_valid_0 || es_valid_1;
 
@@ -259,17 +258,8 @@ module EXE_stage(
        (es_real_target_1 != es_pred_target_1);
   wire es_redirect_miss_1 = es_is_bj_1 && (es_taken_miss_1 || es_target_miss_1);
 
-  wire es_fwd_valid_0 = !es_res_from_mem_0 &&
-       !(es_is_mul_0 && (mul_cnt_0 != MUL_LATENCY));
-  wire es_fwd_valid_1 = !es_res_from_mem_1 &&
-       !(es_is_mul_1 && (mul_cnt_1 != MUL_LATENCY));
-
-  assign es_wait_valid_0 = es_valid_0 && es_gr_we_0 &&
-         (es_dest_0 != 5'b0) && !es_fwd_valid_0;
-  assign es_wait_dest_0  = es_dest_0;
-  assign es_wait_valid_1 = es_valid_1 && es_gr_we_1 &&
-         (es_dest_1 != 5'b0) && !es_fwd_valid_1;
-  assign es_wait_dest_1  = es_dest_1;
+  wire es_fwd_valid_0 = !es_res_from_mem_0 && !mul_pending_0;
+  wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_1;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
                          es_res_from_mem_0, es_dest_0, es_final_result_0};
@@ -523,21 +513,49 @@ module EXE_stage(
   always @(posedge clk)
   begin
     if (reset || flush)
-      mul_cnt_0 <= 3'd0;
+    begin
+      mul_cnt_0     <= 2'd0;
+      mul_pending_0 <= 1'b0;
+    end
     else if (es_allowin)
-      mul_cnt_0 <= 3'd0;
-    else if (es_valid_0 && es_is_mul_0 && (mul_cnt_0 < MUL_LATENCY))
-      mul_cnt_0 <= mul_cnt_0 + 3'd1;
+    begin
+      mul_cnt_0     <= 2'd0;
+      mul_pending_0 <= ds_to_es_valid_0 && ds_is_mul_0;
+    end
+    else if (mul_pending_0)
+    begin
+      if (mul_cnt_0 == 2'd2)
+      begin
+        mul_cnt_0     <= 2'd3;
+        mul_pending_0 <= 1'b0;
+      end
+      else
+        mul_cnt_0 <= mul_cnt_0 + 2'd1;
+    end
   end
 
   always @(posedge clk)
   begin
     if (reset || flush)
-      mul_cnt_1 <= 3'd0;
+    begin
+      mul_cnt_1     <= 2'd0;
+      mul_pending_1 <= 1'b0;
+    end
     else if (es_allowin)
-      mul_cnt_1 <= 3'd0;
-    else if (es_valid_1 && es_is_mul_1 && (mul_cnt_1 < MUL_LATENCY))
-      mul_cnt_1 <= mul_cnt_1 + 3'd1;
+    begin
+      mul_cnt_1     <= 2'd0;
+      mul_pending_1 <= ds_to_es_valid_1 && ds_is_mul_1;
+    end
+    else if (mul_pending_1)
+    begin
+      if (mul_cnt_1 == 2'd2)
+      begin
+        mul_cnt_1     <= 2'd3;
+        mul_pending_1 <= 1'b0;
+      end
+      else
+        mul_cnt_1 <= mul_cnt_1 + 2'd1;
+    end
   end
 
   alu u_alu_0(

@@ -50,14 +50,36 @@ module inst_buffer(
   reg                           next_front_valid_1;
   reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_0;
   reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_1;
-  reg  [1:0]                    refill_count;
 
   // pop_shift 只消耗一条指令，pop_clear 消耗两条指令。宽数据装载
   // 控制给出明确的扇出上限，允许 Vivado 在各个 payload 分区附近复制逻辑。
-  (* max_fanout = 32 *) wire pop_shift;
-  (* max_fanout = 32 *) wire pop_clear;
+  (* keep = "true", max_fanout = 8 *) wire pop_shift;
+  (* keep = "true", max_fanout = 8 *) wire pop_clear;
+  (* keep = "true", max_fanout = 8 *) reg [1:0] head_step;
+  
   assign pop_shift = pop_0 && !pop_1;
   assign pop_clear = pop_1;
+
+  always @(*)
+  begin
+    head_step = 2'd0;
+    if (pop_clear)
+      head_step = (cnt > CNT_ONE) ? 2'd2 :
+                (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+    else if (pop_shift)
+    begin
+      if (front_valid_1_r)
+        head_step = (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+      else
+        head_step = (cnt > CNT_ONE) ? 2'd2 :
+                  (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+    end
+    else if (!front_valid_0_r)
+      head_step = (cnt > CNT_ONE) ? 2'd2 :
+                (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      head_step = 2'd1;
+  end
 
   // valid 和 payload 分开推导。特别是双 pop 时直接从 FIFO 头两项
   // 装载，不再经过 temp_valid -> refill -> 宽总线 mux 级联。
@@ -67,7 +89,6 @@ module inst_buffer(
     next_front_valid_1 = front_valid_1_r;
     next_front_bus_0   = front_bus_0_r;
     next_front_bus_1   = front_bus_1_r;
-    refill_count       = 2'd0;
 
     if (pop_clear)
     begin
@@ -75,8 +96,6 @@ module inst_buffer(
       next_front_valid_1 = (cnt > CNT_ONE);
       next_front_bus_0   = fifo_front_0;
       next_front_bus_1   = fifo_front_1;
-      refill_count       = (cnt > CNT_ONE) ? 2'd2 :
-                           (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
     end
     else if (pop_shift)
     begin
@@ -88,7 +107,6 @@ module inst_buffer(
         begin
           next_front_valid_1 = 1'b1;
           next_front_bus_1   = fifo_front_0;
-          refill_count       = 2'd1;
         end
         else
           next_front_valid_1 = 1'b0;
@@ -99,8 +117,6 @@ module inst_buffer(
         next_front_valid_1 = (cnt > CNT_ONE);
         next_front_bus_0   = fifo_front_0;
         next_front_bus_1   = fifo_front_1;
-        refill_count       = (cnt > CNT_ONE) ? 2'd2 :
-                             (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
       end
     end
     else if (!front_valid_0_r)
@@ -109,14 +125,11 @@ module inst_buffer(
       next_front_valid_1 = (cnt > CNT_ONE);
       next_front_bus_0   = fifo_front_0;
       next_front_bus_1   = fifo_front_1;
-      refill_count       = (cnt > CNT_ONE) ? 2'd2 :
-                           (cnt != CNT_ZERO) ? 2'd1 : 2'd0;
     end
     else if (!front_valid_1_r && (cnt != CNT_ZERO))
     begin
       next_front_valid_1 = 1'b1;
       next_front_bus_1   = fifo_front_0;
-      refill_count       = 2'd1;
     end
   end
 
@@ -140,7 +153,7 @@ module inst_buffer(
     end
     else
     begin
-      case (refill_count)
+      case (head_step)
         2'd1:
           head <= head + {{(pointer_width-1){1'b0}}, 1'b1};
         2'd2:
@@ -158,7 +171,7 @@ module inst_buffer(
           tail <= tail;
       endcase
 
-      cnt <= cnt + {1'b0, push_count} - {1'b0, refill_count};
+      cnt <= cnt + {1'b0, push_count} - {1'b0, head_step};
       front_valid_0_r <= next_front_valid_0;
       front_valid_1_r <= next_front_valid_1;
       front_bus_0_r   <= next_front_bus_0;

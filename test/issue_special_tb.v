@@ -9,6 +9,10 @@ module issue_special_tb;
   reg  [31:0] inst_0;
   reg  [31:0] inst_1;
   reg         special_block;
+  reg  [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
+  reg  [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
+  reg  [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
+  reg  [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
   wire [`DS_DEC_BUS_WD-1:0] dec_0;
   wire [`DS_DEC_BUS_WD-1:0] dec_1;
   wire [`FS_TO_DS_BUS_WD-1:0] fs_0 = {32'h1c00_0000, inst_0, 1'b0, 32'b0};
@@ -23,6 +27,8 @@ module issue_special_tb;
 
   localparam [31:0] INST_ADDI_R2 = 32'h0280_0402;
   localparam [31:0] INST_ADDI_R3 = 32'h0280_0803;
+  localparam [31:0] INST_ADDI_R3_FROM_R2 = 32'h0280_0443;
+  localparam [31:0] INST_ADDI_R5_FROM_R2 = 32'h0280_0445;
   localparam [31:0] INST_CSRWR = {8'h04, 14'h0180, 5'd1, 5'd7};
   localparam [31:0] INST_CACOP = {6'h01, 4'h8, 12'h000, 5'd0, 5'h10};
   localparam [31:0] INST_CPUCFG = {17'b0, 5'h1b, 5'd2, 5'd3};
@@ -37,14 +43,8 @@ module issue_special_tb;
     .pop_0(pop_0), .pop_1(pop_1), .br_taken(1'b0),
     .special_fire(special_fire), .special_block(special_block),
     .es_allowin(1'b1),
-    .es_fwd_bus_0({`ES_FWD_BUS_WD{1'b0}}),
-    .es_fwd_bus_1({`ES_FWD_BUS_WD{1'b0}}),
-    .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
-    .ms_fwd_bus_1({`MS_FWD_BUS_WD{1'b0}}),
-    .es_wait_valid_0(1'b0), .es_wait_dest_0(5'b0),
-    .es_wait_valid_1(1'b0), .es_wait_dest_1(5'b0),
-    .ms_wait_valid_0(1'b0), .ms_wait_dest_0(5'b0),
-    .ms_wait_valid_1(1'b0), .ms_wait_dest_1(5'b0),
+    .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
+    .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
     .ds_to_es_valid_0(issue_0), .ds_to_es_valid_1(issue_1),
     .ds_to_es_bus_0(), .ds_to_es_bus_1()
@@ -73,6 +73,10 @@ module issue_special_tb;
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
     special_block = 1'b0;
+    es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
+    es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
+    ms_fwd_bus_0 = {`MS_FWD_BUS_WD{1'b0}};
+    ms_fwd_bus_1 = {`MS_FWD_BUS_WD{1'b0}};
     inst_0 = INST_ADDI_R2;
     inst_1 = INST_ADDI_R3;
     #1;
@@ -105,6 +109,22 @@ module issue_special_tb;
     inst_0 = INST_ADDI_R2;
     special_block = 1'b1;
     check_issue(1'b0, 1'b0, "special busy blocks younger issue");
+
+    special_block = 1'b0;
+    inst_0 = INST_ADDI_R3_FROM_R2;
+    inst_1 = INST_ADDI_R3;
+    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b0, 5'd2, 32'h1234_5678};
+    check_issue(1'b0, 1'b0, "unready ES producer blocks lane0 and pair");
+    es_fwd_bus_1 = {1'b1, 1'b1, 1'b1, 1'b0, 5'd2, 32'h1234_5678};
+    check_issue(1'b1, 1'b1, "ES producer forwards without extra stall");
+
+    inst_0 = INST_ADDI_R3;
+    inst_1 = INST_ADDI_R5_FROM_R2;
+    es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
+    ms_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1, 5'd2, 32'h89ab_cdef};
+    check_issue(1'b1, 1'b0, "unready MEM producer blocks lane1 only");
+    ms_fwd_bus_0 = {1'b1, 1'b1, 1'b1, 1'b1, 5'd2, 32'h89ab_cdef};
+    check_issue(1'b1, 1'b1, "MEM producer forwards without extra stall");
 
     $display("PASS issue_special_tb");
     $finish;

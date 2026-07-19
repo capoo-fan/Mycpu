@@ -45,8 +45,6 @@ module mem_timing_cut_tb;
     .ms_to_ws_valid_1(ms_to_ws_valid_1),
     .ms_to_ws_bus_0(ms_to_ws_bus_0), .ms_to_ws_bus_1(ms_to_ws_bus_1),
     .ms_fwd_bus_0(), .ms_fwd_bus_1(),
-    .ms_wait_valid_0(), .ms_wait_dest_0(),
-    .ms_wait_valid_1(), .ms_wait_dest_1(),
     .csr_busy(), .cacop_busy(),
     .br_taken(br_taken), .br_target(br_target),
     .bpu_valid(bpu_valid), .bpu_is_bj(), .bpu_pc(bpu_pc),

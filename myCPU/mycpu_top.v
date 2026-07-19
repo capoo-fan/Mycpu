@@ -77,15 +77,6 @@ module mycpu_top(
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
 
-  wire        es_wait_valid_0;
-  wire [ 4:0] es_wait_dest_0;
-  wire        es_wait_valid_1;
-  wire [ 4:0] es_wait_dest_1;
-  wire        ms_wait_valid_0;
-  wire [ 4:0] ms_wait_dest_0;
-  wire        ms_wait_valid_1;
-  wire [ 4:0] ms_wait_dest_1;
-
   // 写回总线
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
 
@@ -326,14 +317,6 @@ module mycpu_top(
                 .es_fwd_bus_1     (es_fwd_bus_1),
                 .ms_fwd_bus_0     (ms_fwd_bus_0),
                 .ms_fwd_bus_1     (ms_fwd_bus_1),
-                .es_wait_valid_0  (es_wait_valid_0),
-                .es_wait_dest_0   (es_wait_dest_0),
-                .es_wait_valid_1  (es_wait_valid_1),
-                .es_wait_dest_1   (es_wait_dest_1),
-                .ms_wait_valid_0  (ms_wait_valid_0),
-                .ms_wait_dest_0   (ms_wait_dest_0),
-                .ms_wait_valid_1  (ms_wait_valid_1),
-                .ms_wait_dest_1   (ms_wait_dest_1),
                 .ws_to_rf_bus     (ws_to_rf_bus),
                 .ds_to_es_valid_0 (ds_to_es_valid_0),
                 .ds_to_es_valid_1 (ds_to_es_valid_1),
@@ -358,10 +341,6 @@ module mycpu_top(
               .es_to_ms_bus_1   (es_to_ms_bus_1),
               .es_fwd_bus_0     (es_fwd_bus_0),
               .es_fwd_bus_1     (es_fwd_bus_1),
-              .es_wait_valid_0  (es_wait_valid_0),
-              .es_wait_dest_0   (es_wait_dest_0),
-              .es_wait_valid_1  (es_wait_valid_1),
-              .es_wait_dest_1   (es_wait_dest_1),
               .csr_busy         (es_csr_busy),
               .cacop_busy       (es_cacop_busy),
               .csr_raddr        (csr_raddr),
@@ -384,10 +363,6 @@ module mycpu_top(
               .ms_to_ws_bus_1    (ms_to_ws_bus_1),
               .ms_fwd_bus_0      (ms_fwd_bus_0),
               .ms_fwd_bus_1      (ms_fwd_bus_1),
-              .ms_wait_valid_0   (ms_wait_valid_0),
-              .ms_wait_dest_0    (ms_wait_dest_0),
-              .ms_wait_valid_1   (ms_wait_valid_1),
-              .ms_wait_dest_1    (ms_wait_dest_1),
               .csr_busy          (ms_csr_busy),
               .cacop_busy        (ms_cacop_busy),
               .br_taken          (br_taken),
