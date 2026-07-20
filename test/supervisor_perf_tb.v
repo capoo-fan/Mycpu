@@ -65,6 +65,7 @@ module supervisor_perf_tb;
   integer ref_words;
   reg [31:0] entry_addr;
   reg [63:0] cycle_count;
+  reg [63:0] benchmark_cycle_count;
   reg [63:0] max_cycles;
   reg [63:0] commit_count;
   reg        counting;
@@ -120,6 +121,7 @@ module supervisor_perf_tb;
     cycle_count <= cycle_count + 1;
     if (counting)
     begin
+      benchmark_cycle_count <= benchmark_cycle_count + 1;
       commit_count <= commit_count + {62'b0, cpu.ms_to_ws_valid_0}
                    + {62'b0, cpu.ms_to_ws_valid_1};
     end
@@ -267,8 +269,9 @@ module supervisor_perf_tb;
       if (mismatch != 0)
         $fatal(1, "supervisor result mismatch count=%0d", mismatch);
       $display("PASS supervisor performance test=%0d cycles=%0d instr=%0d IPC=%.4f",
-               test_id, cycle_count, commit_count,
-               (cycle_count > 0) ? (commit_count * 1.0 / cycle_count) : 0.0);
+               test_id, benchmark_cycle_count, commit_count,
+               (benchmark_cycle_count > 0) ?
+               (commit_count * 1.0 / benchmark_cycle_count) : 0.0);
     end
   endtask
 
@@ -296,6 +299,7 @@ module supervisor_perf_tb;
     uart_rx_data  = 8'b0;
     tx_count      = 0;
     cycle_count   = 0;
+    benchmark_cycle_count = 0;
     commit_count  = 0;
     counting      = 1'b0;
 
@@ -307,6 +311,7 @@ module supervisor_perf_tb;
     send_word_le(entry_addr);
     counting = 1'b1;
     wait_tx_count(BOOT_LEN + 2);
+    counting = 1'b0;
     if (tx_bytes[BOOT_LEN] !== 8'h06 || tx_bytes[BOOT_LEN + 1] !== 8'h07)
       $fatal(1, "G command markers are invalid");
 
