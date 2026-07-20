@@ -1,5 +1,38 @@
 `timescale 1ns / 1ps
 
+// ============================================================================
+// ES_TO_MS_BUS 位提取宏（lane 0 与 lane 1 位置相同）
+// ============================================================================
+`define ES_BUS_PC            293:262
+`define ES_BUS_PRED_TAKEN    184
+`define ES_BUS_PRED_TARGET   183:152
+`define ES_BUS_IS_BJ         151
+`define ES_BUS_REAL_TAKEN    150
+`define ES_BUS_REAL_TARGET   149:118
+`define ES_BUS_REDIRECT_MISS 85
+
+// ============================================================================
+// MS_FWD_BUS 位提取宏
+// ============================================================================
+`define MS_FWD_VALID     40
+`define MS_FWD_GR_WE     39
+`define MS_FWD_FWD_VALID 38
+`define MS_FWD_RES_MEM   37
+`define MS_FWD_DEST      36:32
+
+// ============================================================================
+// ES_FWD_BUS 位提取宏
+// ============================================================================
+`define ES_FWD_VALID     40
+`define ES_FWD_GR_WE     39
+`define ES_FWD_FWD_VALID 38
+`define ES_FWD_RES_MEM   37
+
+// ============================================================================
+// BPU 分支历史表大小（用于 per-PC 统计）
+// ============================================================================
+`define BR_TABLE_SIZE 256
+
 module supervisor_perf_tb;
   localparam integer BOOT_LEN = 38;
   localparam integer STREAM_WORDS = 32'h0030_0000 / 4;
@@ -67,11 +100,89 @@ module supervisor_perf_tb;
   reg [63:0] cycle_count;
   reg [63:0] benchmark_cycle_count;
   reg [63:0] max_cycles;
-  reg [63:0] commit_count;
   reg        counting;
   reg [1023:0] base_file;
   reg [1023:0] ext_file;
   reg [1023:0] ref_file;
+
+  // =========================================================================
+  // 性能计数器寄存器
+  // =========================================================================
+
+  // -- 基础计数器 --
+  reg [63:0] commit_count;
+  reg [63:0] dual_issue_cycle_count;
+
+  // -- Frontend 停顿 --
+  reg [63:0] fe_icache_miss_cycles;
+  reg [63:0] fe_icache_refill_cycles;
+  reg [63:0] fe_ibuf_empty_cycles;
+  reg [63:0] fe_ibuf_full_cycles;
+  reg [63:0] fe_redirect_flush_cycles;
+
+  // -- Issue 停顿 --
+  reg [63:0] is_no_inst_cycles;
+  reg [63:0] is_backend_full_cycles;
+  reg [63:0] is_raw_load_cycles;
+  reg [63:0] is_raw_other_cycles;
+  reg [63:0] is_pair_blocked_cycles;
+
+  // -- Memory 停顿 --
+  reg [63:0] mem_load_addr_wait_cycles;
+  reg [63:0] mem_load_data_wait_cycles;
+  reg [63:0] mem_store_addr_wait_cycles;
+  reg [63:0] mem_store_data_wait_cycles;
+
+  // -- 分支统计 --
+  reg [63:0] br_total_count;
+  reg [63:0] br_mispredict_count;
+  reg [63:0] br_btb_miss_count;
+  reg [63:0] br_dir_miss_count;
+  reg [63:0] br_target_miss_count;
+
+  // -- Per-PC 分支历史表 --
+  reg [31:0] br_pc_table      [`BR_TABLE_SIZE-1:0];
+  reg [31:0] br_pc_total      [`BR_TABLE_SIZE-1:0];
+  reg [31:0] br_pc_mispredict [`BR_TABLE_SIZE-1:0];
+  reg [31:0] br_pc_btb        [`BR_TABLE_SIZE-1:0];
+  reg [31:0] br_pc_dir        [`BR_TABLE_SIZE-1:0];
+  reg [31:0] br_pc_target     [`BR_TABLE_SIZE-1:0];
+  integer    br_pc_count;
+
+  // -- MEM 状态跟踪 --
+  reg        mem_pending;
+  reg        mem_pending_is_load;
+  reg        mem_addr_sent;
+
+  // -- ICache refill 状态跟踪 --
+  reg        icache_refill_active;
+
+  // -- 分支信息 pipeline 延迟（ES→MEM 延迟 1 周期） --
+  reg        br_info_valid;
+  reg [31:0] br_info_pc;
+  reg        br_info_pred_taken;
+  reg [31:0] br_info_pred_target;
+  reg        br_info_real_taken;
+  reg [31:0] br_info_real_target;
+  reg        br_info_is_bj;
+
+  // -- 重建的内部信号 --
+  wire ms_unready_load_tb;
+  wire es_mul_pending_tb;
+  wire [31:0] es_to_ms_bus_0_flat;
+  wire [31:0] es_to_ms_bus_1_flat;
+
+  // ES_TO_MS_BUS_WD = 294, pad to 320 for convenient bit indexing
+  wire [319:0] es_bus_0_padded = {26'b0, cpu.es_to_ms_bus_0};
+  wire [319:0] es_bus_1_padded = {26'b0, cpu.es_to_ms_bus_1};
+
+  // MS_FWD_BUS_WD = 41
+  wire [63:0] ms_fwd_0_padded = {23'b0, cpu.ms_fwd_bus_0};
+  wire [63:0] ms_fwd_1_padded = {23'b0, cpu.ms_fwd_bus_1};
+
+  // ES_FWD_BUS_WD = 41
+  wire [63:0] es_fwd_0_padded = {23'b0, cpu.es_fwd_bus_0};
+  wire [63:0] es_fwd_1_padded = {23'b0, cpu.es_fwd_bus_1};
 
   mycpu_top cpu(
               .clk(clk), .resetn(resetn),
@@ -116,36 +227,219 @@ module supervisor_perf_tb;
 
   always #5 clk = ~clk;
 
+  // =========================================================================
+  // 信号重建：从总线上提取内部信号
+  // =========================================================================
+
+  // ms_unready_load: MEM 阶段有未完成的 load，阻塞发射
+  assign ms_unready_load_tb =
+      (ms_fwd_0_padded[`MS_FWD_VALID] &&
+       ms_fwd_0_padded[`MS_FWD_GR_WE] &&
+       !ms_fwd_0_padded[`MS_FWD_FWD_VALID]) ||
+      (ms_fwd_1_padded[`MS_FWD_VALID] &&
+       ms_fwd_1_padded[`MS_FWD_GR_WE] &&
+       !ms_fwd_1_padded[`MS_FWD_FWD_VALID]);
+
+  // es_mul_pending: EXE 阶段有未完成的乘法
+  assign es_mul_pending_tb =
+      (es_fwd_0_padded[`ES_FWD_VALID] &&
+       es_fwd_0_padded[`ES_FWD_GR_WE] &&
+       !es_fwd_0_padded[`ES_FWD_FWD_VALID] &&
+       !es_fwd_0_padded[`ES_FWD_RES_MEM]) ||
+      (es_fwd_1_padded[`ES_FWD_VALID] &&
+       es_fwd_1_padded[`ES_FWD_GR_WE] &&
+       !es_fwd_1_padded[`ES_FWD_FWD_VALID] &&
+       !es_fwd_1_padded[`ES_FWD_RES_MEM]);
+
+  // =========================================================================
+  // 主计数器逻辑
+  // =========================================================================
   always @(posedge clk)
   begin
     cycle_count <= cycle_count + 1;
+
+    // ------ MEM 状态跟踪 ------
+    // 跟踪 data_sram 请求的状态，用于区分 load/store addr/data 等待
+    if (!resetn || (mem_pending && data_data_ok))
+    begin
+      mem_pending <= 1'b0;
+      mem_addr_sent <= 1'b0;
+    end
+    else if (data_req && data_addr_ok)
+    begin
+      mem_pending <= 1'b1;
+      mem_pending_is_load <= !data_wr;
+      mem_addr_sent <= 1'b1;
+    end
+    else if (data_req && !data_addr_ok)
+    begin
+      mem_pending <= 1'b1;
+      mem_pending_is_load <= !data_wr;
+    end
+
+    // ------ ICache refill 状态跟踪 ------
+    if (!resetn || inst_data_ok)
+      icache_refill_active <= 1'b0;
+    else if (inst_req && inst_addr_ok && !inst_wr)
+      icache_refill_active <= 1'b1;
+
+    // ------ 分支信息 pipeline ------
+    // 当 EXE→MEM 握手时捕获分支预测/实际信息
+    if (cpu.es_to_ms_valid_0 && cpu.ms_allowin &&
+        es_bus_0_padded[`ES_BUS_IS_BJ])
+    begin
+      br_info_valid      <= 1'b1;
+      br_info_pc         <= es_bus_0_padded[`ES_BUS_PC];
+      br_info_pred_taken <= es_bus_0_padded[`ES_BUS_PRED_TAKEN];
+      br_info_pred_target<= es_bus_0_padded[`ES_BUS_PRED_TARGET];
+      br_info_real_taken <= es_bus_0_padded[`ES_BUS_REAL_TAKEN];
+      br_info_real_target<= es_bus_0_padded[`ES_BUS_REAL_TARGET];
+      br_info_is_bj      <= 1'b1;
+    end
+    else if (cpu.es_to_ms_valid_1 && cpu.ms_allowin &&
+             es_bus_1_padded[`ES_BUS_IS_BJ])
+    begin
+      br_info_valid      <= 1'b1;
+      br_info_pc         <= es_bus_1_padded[`ES_BUS_PC];
+      br_info_pred_taken <= es_bus_1_padded[`ES_BUS_PRED_TAKEN];
+      br_info_pred_target<= es_bus_1_padded[`ES_BUS_PRED_TARGET];
+      br_info_real_taken <= es_bus_1_padded[`ES_BUS_REAL_TAKEN];
+      br_info_real_target<= es_bus_1_padded[`ES_BUS_REAL_TARGET];
+      br_info_is_bj      <= 1'b1;
+    end
+    else
+    begin
+      br_info_valid <= 1'b0;
+    end
+
+    // ------ 性能计数器累加 ------
     if (counting)
     begin
       benchmark_cycle_count <= benchmark_cycle_count + 1;
       commit_count <= commit_count + {62'b0, cpu.ms_to_ws_valid_0}
                    + {62'b0, cpu.ms_to_ws_valid_1};
-    end
+
+      // -- 双发射 --
+      if (cpu.ms_to_ws_valid_0 && cpu.ms_to_ws_valid_1)
+        dual_issue_cycle_count <= dual_issue_cycle_count + 1;
+
+      // === FRONTEND 停顿 ===
+      // icache_miss: IF 停顿但不是因为 ibuf full
+      if (cpu.if_suspend && !cpu.ibuf_full)
+        fe_icache_miss_cycles <= fe_icache_miss_cycles + 1;
+
+      // icache_refill: inst_sram 正在进行 refill
+      if (icache_refill_active || (inst_req && inst_addr_ok && !inst_wr))
+        fe_icache_refill_cycles <= fe_icache_refill_cycles + 1;
+
+      // ibuf_empty: 发射队列无有效指令
+      if (!cpu.ibuf_front_valid_0)
+        fe_ibuf_empty_cycles <= fe_ibuf_empty_cycles + 1;
+
+      // ibuf_full: inst_buffer 已满
+      if (cpu.ibuf_full)
+        fe_ibuf_full_cycles <= fe_ibuf_full_cycles + 1;
+
+      // redirect_flush: 流水线冲刷（分支误预测 + CSR + CACOP）
+      if (cpu.pipeline_flush)
+        fe_redirect_flush_cycles <= fe_redirect_flush_cycles + 1;
+
+      // === ISSUE 停顿 ===
+      // issue_no_inst: 无可发射指令（与 ibuf_empty 等价）
+      if (!cpu.ibuf_front_valid_0)
+        is_no_inst_cycles <= is_no_inst_cycles + 1;
+
+      // issue_backend_full: EXE/MEM/WB 反压
+      if (!cpu.es_allowin)
+        is_backend_full_cycles <= is_backend_full_cycles + 1;
+
+      // issue_raw_load: load-use 停顿（ms_unready_load 阻塞发射窗口）
+      if (ms_unready_load_tb)
+        is_raw_load_cycles <= is_raw_load_cycles + 1;
+
+      // issue_raw_other: RAW 停顿（非 load-use，含乘法/ALU 前递气泡）
+      // 判定：有指令但不能发射，不是 backend full，不是 load-use
+      if (cpu.ibuf_front_valid_0 && !cpu.issue_pop_0 &&
+          cpu.es_allowin && !ms_unready_load_tb && !cpu.br_taken)
+        is_raw_other_cycles <= is_raw_other_cycles + 1;
+
+      // issue_pair_blocked: 两槽都有效但只有 slot0 发射
+      if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
+          cpu.issue_pop_0 && !cpu.issue_pop_1)
+        is_pair_blocked_cycles <= is_pair_blocked_cycles + 1;
+
+      // === MEMORY 停顿 ===
+      // load_addr_wait: 等待 load 地址握手
+      if (data_req && !data_wr && !data_addr_ok)
+        mem_load_addr_wait_cycles <= mem_load_addr_wait_cycles + 1;
+
+      // load_data_wait: load 地址已发送，等待数据
+      if (mem_pending && mem_pending_is_load && mem_addr_sent && !data_data_ok)
+        mem_load_data_wait_cycles <= mem_load_data_wait_cycles + 1;
+
+      // store_addr_wait: 等待 store 地址握手
+      if (data_req && data_wr && !data_addr_ok)
+        mem_store_addr_wait_cycles <= mem_store_addr_wait_cycles + 1;
+
+      // store_data_wait: store 地址已发送，等待 data_ok
+      if (mem_pending && !mem_pending_is_load && mem_addr_sent && !data_data_ok)
+        mem_store_data_wait_cycles <= mem_store_data_wait_cycles + 1;
+
+      // === 分支统计 ===
+      if (cpu.bpu_ex_valid)
+      begin
+        br_total_count <= br_total_count + 1;
+
+        if (cpu.br_taken)
+        begin
+          br_mispredict_count <= br_mispredict_count + 1;
+
+          // 使用上一周期捕获的分支信息分类误预测类型
+          if (br_info_valid)
+          begin
+            // BTB miss: 未预测跳转但实际跳转
+            if (!br_info_pred_taken && br_info_real_taken)
+              br_btb_miss_count <= br_btb_miss_count + 1;
+            // Direction miss: 预测跳转但实际不跳转
+            else if (br_info_pred_taken && !br_info_real_taken)
+              br_dir_miss_count <= br_dir_miss_count + 1;
+            // Target miss: 预测跳转且实际跳转但目标地址错误
+            else if (br_info_pred_taken && br_info_real_taken)
+              br_target_miss_count <= br_target_miss_count + 1;
+          end
+
+          // Per-PC 统计
+          if (br_info_valid)
+          begin
+            per_pc_update(br_info_pc,
+                          1'b1,  // mispredict
+                          !br_info_pred_taken && br_info_real_taken,
+                          br_info_pred_taken && !br_info_real_taken,
+                          br_info_pred_taken && br_info_real_taken);
+          end
+        end
+        else
+        begin
+          // 正确预测的分支也记录 per-PC
+          if (br_info_valid)
+            per_pc_update(br_info_pc, 1'b0, 1'b0, 1'b0, 1'b0);
+        end
+      end
+    end // if (counting)
+
     if (!base_we_n)
     begin
-      if (!base_be_n[0])
-        base_mem[base_addr][ 7: 0] <= base_wdata[ 7: 0];
-      if (!base_be_n[1])
-        base_mem[base_addr][15: 8] <= base_wdata[15: 8];
-      if (!base_be_n[2])
-        base_mem[base_addr][23:16] <= base_wdata[23:16];
-      if (!base_be_n[3])
-        base_mem[base_addr][31:24] <= base_wdata[31:24];
+      if (!base_be_n[0]) base_mem[base_addr][ 7: 0] <= base_wdata[ 7: 0];
+      if (!base_be_n[1]) base_mem[base_addr][15: 8] <= base_wdata[15: 8];
+      if (!base_be_n[2]) base_mem[base_addr][23:16] <= base_wdata[23:16];
+      if (!base_be_n[3]) base_mem[base_addr][31:24] <= base_wdata[31:24];
     end
     if (!ext_we_n)
     begin
-      if (!ext_be_n[0])
-        ext_mem[ext_addr][ 7: 0] <= ext_wdata[ 7: 0];
-      if (!ext_be_n[1])
-        ext_mem[ext_addr][15: 8] <= ext_wdata[15: 8];
-      if (!ext_be_n[2])
-        ext_mem[ext_addr][23:16] <= ext_wdata[23:16];
-      if (!ext_be_n[3])
-        ext_mem[ext_addr][31:24] <= ext_wdata[31:24];
+      if (!ext_be_n[0]) ext_mem[ext_addr][ 7: 0] <= ext_wdata[ 7: 0];
+      if (!ext_be_n[1]) ext_mem[ext_addr][15: 8] <= ext_wdata[15: 8];
+      if (!ext_be_n[2]) ext_mem[ext_addr][23:16] <= ext_wdata[23:16];
+      if (!ext_be_n[3]) ext_mem[ext_addr][31:24] <= ext_wdata[31:24];
     end
     if (uart_tx_start)
     begin
@@ -159,6 +453,59 @@ module supervisor_perf_tb;
     end
   end
 
+  // =========================================================================
+  // Per-PC 分支统计辅助 task
+  // =========================================================================
+  task per_pc_update;
+    input [31:0] pc;
+    input        mispredict;
+    input        is_btb;
+    input        is_dir;
+    input        is_target;
+    integer idx;
+    begin
+      // 查找 PC 是否已在表中
+      idx = -1;
+      for (i = 0; i < br_pc_count; i = i + 1)
+      begin
+        if (br_pc_table[i] == pc)
+        begin
+          idx = i;
+          i = br_pc_count;  // break
+        end
+      end
+
+      // PC 不在表中，添加
+      if (idx == -1 && br_pc_count < `BR_TABLE_SIZE)
+      begin
+        idx = br_pc_count;
+        br_pc_table[idx] = pc;
+        br_pc_total[idx] = 0;
+        br_pc_mispredict[idx] = 0;
+        br_pc_btb[idx] = 0;
+        br_pc_dir[idx] = 0;
+        br_pc_target[idx] = 0;
+        br_pc_count = br_pc_count + 1;
+      end
+
+      // 累加计数
+      if (idx != -1)
+      begin
+        br_pc_total[idx] = br_pc_total[idx] + 1;
+        if (mispredict)
+        begin
+          br_pc_mispredict[idx] = br_pc_mispredict[idx] + 1;
+          if (is_btb)   br_pc_btb[idx]   = br_pc_btb[idx] + 1;
+          if (is_dir)   br_pc_dir[idx]   = br_pc_dir[idx] + 1;
+          if (is_target) br_pc_target[idx] = br_pc_target[idx] + 1;
+        end
+      end
+    end
+  endtask
+
+  // =========================================================================
+  // UART 辅助 tasks
+  // =========================================================================
   task wait_tx_count;
     input integer wanted;
     begin
@@ -202,11 +549,16 @@ module supervisor_perf_tb;
     end
   endtask
 
+  // =========================================================================
+  // 结果比较与性能报告
+  // =========================================================================
   task compare_results;
     integer mismatch;
     integer word_count;
     integer actual_base;
     integer expected_base;
+    integer j;
+    real    ratio;
     begin
       mismatch = 0;
       case (test_id)
@@ -268,6 +620,86 @@ module supervisor_perf_tb;
 
       if (mismatch != 0)
         $fatal(1, "supervisor result mismatch count=%0d", mismatch);
+
+      // =====================================================================
+      // 性能报告
+      // =====================================================================
+      $display("================================================================");
+      $display("===  Supervisor Performance Counter  ===");
+      $display("================================================================");
+      $display("TEST=%0d  cycles=%0d  instr=%0d",
+               test_id, benchmark_cycle_count, commit_count);
+      $display("");
+
+      // -- IPC --
+      $display("--- IPC ---");
+      $display("  IPC                         = %.4f",
+               (benchmark_cycle_count > 0) ?
+               (commit_count * 1.0 / benchmark_cycle_count) : 0.0);
+      $display("  Dual-issue cycle ratio      = %.2f%% (%0d/%0d)",
+               pct(dual_issue_cycle_count, benchmark_cycle_count),
+               dual_issue_cycle_count, benchmark_cycle_count);
+      $display("");
+
+      // -- Frontend --
+      $display("--- Frontend Stalls ---");
+      print_stall("icache_miss",   fe_icache_miss_cycles);
+      print_stall("icache_refill", fe_icache_refill_cycles);
+      print_stall("ibuf_empty",    fe_ibuf_empty_cycles);
+      print_stall("ibuf_full",     fe_ibuf_full_cycles);
+      print_stall("redirect_flush",fe_redirect_flush_cycles);
+      $display("");
+
+      // -- Issue --
+      $display("--- Issue Stalls ---");
+      print_stall("issue_no_inst",     is_no_inst_cycles);
+      print_stall("issue_backend_full",is_backend_full_cycles);
+      print_stall("issue_raw_load",    is_raw_load_cycles);
+      print_stall("issue_raw_other",   is_raw_other_cycles);
+      print_stall("issue_pair_blocked",is_pair_blocked_cycles);
+      $display("");
+
+      // -- Memory --
+      $display("--- Memory Stalls ---");
+      print_stall("load_addr_wait",       mem_load_addr_wait_cycles);
+      print_stall("load_data_wait",       mem_load_data_wait_cycles);
+      print_stall("store_addr_wait",      mem_store_addr_wait_cycles);
+      print_stall("store_data_wait",      mem_store_data_wait_cycles);
+      $display("  store_buffer_full           = N/A (no store buffer)");
+      $display("");
+
+      // -- Branch --
+      $display("--- Branch Prediction ---");
+      $display("  branch_count                = %0d", br_total_count);
+      $display("  branch_mispredict           = %0d", br_mispredict_count);
+      ratio = (br_total_count > 0) ?
+              (br_mispredict_count * 100.0 / br_total_count) : 0.0;
+      $display("  mispredict_rate             = %.2f%%", ratio);
+      $display("  btb_miss                    = %0d (%.2f%%)",
+               br_btb_miss_count,
+               (br_mispredict_count > 0) ?
+               (br_btb_miss_count * 100.0 / br_mispredict_count) : 0.0);
+      $display("  direction_miss              = %0d (%.2f%%)",
+               br_dir_miss_count,
+               (br_mispredict_count > 0) ?
+               (br_dir_miss_count * 100.0 / br_mispredict_count) : 0.0);
+      $display("  target_miss                 = %0d (%.2f%%)",
+               br_target_miss_count,
+               (br_mispredict_count > 0) ?
+               (br_target_miss_count * 100.0 / br_mispredict_count) : 0.0);
+      $display("");
+
+      // -- Per-PC branch detail (top 20 by mispredict count) --
+      if (br_pc_count > 0)
+      begin
+        $display("--- Branch Per-PC (top 20 by mispredicts) ---");
+        $display("  %-10s %-10s %-10s %-6s %-6s %-6s %-6s",
+                 "PC", "total", "mispredict", "rate", "BTB", "dir", "tgt");
+        // 简单冒泡排序找出 mispredict 最多的前20个
+        print_top_branches();
+        $display("");
+      end
+
       $display("PASS supervisor performance test=%0d cycles=%0d instr=%0d IPC=%.4f",
                test_id, benchmark_cycle_count, commit_count,
                (benchmark_cycle_count > 0) ?
@@ -275,6 +707,76 @@ module supervisor_perf_tb;
     end
   endtask
 
+  // =========================================================================
+  // 辅助函数
+  // =========================================================================
+  function real pct;
+    input [63:0] num;
+    input [63:0] den;
+    begin
+      pct = (den > 0) ? (num * 100.0 / den) : 0.0;
+    end
+  endfunction
+
+  task print_stall;
+    input [8*32-1:0] name;
+    input [63:0]     count;
+    begin
+      $display("  %-28s = %6.2f%% (%0d/%0d)",
+               name,
+               pct(count, benchmark_cycle_count),
+               count, benchmark_cycle_count);
+    end
+  endtask
+
+  task print_top_branches;
+    integer k, m, best_idx;
+    reg [31:0]  best_pc;
+    reg [31:0]  best_total;
+    reg [31:0]  best_mis;
+    reg [31:0]  best_btb;
+    reg [31:0]  best_dir;
+    reg [31:0]  best_tgt;
+    reg [255:0] printed;  // bitmask
+    reg         found;
+    begin
+      printed = 256'b0;
+      for (k = 0; k < 20 && k < br_pc_count; k = k + 1)
+      begin
+        best_idx = -1;
+        best_mis = 0;
+        found = 1'b0;
+        for (m = 0; m < br_pc_count; m = m + 1)
+        begin
+          if (!printed[m] && br_pc_mispredict[m] >= best_mis)
+          begin
+            best_idx  = m;
+            best_mis  = br_pc_mispredict[m];
+            found = 1'b1;
+          end
+        end
+        if (!found || best_idx == -1)
+          k = br_pc_count;  // break
+        else
+        begin
+          printed[best_idx] = 1'b1;
+          $display("  %h  %-10d %-10d %5.1f%% %-6d %-6d %-6d",
+                   br_pc_table[best_idx],
+                   br_pc_total[best_idx],
+                   br_pc_mispredict[best_idx],
+                   (br_pc_total[best_idx] > 0) ?
+                    (br_pc_mispredict[best_idx] * 100.0 / br_pc_total[best_idx]) : 0.0,
+                   br_pc_btb[best_idx],
+                   br_pc_dir[best_idx],
+                   br_pc_target[best_idx]);
+        end
+      end
+    end
+  endtask
+
+  // =========================================================================
+  // 初始化与测试流程
+  // =========================================================================
   initial
   begin
     if (!$value$plusargs("TEST_ID=%d", test_id) ||
@@ -299,9 +801,34 @@ module supervisor_perf_tb;
     uart_rx_data  = 8'b0;
     tx_count      = 0;
     cycle_count   = 0;
-    benchmark_cycle_count = 0;
-    commit_count  = 0;
-    counting      = 1'b0;
+    benchmark_cycle_count    = 0;
+    commit_count             = 0;
+    dual_issue_cycle_count   = 0;
+    fe_icache_miss_cycles    = 0;
+    fe_icache_refill_cycles  = 0;
+    fe_ibuf_empty_cycles     = 0;
+    fe_ibuf_full_cycles      = 0;
+    fe_redirect_flush_cycles = 0;
+    is_no_inst_cycles        = 0;
+    is_backend_full_cycles   = 0;
+    is_raw_load_cycles       = 0;
+    is_raw_other_cycles      = 0;
+    is_pair_blocked_cycles   = 0;
+    mem_load_addr_wait_cycles = 0;
+    mem_load_data_wait_cycles = 0;
+    mem_store_addr_wait_cycles = 0;
+    mem_store_data_wait_cycles = 0;
+    br_total_count           = 0;
+    br_mispredict_count      = 0;
+    br_btb_miss_count        = 0;
+    br_dir_miss_count        = 0;
+    br_target_miss_count     = 0;
+    br_pc_count              = 0;
+    mem_pending              = 1'b0;
+    mem_addr_sent            = 1'b0;
+    icache_refill_active     = 1'b0;
+    br_info_valid            = 1'b0;
+    counting                 = 1'b0;
 
     repeat (8) @(posedge clk);
     resetn = 1'b1;
