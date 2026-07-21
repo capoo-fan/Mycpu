@@ -296,6 +296,13 @@ module ISSUE_stage(
   wire rkd0_wait = (rkd0_hit_es1 && !es_fwd_valid_1) ||
        (rkd0_hit_es0 && !es_fwd_valid_0);
 
+  // Store 的 rkd 仅作为写数据，到 MEM 才真正消费。若最新的 EX
+  // 生产者是 load，则允许 Store 先进入 EX；返回数据会在 Store 进入
+  // MEM 的边界处替换。地址源 rj 仍使用原有 load-use 停顿。
+  wire store0_data_from_ex_load = mem_we_0 &&
+       ((rkd0_hit_es1 && es_res_from_mem_1) ||
+        (!rkd0_hit_es1 && rkd0_hit_es0 && es_res_from_mem_0));
+
   wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
                                          rkd0_hit_es0 && es_fwd_valid_0,
                                          rkd0_hit_ms1 && ms_fwd_valid_1,
@@ -330,6 +337,10 @@ module ISSUE_stage(
   wire rkd1_wait = (rkd1_hit_es1 && !es_fwd_valid_1) ||
        (rkd1_hit_es0 && !es_fwd_valid_0);
 
+  wire store1_data_from_ex_load = mem_we_1 &&
+       ((rkd1_hit_es1 && es_res_from_mem_1) ||
+        (!rkd1_hit_es1 && rkd1_hit_es0 && es_res_from_mem_0));
+
   wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
                                          rkd1_hit_es0 && es_fwd_valid_0,
                                          rkd1_hit_ms1 && ms_fwd_valid_1,
@@ -339,8 +350,8 @@ module ISSUE_stage(
        ms_fwd_data_1, ms_fwd_data_0,
        rf_rdata2_1);
 
-  wire stall_0 = rj0_wait || rkd0_wait;
-  wire stall_1 = rj1_wait || rkd1_wait;
+  wire stall_0 = rj0_wait || (rkd0_wait && !store0_data_from_ex_load);
+  wire stall_1 = rj1_wait || (rkd1_wait && !store1_data_from_ex_load);
 
   wire raw_0_to_1 = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid  && (dest_0 == rf_raddr1_1)) ||
@@ -360,26 +371,44 @@ module ISSUE_stage(
          (es_dest_0 == front_raddr1_0_hot)) ||
         (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
          (es_dest_1 == front_raddr1_0_hot)));
-  wire rkd0_wait_for_consume = src0_rkd_valid_for_consume &&
-       ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
-         (es_dest_0 == front_raddr2_0_hot)) ||
-        (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-         (es_dest_1 == front_raddr2_0_hot)));
+  wire rkd0_hit_es0_for_consume = src0_rkd_valid_for_consume &&
+       es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) &&
+       (es_dest_0 == front_raddr2_0_hot);
+  wire rkd0_hit_es1_for_consume = src0_rkd_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) &&
+       (es_dest_1 == front_raddr2_0_hot);
+  wire rkd0_wait_for_consume =
+       (rkd0_hit_es0_for_consume && !es_fwd_valid_0) ||
+       (rkd0_hit_es1_for_consume && !es_fwd_valid_1);
+  wire store0_data_from_ex_load_for_consume = mem_we_0 &&
+       ((rkd0_hit_es1_for_consume && es_res_from_mem_1) ||
+        (!rkd0_hit_es1_for_consume && rkd0_hit_es0_for_consume &&
+         es_res_from_mem_0));
   wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
        ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
          (es_dest_0 == front_raddr1_1_hot)) ||
         (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
          (es_dest_1 == front_raddr1_1_hot)));
-  wire rkd1_wait_for_consume = src1_rkd_valid_for_consume &&
-       ((es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
-         (es_dest_0 == front_raddr2_1_hot)) ||
-        (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-         (es_dest_1 == front_raddr2_1_hot)));
+  wire rkd1_hit_es0_for_consume = src1_rkd_valid_for_consume &&
+       es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) &&
+       (es_dest_0 == front_raddr2_1_hot);
+  wire rkd1_hit_es1_for_consume = src1_rkd_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) &&
+       (es_dest_1 == front_raddr2_1_hot);
+  wire rkd1_wait_for_consume =
+       (rkd1_hit_es0_for_consume && !es_fwd_valid_0) ||
+       (rkd1_hit_es1_for_consume && !es_fwd_valid_1);
+  wire store1_data_from_ex_load_for_consume = mem_we_1 &&
+       ((rkd1_hit_es1_for_consume && es_res_from_mem_1) ||
+        (!rkd1_hit_es1_for_consume && rkd1_hit_es0_for_consume &&
+         es_res_from_mem_0));
 
   (* keep = "true" *) wire stall_0_for_consume =
-  rj0_wait_for_consume || rkd0_wait_for_consume;
+  rj0_wait_for_consume ||
+  (rkd0_wait_for_consume && !store0_data_from_ex_load_for_consume);
   (* keep = "true" *) wire stall_1_for_consume =
-  rj1_wait_for_consume || rkd1_wait_for_consume;
+  rj1_wait_for_consume ||
+  (rkd1_wait_for_consume && !store1_data_from_ex_load_for_consume);
   wire raw_0_to_1_for_consume = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid_for_consume &&
          (dest_0 == front_raddr1_1_hot)) ||
@@ -391,6 +420,16 @@ module ISSUE_stage(
   wire special_0 = is_csr_0 || is_cacop_0 || is_cpucfg_0;
   wire special_1 = is_csr_1 || is_cacop_1 || is_cpucfg_1;
 
+  // 若放行的 Store 与乘法同包，乘法可能让整个 EX 包停留到较老
+  // load 已退出 MEM，丢失 MEM-to-MEM 的比较窗口。因此这类组合只发
+  // lane0；普通单周期伴随指令不受影响。
+  wire load_store_mul_pair_block =
+       (store0_data_from_ex_load && is_mul_1) ||
+       (is_mul_0 && store1_data_from_ex_load);
+  wire load_store_mul_pair_block_for_consume =
+       (store0_data_from_ex_load_for_consume && is_mul_1) ||
+       (is_mul_0 && store1_data_from_ex_load_for_consume);
+
   wire issue_window_open = es_allowin && !ms_unready_load;
 
   (* keep = "true", max_fanout = 16 *) wire issue0_fire_for_ex =
@@ -400,7 +439,8 @@ module ISSUE_stage(
                     front_valid_0 && !stall_0 && !special_block &&
                     front_valid_1 && !stall_1 && !raw_0_to_1 &&
                     !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
-                    !special_0 && !special_1;
+                    !special_0 && !special_1 &&
+                    !load_store_mul_pair_block;
   (* keep = "true", max_fanout = 16 *) wire issue0_fire_for_consume =
   issue_window_open && !br_taken &&
                     front_valid_0 && !stall_0_for_consume && !special_block;
@@ -410,7 +450,8 @@ module ISSUE_stage(
                     front_valid_1 && !stall_1_for_consume &&
                     !raw_0_to_1_for_consume &&
                     !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
-                    !special_0 && !special_1;
+                    !special_0 && !special_1 &&
+                    !load_store_mul_pair_block_for_consume;
 
   assign ds_to_es_valid_0 = issue0_fire_for_ex;
   assign ds_to_es_valid_1 = issue1_fire_for_ex;

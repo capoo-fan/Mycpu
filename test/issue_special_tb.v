@@ -58,6 +58,31 @@ module issue_special_tb;
     end
   endfunction
 
+  function [31:0] make_ld_w;
+    input [4:0] rd;
+    input [4:0] rj;
+    begin
+      make_ld_w = 32'h2880_0000 | {22'b0, rj, rd};
+    end
+  endfunction
+
+  function [31:0] make_st_w;
+    input [4:0] rd;
+    input [4:0] rj;
+    begin
+      make_st_w = 32'h2980_0000 | {22'b0, rj, rd};
+    end
+  endfunction
+
+  function [31:0] make_mul;
+    input [4:0] rd;
+    input [4:0] rj;
+    input [4:0] rk;
+    begin
+      make_mul = 32'h001c_0000 | {17'b0, rk, rj, rd};
+    end
+  endfunction
+
   inst_decoder dec0(.inst(inst_0), .dec_bus(dec_0));
   inst_decoder dec1(.inst(inst_1), .dec_bus(dec_1));
 
@@ -153,14 +178,14 @@ module issue_special_tb;
         inst_0 = make_addi(5'd10, 5'd0);
         inst_1 = make_addi(5'd11, 5'd2);
         set_producer(producer_slot, 1'b0, 5'd2);
-        check_issue(1'b1, 1'b0, "lane1 rj unready RAW");
+        check_issue(producer_slot < 2, 1'b0, "lane1 rj unready RAW");
         set_producer(producer_slot, 1'b1, 5'd2);
         check_issue(1'b1, 1'b1, "lane1 rj ready RAW");
 
         // lane1 rkd
         inst_1 = make_add(5'd11, 5'd0, 5'd2);
         set_producer(producer_slot, 1'b0, 5'd2);
-        check_issue(1'b1, 1'b0, "lane1 rkd unready RAW");
+        check_issue(producer_slot < 2, 1'b0, "lane1 rkd unready RAW");
         set_producer(producer_slot, 1'b1, 5'd2);
         check_issue(1'b1, 1'b1, "lane1 rkd ready RAW");
       end
@@ -223,9 +248,75 @@ module issue_special_tb;
     inst_1 = INST_ADDI_R5_FROM_R2;
     es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
     ms_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1, 5'd2, 32'h89ab_cdef};
-    check_issue(1'b1, 1'b0, "unready MEM producer blocks lane1 only");
+    check_issue(1'b0, 1'b0, "unready MEM load blocks the issue window");
     ms_fwd_bus_0 = {1'b1, 1'b1, 1'b1, 1'b1, 5'd2, 32'h89ab_cdef};
     check_issue(1'b1, 1'b1, "MEM producer forwards without extra stall");
+
+    // A Store consumes rkd only in MEM. An EX load producing the Store data
+    // therefore must not add a load-use bubble, irrespective of producer lane.
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b0;
+    inst_0 = make_st_w(5'd12, 5'd5);
+    clear_producers();
+    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd12, 32'h1111_1111};
+    check_issue(1'b1, 1'b0, "lane0 Store data waits for lane0 EX load in MEM");
+    clear_producers();
+    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd12, 32'h2222_2222};
+    check_issue(1'b1, 1'b0, "lane0 Store data waits for lane1 EX load in MEM");
+
+    // The Store address is still needed by EX, and an ALU consumer must retain
+    // the ordinary load-use interlock. This prevents a data-RAM-to-EX shortcut.
+    clear_producers();
+    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd5, 32'h3333_3333};
+    check_issue(1'b0, 1'b0, "lane0 Store address still waits for EX load");
+    inst_0 = make_addi(5'd10, 5'd12);
+    clear_producers();
+    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd12, 32'h4444_4444};
+    check_issue(1'b0, 1'b0, "Load to ALU still inserts the normal interlock");
+
+    // The same distinction applies when the Store occupies dispatch lane1.
+    front_valid_1 = 1'b1;
+    inst_0 = make_addi(5'd10, 5'd0);
+    inst_1 = make_st_w(5'd12, 5'd5);
+    clear_producers();
+    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd12, 32'h5555_5555};
+    check_issue(1'b1, 1'b1, "lane1 Store data waits for lane0 EX load in MEM");
+    clear_producers();
+    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd12, 32'h6666_6666};
+    check_issue(1'b1, 1'b1, "lane1 Store data waits for lane1 EX load in MEM");
+    clear_producers();
+    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd5, 32'h7777_7777};
+    check_issue(1'b1, 1'b0, "lane1 Store address still waits for EX load");
+
+    // A deferred Store may sit in EX while the older load completes. Pairing
+    // it with a multi-cycle multiply would outlive the MEM bypass window, so
+    // only lane0 may issue for either Store/multiply ordering.
+    inst_0 = make_st_w(5'd12, 5'd5);
+    inst_1 = make_mul(5'd20, 5'd0, 5'd0);
+    clear_producers();
+    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd12, 32'h8888_8888};
+    check_issue(1'b1, 1'b0, "deferred Store cannot pair with lane1 multiply");
+    inst_0 = make_mul(5'd20, 5'd0, 5'd0);
+    inst_1 = make_st_w(5'd12, 5'd5);
+    check_issue(1'b1, 1'b0, "lane1 deferred Store cannot pair with multiply");
+
+    // The adjacent load/store pair itself remains single-issued: lane1 has a
+    // same-packet RAW dependency and both instructions are memory operations.
+    inst_0 = make_ld_w(5'd12, 5'd4);
+    inst_1 = make_st_w(5'd12, 5'd5);
+    clear_producers();
+    check_issue(1'b1, 1'b0, "adjacent load and Store do not issue in one packet");
+
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
 
     check_raw_matrix();
 

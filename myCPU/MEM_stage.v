@@ -307,6 +307,36 @@ module MEM_stage(
   wire [31:0] ms_load_result_1 = load_result(ms_alu_result_1, ms_final_rdata,
        ms_ld_byte_1, ms_ld_half_1, ms_ld_sign_ext_1);
 
+  // Store 的 dest 字段仍保留其 rd，也就是写数据源寄存器号。Store
+  // 从 EX 进入 MEM 时，当前 MEM 包正是它在 ISSUE 中命中的较老生产者。
+  // 按 lane1（较年轻）优先查找；仅当最新生产者确为已完成的 load 时，
+  // 用寄存后的 load 结果替换 Store 携带的旧 rkd 值。
+  wire store0_src_hit_ms1 = es_to_ms_valid_0 && es_mem_we_0 &&
+       (es_dest_0 != 5'b0) && ms_lane1_eff_valid && ms_gr_we_1 &&
+       (ms_dest_1 == es_dest_0);
+  wire store0_src_hit_ms0 = es_to_ms_valid_0 && es_mem_we_0 &&
+       (es_dest_0 != 5'b0) && ms_valid_0 && ms_gr_we_0 &&
+       (ms_dest_0 == es_dest_0);
+  wire store0_from_load_1 = store0_src_hit_ms1 &&
+       ms_res_from_mem_1 && mem_data_ready;
+  wire store0_from_load_0 = !store0_src_hit_ms1 && store0_src_hit_ms0 &&
+       ms_res_from_mem_0 && mem_data_ready;
+  wire [31:0] es_store_data_0 = store0_from_load_1 ? ms_load_result_1 :
+       store0_from_load_0 ? ms_load_result_0 : es_rkd_value_0;
+
+  wire store1_src_hit_ms1 = es_to_ms_valid_1 && es_mem_we_1 &&
+       (es_dest_1 != 5'b0) && ms_lane1_eff_valid && ms_gr_we_1 &&
+       (ms_dest_1 == es_dest_1);
+  wire store1_src_hit_ms0 = es_to_ms_valid_1 && es_mem_we_1 &&
+       (es_dest_1 != 5'b0) && ms_valid_0 && ms_gr_we_0 &&
+       (ms_dest_0 == es_dest_1);
+  wire store1_from_load_1 = store1_src_hit_ms1 &&
+       ms_res_from_mem_1 && mem_data_ready;
+  wire store1_from_load_0 = !store1_src_hit_ms1 && store1_src_hit_ms0 &&
+       ms_res_from_mem_0 && mem_data_ready;
+  wire [31:0] es_store_data_1 = store1_from_load_1 ? ms_load_result_1 :
+       store1_from_load_0 ? ms_load_result_0 : es_rkd_value_1;
+
   wire ms_fwd_valid_0 = !ms_res_from_mem_0 || mem_data_ready;
   wire ms_fwd_valid_1 = !ms_res_from_mem_1 || mem_data_ready;
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 : ms_alu_result_0;
@@ -525,7 +555,7 @@ module MEM_stage(
       begin
         ms_pc_0           <= es_pc_0;
         ms_alu_result_0   <= es_final_result_0;
-        ms_rkd_value_0    <= es_rkd_value_0;
+        ms_rkd_value_0    <= es_store_data_0;
         ms_res_from_mem_0 <= es_res_from_mem_0;
         ms_gr_we_0        <= es_gr_we_0;
         ms_mem_we_0       <= es_mem_we_0;
@@ -564,7 +594,7 @@ module MEM_stage(
       begin
         ms_pc_1           <= es_pc_1;
         ms_alu_result_1   <= es_final_result_1;
-        ms_rkd_value_1    <= es_rkd_value_1;
+        ms_rkd_value_1    <= es_store_data_1;
         ms_res_from_mem_1 <= es_res_from_mem_1;
         ms_gr_we_1        <= es_gr_we_1;
         ms_mem_we_1       <= es_mem_we_1;
