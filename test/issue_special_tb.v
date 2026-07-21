@@ -252,22 +252,22 @@ module issue_special_tb;
     ms_fwd_bus_0 = {1'b1, 1'b1, 1'b1, 1'b1, 5'd2, 32'h89ab_cdef};
     check_issue(1'b1, 1'b1, "MEM producer forwards without extra stall");
 
-    // A Store consumes rkd only in MEM. An EX load producing the Store data
-    // therefore must not add a load-use bubble, irrespective of producer lane.
+    // The timing cut deliberately applies the ordinary load-use interlock to
+    // Store data as well. This keeps Store/load classification out of the
+    // InstBuffer consume cone at the cost of one dependency bubble.
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b0;
     inst_0 = make_st_w(5'd12, 5'd5);
     clear_producers();
     es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd12, 32'h1111_1111};
-    check_issue(1'b1, 1'b0, "lane0 Store data waits for lane0 EX load in MEM");
+    check_issue(1'b0, 1'b0, "lane0 Store data waits for lane0 EX load");
     clear_producers();
     es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd12, 32'h2222_2222};
-    check_issue(1'b1, 1'b0, "lane0 Store data waits for lane1 EX load in MEM");
+    check_issue(1'b0, 1'b0, "lane0 Store data waits for lane1 EX load");
 
-    // The Store address is still needed by EX, and an ALU consumer must retain
-    // the ordinary load-use interlock. This prevents a data-RAM-to-EX shortcut.
+    // Store addresses and ordinary ALU consumers use the same interlock.
     clear_producers();
     es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd5, 32'h3333_3333};
@@ -278,35 +278,34 @@ module issue_special_tb;
                     5'd12, 32'h4444_4444};
     check_issue(1'b0, 1'b0, "Load to ALU still inserts the normal interlock");
 
-    // The same distinction applies when the Store occupies dispatch lane1.
+    // A blocked lane1 Store still permits an independent lane0 instruction.
     front_valid_1 = 1'b1;
     inst_0 = make_addi(5'd10, 5'd0);
     inst_1 = make_st_w(5'd12, 5'd5);
     clear_producers();
     es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd12, 32'h5555_5555};
-    check_issue(1'b1, 1'b1, "lane1 Store data waits for lane0 EX load in MEM");
+    check_issue(1'b1, 1'b0, "lane1 Store data waits for lane0 EX load");
     clear_producers();
     es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd12, 32'h6666_6666};
-    check_issue(1'b1, 1'b1, "lane1 Store data waits for lane1 EX load in MEM");
+    check_issue(1'b1, 1'b0, "lane1 Store data waits for lane1 EX load");
     clear_producers();
     es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd5, 32'h7777_7777};
     check_issue(1'b1, 1'b0, "lane1 Store address still waits for EX load");
 
-    // A deferred Store may sit in EX while the older load completes. Pairing
-    // it with a multi-cycle multiply would outlive the MEM bypass window, so
-    // only lane0 may issue for either Store/multiply ordering.
+    // Store/multiply ordering needs no special bypass rule after the Store is
+    // interlocked in ISSUE; normal lane ordering determines what can issue.
     inst_0 = make_st_w(5'd12, 5'd5);
     inst_1 = make_mul(5'd20, 5'd0, 5'd0);
     clear_producers();
     es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
                     5'd12, 32'h8888_8888};
-    check_issue(1'b1, 1'b0, "deferred Store cannot pair with lane1 multiply");
+    check_issue(1'b0, 1'b0, "blocked lane0 Store also blocks lane1 multiply");
     inst_0 = make_mul(5'd20, 5'd0, 5'd0);
     inst_1 = make_st_w(5'd12, 5'd5);
-    check_issue(1'b1, 1'b0, "lane1 deferred Store cannot pair with multiply");
+    check_issue(1'b1, 1'b0, "lane0 multiply issues while lane1 Store waits");
 
     // The adjacent load/store pair itself remains single-issued: lane1 has a
     // same-packet RAW dependency and both instructions are memory operations.
