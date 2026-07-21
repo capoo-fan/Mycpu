@@ -127,7 +127,15 @@ module supervisor_boot_tb;
       tx_count = tx_count + 1;
     end
     if (cycle_count > 2000000) begin
-      $display("FAIL: global timeout pc=%h tx_count=%0d", debug_pc, tx_count);
+      $display("FAIL: global timeout pc=%h tx_count=%0d", cpu.pc_out, tx_count);
+      $display("  data req=%b wr=%b addr=%h addr_ok=%b data_ok=%b",
+               data_req, data_wr, data_addr, data_addr_ok, data_data_ok);
+      $display("  MEM wait=%0d addr_sent=%b pending=%b rvalid=%b",
+               cpu.u_mem.ms_wait_kind, cpu.u_mem.ms_addr_sent,
+               cpu.u_mem.ms_data_pending, cpu.u_mem.ms_rdata_buf_valid);
+      $display("  UART pending=%b resp=%b tx_start=%b",
+               bridge.uart_req_pending, bridge.uart_resp_valid,
+               uart_tx_start);
       $fatal(1, "supervisor_boot_tb timeout");
     end
   end
@@ -135,7 +143,7 @@ module supervisor_boot_tb;
   task fail;
     input [511:0] message;
     begin
-      $display("FAIL: %0s pc=%h cycle=%0d", message, debug_pc, cycle_count);
+      $display("FAIL: %0s pc=%h cycle=%0d", message, cpu.pc_out, cycle_count);
       $fatal(1, "supervisor_boot_tb failed");
     end
   endtask
@@ -224,7 +232,8 @@ module supervisor_boot_tb;
   endtask
 
   initial begin
-    $readmemb("supervisor/kernel/axi_ram.mif", base_mem, 0, 2264);
+    $readmemb("supervisor/build/kernel/auto/axi_ram.mif",
+              base_mem, 0, 2265);
     clk           = 1'b0;
     resetn        = 1'b0;
     uart_rx_ready = 1'b0;

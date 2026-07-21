@@ -235,10 +235,24 @@ module thinpad_sram_uart_bridge(
                                                         data_sram_wdata[31:24];
     wire       uart_req       = data_sram_req & data_is_uart;
     wire       uart_tx_write  = data_sram_wr & (uart_offset == 3'd0) & ~uart_dlab;
-    wire       uart_grant     = uart_req & (~uart_tx_write | ~uart_tx_busy);
-    wire [7:0] uart_status    = {2'b0, ~uart_tx_busy, 4'b0, uart_rx_ready};
-    wire [7:0] uart_read_byte = (uart_offset == 3'd0) ? uart_rx_data :
-                                  (uart_offset == 3'd5) ? uart_status : 8'b0;
+
+    // UART 请求先在桥接器边界锁存，再由本地寄存状态执行。这样来自
+    // MEM lane 选择和地址翻译的长组合路径只到达请求寄存器，不再继续
+    // 穿过 byte-lane/状态译码到 UART 响应和副作用寄存器。
+    reg        uart_req_pending;
+    reg        uart_req_wr;
+    reg        uart_req_tx_write;
+    reg  [2:0] uart_req_offset;
+    reg  [7:0] uart_req_write_byte;
+
+    wire uart_grant = uart_req & ~uart_req_pending &
+         (~uart_tx_write | ~uart_tx_busy);
+    wire uart_exec = uart_req_pending;
+    wire [7:0] uart_status =
+         {2'b0, ~uart_tx_busy, 4'b0, uart_rx_ready};
+    wire [7:0] uart_read_byte =
+         (uart_req_offset == 3'd0) ? uart_rx_data :
+         (uart_req_offset == 3'd5) ? uart_status : 8'b0;
 
     function [31:0] place_uart_byte;
         input [7:0] byte_value;
@@ -261,6 +275,11 @@ module thinpad_sram_uart_bridge(
 
     always @(posedge clk) begin
         if (!resetn) begin
+            uart_req_pending  <= 1'b0;
+            uart_req_wr       <= 1'b0;
+            uart_req_tx_write <= 1'b0;
+            uart_req_offset   <= 3'b0;
+            uart_req_write_byte <= 8'b0;
             uart_resp_valid   <= 1'b0;
             uart_rdata_reg    <= 32'b0;
             uart_tx_start_reg <= 1'b0;
@@ -268,24 +287,30 @@ module thinpad_sram_uart_bridge(
             uart_rx_clear_reg <= 1'b0;
             uart_dlab         <= 1'b0;
         end else begin
-            uart_resp_valid   <= uart_grant;
-            uart_tx_start_reg <= uart_grant & uart_tx_write;
-            uart_rx_clear_reg <= uart_grant & ~data_sram_wr &
-                                 (uart_offset == 3'd0) & uart_rx_ready;
+            uart_req_pending <= uart_grant;
+            uart_resp_valid  <= uart_exec;
 
-            if (uart_grant & uart_tx_write)
-                uart_tx_data_reg <= uart_write_byte;
-
-            if (uart_grant & data_sram_wr) begin
-                if (uart_offset == 3'd3)
-                    uart_dlab <= uart_write_byte[7];
+            if (uart_grant) begin
+                uart_req_wr         <= data_sram_wr;
+                uart_req_tx_write   <= uart_tx_write;
+                uart_req_offset     <= uart_offset;
+                uart_req_write_byte <= uart_write_byte;
             end
 
-            if (uart_grant & ~data_sram_wr)
+            uart_tx_start_reg <= uart_exec & uart_req_tx_write;
+            uart_rx_clear_reg <= uart_exec & ~uart_req_wr &
+                                 (uart_req_offset == 3'd0) &
+                                 uart_rx_ready;
+
+            if (uart_exec & uart_req_tx_write)
+                uart_tx_data_reg <= uart_req_write_byte;
+
+            if (uart_exec & uart_req_wr && (uart_req_offset == 3'd3))
+                uart_dlab <= uart_req_write_byte[7];
+
+            if (uart_exec & ~uart_req_wr)
                 uart_rdata_reg <= place_uart_byte(uart_read_byte,
-                                                   data_sram_addr[1:0]);
-            else if (uart_grant)
-                uart_rdata_reg <= 32'b0;
+                                                   uart_req_offset[1:0]);
         end
     end
 

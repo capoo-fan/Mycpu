@@ -49,12 +49,16 @@ module thinpad_sram_uart_bridge_tb;
 
   integer tx_start_count;
   integer rx_clear_count;
+  integer data_addr_ok_count;
+  integer data_data_ok_count;
   integer base_active_count;
   integer ext_active_count;
   integer cycles;
   reg [31:0] read_value;
   integer base_snapshot;
   integer ext_snapshot;
+  integer data_addr_snapshot;
+  integer data_resp_snapshot;
 
   thinpad_sram_uart_bridge dut(
     .clk(clk), .resetn(resetn),
@@ -88,6 +92,10 @@ module thinpad_sram_uart_bridge_tb;
       tx_start_count = tx_start_count + 1;
     if (uart_rx_clear)
       rx_clear_count = rx_clear_count + 1;
+    if (data_req && data_addr_ok)
+      data_addr_ok_count = data_addr_ok_count + 1;
+    if (data_data_ok)
+      data_data_ok_count = data_data_ok_count + 1;
     if (!base_ce_n)
       base_active_count = base_active_count + 1;
     if (!ext_ce_n)
@@ -320,10 +328,18 @@ module thinpad_sram_uart_bridge_tb;
     input [2:0] offset;
     input [7:0] byte_value;
     reg [3:0] strobe;
+    reg [31:0] payload;
     begin
       strobe = 4'b0001 << offset[1:0];
+      payload = 32'h3322_1100;
+      case (offset[1:0])
+        2'd0: payload[ 7: 0] = byte_value;
+        2'd1: payload[15: 8] = byte_value;
+        2'd2: payload[23:16] = byte_value;
+        default: payload[31:24] = byte_value;
+      endcase
       data_access(1'b1, 32'h1f00_0000 + offset,
-                  {4{byte_value}}, strobe, read_value);
+                  payload, strobe, read_value);
     end
   endtask
 
@@ -464,6 +480,8 @@ module thinpad_sram_uart_bridge_tb;
     uart_tx_busy      = 1'b0;
     tx_start_count    = 0;
     rx_clear_count    = 0;
+    data_addr_ok_count = 0;
+    data_data_ok_count = 0;
     base_active_count = 0;
     ext_active_count  = 0;
 
@@ -546,11 +564,13 @@ module thinpad_sram_uart_bridge_tb;
     // A real THR write is back-pressured while the transmitter is busy.
     uart_rx_ready = 1'b0;
     uart_tx_busy  = 1'b1;
+    data_addr_snapshot = data_addr_ok_count;
+    data_resp_snapshot = data_data_ok_count;
     @(negedge clk);
     data_req   = 1'b1;
     data_wr    = 1'b1;
     data_addr  = 32'h1f00_0000;
-    data_wdata = 32'h4141_4141;
+    data_wdata = 32'hddcc_bb41;
     data_wstrb = 4'b0001;
     repeat (3) begin
       @(posedge clk);
@@ -563,26 +583,40 @@ module thinpad_sram_uart_bridge_tb;
     begin : wait_uart_accept
       while (1) begin
         @(posedge clk);
-        #1;
         if (data_addr_ok)
           disable wait_uart_accept;
       end
     end
+
+    // addr_ok 表示入口寄存器已经捕获请求。立即撤销并破坏上游负载，
+    // 下一拍的 UART 副作用仍必须使用原始请求，且本拍不能提前响应。
     @(negedge clk);
-    data_req = 1'b0;
-    while (!data_data_ok) begin
-      @(posedge clk);
-      #1;
-    end
-    @(negedge clk);
+    data_req   = 1'b0;
     data_wr    = 1'b0;
+    data_addr  = 32'h1c40_1234;
+    data_wdata = 32'hdeaf_beef;
+    data_wstrb = 4'b1000;
+    if (data_data_ok || uart_tx_start)
+      fail("UART request executed in its capture cycle");
+
+    @(posedge clk);
+    #1;
+    if (!data_data_ok || !uart_tx_start || uart_tx_data !== 8'h41)
+      fail("UART registered execute stage lost the captured transmit request");
+
+    @(negedge clk);
     data_addr  = 32'b0;
     data_wdata = 32'b0;
     data_wstrb = 4'b0;
     @(posedge clk);
     #1;
+    if (data_data_ok || uart_tx_start)
+      fail("UART response or transmit pulse repeated");
     if (tx_start_count != 1 || uart_tx_data !== 8'h41)
       fail("UART transmit pulse or byte is incorrect");
+    if (data_addr_ok_count - data_addr_snapshot != 1 ||
+        data_data_ok_count - data_resp_snapshot != 1)
+      fail("UART request did not produce exactly one address and data handshake");
 
     if (base_active_count != base_snapshot || ext_active_count != ext_snapshot)
       fail("UART access aliased SRAM");
