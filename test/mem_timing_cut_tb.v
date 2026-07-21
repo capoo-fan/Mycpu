@@ -256,24 +256,50 @@ module mem_timing_cut_tb;
     @(posedge clk);
     #1;
 
-    // A lane0 misprediction must kill a younger lane1 store before it can request SRAM.
+    // A lane0 misprediction is detected and retired in this cycle, then emits
+    // exactly one registered flush pulse in the next cycle.  A younger lane1
+    // store in the same packet and a younger EX packet must both be discarded.
     submit_pair(
-      1'b1, make_packet(32'h1c00_0020, 32'b0, 32'b0,
-                        1'b0, 1'b0, 1'b0, 5'b0,
+      1'b1, make_packet(32'h1c00_0020, 32'h1c00_0024, 32'b0,
+                        1'b0, 1'b1, 1'b0, 5'd1,
                         1'b1, 1'b1, 32'h1c00_1000, 32'h1c00_0024,
                         1'b1, 1'b0, 5'b0),
       1'b1, make_packet(32'h1c00_0024, 32'h1c40_0200, 32'ha5a5_5a5a,
                         1'b0, 1'b0, 1'b1, 5'b0,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0028,
                         1'b0, 1'b0, 5'b0));
-    if (!br_taken || br_target !== 32'h1c00_1000)
-      fail("lane0 redirect was not generated");
+    if (br_taken || br_target !== 32'b0)
+      fail("lane0 redirect was not delayed by one cycle");
     if (data_req || data_wr || ms_to_ws_valid_1)
       fail("wrong-path lane1 store reached MEM side effects");
     if (!bpu_valid || bpu_pc !== 32'h1c00_0020)
       fail("lane0 branch update was lost");
+    if (!ms_to_ws_valid_0 || !ms_to_ws_bus_0[119] ||
+        ms_to_ws_bus_0[118:114] !== 5'd1 ||
+        ms_to_ws_bus_0[152:121] !== 32'h1c00_0024)
+      fail("mispredicted branch/link writeback was lost");
+
+    // Present a younger store at the misprediction detection edge. MEM must
+    // not capture it even though the old combinational allowin chain is open.
+    es_valid_0 = 1'b1;
+    es_bus_0 = make_packet(32'h1c00_0028, 32'h1c40_0220,
+                           32'h55aa_aa55,
+                           1'b0, 1'b0, 1'b1, 5'b0,
+                           1'b0, 1'b0, 32'b0, 32'h1c00_002c,
+                           1'b0, 1'b0, 5'b0);
     @(posedge clk);
     #1;
+    if (!br_taken || br_target !== 32'h1c00_1000)
+      fail("lane0 registered redirect was not generated one cycle later");
+    if (data_req || dut.ms_valid_0 || dut.ms_valid_1 || dut.ms_mem_we_0)
+      fail("younger EX store survived the registered redirect boundary");
+    @(negedge clk);
+    es_valid_0 = 1'b0;
+    es_bus_0 = {`ES_TO_MS_BUS_WD{1'b0}};
+    @(posedge clk);
+    #1;
+    if (br_taken)
+      fail("lane0 registered redirect pulse lasted more than one cycle");
 
     // A correctly predicted lane0 branch may retain a younger lane1 store.
     submit_pair(
@@ -351,7 +377,8 @@ module mem_timing_cut_tb;
     @(posedge clk);
     #1;
 
-    // A lane1 branch still redirects and trains using lane1 PC.
+    // A lane1 branch follows the same one-cycle redirect contract and trains
+    // using lane1 PC while both instructions still retire on the detect cycle.
     submit_pair(
       1'b1, make_packet(32'h1c00_0040, 32'h44, 32'b0,
                         1'b0, 1'b1, 1'b0, 5'd6,
@@ -361,11 +388,17 @@ module mem_timing_cut_tb;
                         1'b0, 1'b0, 1'b0, 5'b0,
                         1'b1, 1'b1, 32'h1c00_2000, 32'h1c00_0048,
                         1'b1, 1'b0, 5'b0));
-    if (!br_taken || br_target !== 32'h1c00_2000 ||
-        !bpu_valid || bpu_pc !== 32'h1c00_0044)
-      fail("lane1 branch redirect/update failed");
+    if (br_taken || !bpu_valid || bpu_pc !== 32'h1c00_0044 ||
+        !ms_to_ws_valid_0 || !ms_to_ws_valid_1)
+      fail("lane1 branch detect/update/retirement failed");
     @(posedge clk);
     #1;
+    if (!br_taken || br_target !== 32'h1c00_2000)
+      fail("lane1 registered redirect target failed");
+    @(posedge clk);
+    #1;
+    if (br_taken)
+      fail("lane1 registered redirect pulse lasted more than one cycle");
 
     // A lane0 load may be followed immediately by a Store whose rkd still
     // contains the stale register-file value. Capture the Store at the load's

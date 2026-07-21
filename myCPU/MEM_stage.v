@@ -215,6 +215,8 @@ module MEM_stage(
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
   reg  cacop_req_sent;
+  reg         branch_flush_q;
+  reg  [31:0] branch_target_q;
 
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
   wire ms_data_ok  = ms_addr_sent && data_sram_data_ok;
@@ -224,11 +226,11 @@ module MEM_stage(
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
   // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
-  // 只使用寄存后的 ms_addr_sent/ms_postable_store 提前退休，避免把外部
-  // addr_ok 接入 MEM->EX->ISSUE 的组合反压长路径。ms_data_pending 继续
-  // 阻止更年轻的访存，直到该 store 的 data_ok 返回。
-  wire posted_store_ready = selected_mem_we && ms_addr_sent &&
-       ms_postable_store;
+  // ms_postable_store 已寄存 selected_mem_we && data_sram_addr_is_sram，
+  // 因此它本身就是提前退休条件。不要再把 ms_mem_we_* 接回
+  // MEM->EX->ISSUE 的组合反压长路径。ms_data_pending 继续阻止
+  // 更年轻的访存，直到该 store 的 data_ok 返回。
+  wire posted_store_ready = ms_postable_store;
   wire ms_ready_go  = ms_has_cacop ? cacop_ready_go :
        (!ms_has_mem_op || mem_data_ready || posted_store_ready);
 
@@ -247,16 +249,25 @@ module MEM_stage(
   assign ms_to_ws_valid_0 = ms_valid_0 && ms_ready_go;
   assign ms_to_ws_valid_1 = ms_lane1_eff_valid && ms_ready_go;
 
-  // 分支预测与重定向
-  assign br_taken  = ms_fire && (ms_redirect_0_raw || ms_redirect_1_raw);
-  assign br_target = !br_taken ? 32'b0 :
-         ms_redirect_0_raw ? (ms_real_taken_0 ? ms_real_target_0 : ms_next_pc_0) :
-         (ms_real_taken_1 ? ms_real_target_1 : ms_next_pc_1);
+  // 分支预测与重定向。仅在整个双 lane 包真正 fire 时锁存误预测，
+  // 检测拍同时完成分支写回和 BPU 训练。全局 flush 延后一拍由本地
+  // 寄存器发出，切断 ms_ready_go/ms_allowin 到 ISSUE/InstBuffer 的
+  // 组合路径。
+  wire branch_redirect_detect = ms_redirect_0_raw || ms_redirect_1_raw;
+  wire branch_redirect_fire = ms_fire && branch_redirect_detect;
+  wire [31:0] branch_redirect_target =
+       ms_redirect_0_raw ? (ms_real_taken_0 ? ms_real_target_0 : ms_next_pc_0) :
+       (ms_real_taken_1 ? ms_real_target_1 : ms_next_pc_1);
+
+  assign br_taken  = branch_flush_q;
+  assign br_target = branch_flush_q ? branch_target_q : 32'b0;
 
   // 发出 BPU 更新信号
   wire bpu_sel_lane1 = !ms_is_bj_0 && ms_is_bj_1 && ms_lane1_eff_valid;
 
-  assign bpu_valid       = ms_fire && ((ms_valid_0 && ms_is_bj_0) || (ms_lane1_eff_valid && ms_is_bj_1));
+  assign bpu_valid       = ms_fire &&
+                           ((ms_valid_0 && ms_is_bj_0) ||
+                            (ms_lane1_eff_valid && ms_is_bj_1));
   assign bpu_is_bj       = bpu_valid;
   assign bpu_pc          = bpu_sel_lane1 ? ms_pc_1          : ms_pc_0;
   assign bpu_real_taken  = bpu_sel_lane1 ? ms_real_taken_1  : ms_real_taken_0;
@@ -381,10 +392,25 @@ module MEM_stage(
   begin
     if (reset)
     begin
+      branch_flush_q  <= 1'b0;
+      branch_target_q <= 32'b0;
+    end
+    else
+    begin
+      branch_flush_q <= branch_redirect_fire;
+      if (branch_redirect_fire)
+        branch_target_q <= branch_redirect_target;
+    end
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset)
+    begin
       ms_valid_0 <= 1'b0;
       ms_valid_1 <= 1'b0;
     end
-    else if (br_taken)
+    else if (br_taken || branch_redirect_fire)
     begin
       ms_valid_0 <= 1'b0;
       ms_valid_1 <= 1'b0;
@@ -400,7 +426,7 @@ module MEM_stage(
   // ms_allowin 只读取本地状态，不再重算 lane1 有效性、分支恢复与访存类型。
   always @(posedge clk)
   begin
-    if (reset || br_taken)
+    if (reset || br_taken || branch_redirect_fire)
     begin
       ms_wait_kind <= WAIT_NONE;
       ms_mem_lane1 <= 1'b0;
@@ -424,7 +450,7 @@ module MEM_stage(
 
   always @(posedge clk)
   begin
-    if (reset || br_taken)
+    if (reset || br_taken || branch_redirect_fire)
       cacop_req_sent <= 1'b0;
     else if (ms_allowin)
       cacop_req_sent <= 1'b0;
@@ -436,7 +462,7 @@ module MEM_stage(
   begin
     if (reset)
       ms_addr_sent <= 1'b0;
-    else if (ms_allowin || br_taken)
+    else if (ms_allowin || br_taken || branch_redirect_fire)
       ms_addr_sent <= 1'b0;
     else if (got_addr_ok)
       ms_addr_sent <= 1'b1;
@@ -444,7 +470,7 @@ module MEM_stage(
 
   always @(posedge clk)
   begin
-    if (reset || br_taken)
+    if (reset || br_taken || branch_redirect_fire)
       ms_postable_store <= 1'b0;
     else if (ms_allowin)
       ms_postable_store <= 1'b0;
@@ -454,7 +480,7 @@ module MEM_stage(
 
   always @(posedge clk)
   begin
-    if (reset || br_taken)
+    if (reset || br_taken || branch_redirect_fire)
       ms_data_pending <= 1'b0;
     else if (got_addr_ok)
       ms_data_pending <= 1'b1;
@@ -464,7 +490,7 @@ module MEM_stage(
 
   always @(posedge clk)
   begin
-    if (reset || br_taken)
+    if (reset || br_taken || branch_redirect_fire)
       ms_rdata_buf_valid <= 1'b0;
     else if (ms_allowin)
       ms_rdata_buf_valid <= 1'b0;
@@ -534,7 +560,7 @@ module MEM_stage(
       ms_csr_wmask_1    <= 32'b0;
       ms_csr_wvalue_1   <= 32'b0;
     end
-    else if (br_taken)
+    else if (br_taken || branch_redirect_fire)
     begin
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;

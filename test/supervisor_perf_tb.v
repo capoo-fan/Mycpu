@@ -423,7 +423,10 @@ module supervisor_perf_tb;
       begin
         br_total_count <= br_total_count + 1;
 
-        if (cpu.br_taken)
+        // MEM now registers the global branch flush for the following cycle.
+        // Classify the branch on its retirement/detection cycle so bpu_ex_valid
+        // and br_info_* still refer to the same instruction.
+        if (cpu.u_mem.branch_redirect_fire)
         begin
           br_mispredict_count <= br_mispredict_count + 1;
 
