@@ -38,6 +38,7 @@ module MEM_stage(
     output wire [ 3:0]                  data_sram_wstrb,
     output wire [31:0]                  data_sram_addr,
     output wire [31:0]                  data_sram_wdata,
+    input  wire                         data_sram_addr_is_sram,
     input  wire                         data_sram_addr_ok,
     input  wire                         data_sram_data_ok,
     input  wire [31:0]                  data_sram_rdata
@@ -210,6 +211,7 @@ module MEM_stage(
   // 处理 SRAM 的握手
   reg  ms_addr_sent;
   reg  ms_data_pending;
+  reg  ms_postable_store;
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
   reg  cacop_req_sent;
@@ -220,14 +222,23 @@ module MEM_stage(
 
   wire packet_valid = ms_valid_0 || ms_valid_1;
   wire cacop_ready_go = cacop_req_sent && icacop_done;
+
+  // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
+  // 只使用寄存后的 ms_addr_sent/ms_postable_store 提前退休，避免把外部
+  // addr_ok 接入 MEM->EX->ISSUE 的组合反压长路径。ms_data_pending 继续
+  // 阻止更年轻的访存，直到该 store 的 data_ok 返回。
+  wire posted_store_ready = selected_mem_we && ms_addr_sent &&
+       ms_postable_store;
   wire ms_ready_go  = ms_has_cacop ? cacop_ready_go :
-       (!ms_has_mem_op || mem_data_ready);
+       (!ms_has_mem_op || mem_data_ready || posted_store_ready);
+
   // WB 在本设计中恒可接收。空包和普通 ALU/分支包的 wait_kind 均为
   // WAIT_NONE，因此无需再把 packet_valid 接回全局 ready 链。
   assign ms_allowin = ms_ready_go && ws_allowin;
   wire ms_fire      = packet_valid && ms_ready_go && ws_allowin;
 
-  assign icacop_req_valid = ms_has_cacop && !cacop_req_sent;
+  assign icacop_req_valid = ms_has_cacop && !ms_data_pending &&
+         !cacop_req_sent;
   assign icacop_req_code  = ms_cacop_code_0;
   assign icacop_req_addr  = ms_alu_result_0;
   assign cacop_flush      = ms_fire && ms_has_cacop;
@@ -377,7 +388,7 @@ module MEM_stage(
         ms_wait_kind <= WAIT_NONE;
 
       ms_mem_lane1 <= es_lane1_eff_valid &&
-           (es_res_from_mem_1 || es_mem_we_1);
+                   (es_res_from_mem_1 || es_mem_we_1);
     end
   end
 
@@ -399,6 +410,16 @@ module MEM_stage(
       ms_addr_sent <= 1'b0;
     else if (got_addr_ok)
       ms_addr_sent <= 1'b1;
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset || br_taken)
+      ms_postable_store <= 1'b0;
+    else if (ms_allowin)
+      ms_postable_store <= 1'b0;
+    else if (got_addr_ok)
+      ms_postable_store <= selected_mem_we && data_sram_addr_is_sram;
   end
 
   always @(posedge clk)

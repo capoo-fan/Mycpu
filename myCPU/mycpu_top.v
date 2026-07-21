@@ -172,6 +172,12 @@ module mycpu_top(
   assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
   assign bpu_pred_target_1 = bpu_pred_target;
   wire data_txn_accept = data_sram_req && data_sram_addr_ok;
+  wire data_sram_addr_is_base =
+       (data_sram_addr & 32'hffc0_0000) == 32'h1c00_0000;
+  wire data_sram_addr_is_ext =
+       (data_sram_addr & 32'hffc0_0000) == 32'h1c40_0000;
+  wire data_sram_addr_is_sram = data_sram_addr_is_base ||
+       data_sram_addr_is_ext;
   data_txn_tracker u_data_txn_tracker(
                      .clk            (clk),
                      .resetn         (resetn),
@@ -397,6 +403,7 @@ module mycpu_top(
               .data_sram_wstrb   (data_sram_wstrb),
               .data_sram_addr    (data_sram_vaddr),
               .data_sram_wdata   (data_sram_wdata),
+              .data_sram_addr_is_sram(data_sram_addr_is_sram),
               .data_sram_addr_ok (data_sram_addr_ok),
               .data_sram_data_ok (data_sram_data_ok),
               .data_sram_rdata   (data_sram_rdata)

@@ -10,6 +10,7 @@ module mem_timing_cut_tb;
   reg [`ES_TO_MS_BUS_WD-1:0] es_bus_1;
   reg data_addr_ok;
   reg data_data_ok;
+  reg data_addr_is_sram;
   reg [31:0] data_rdata;
   reg icacop_ready;
   reg icacop_done;
@@ -57,6 +58,7 @@ module mem_timing_cut_tb;
     .data_sram_req(data_req), .data_sram_wr(data_wr),
     .data_sram_size(data_size), .data_sram_wstrb(data_wstrb),
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+    .data_sram_addr_is_sram(data_addr_is_sram),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata)
   );
@@ -145,6 +147,32 @@ module mem_timing_cut_tb;
     end
   endtask
 
+  task accept_memory_address;
+    begin
+      if (!data_req)
+        fail("memory request missing before address acceptance");
+      @(negedge clk);
+      data_addr_ok = 1'b1;
+      @(posedge clk);
+      #1;
+      @(negedge clk);
+      data_addr_ok = 1'b0;
+    end
+  endtask
+
+  task complete_memory_response;
+    input [31:0] response;
+    begin
+      @(negedge clk);
+      data_rdata = response;
+      data_data_ok = 1'b1;
+      @(posedge clk);
+      #1;
+      @(negedge clk);
+      data_data_ok = 1'b0;
+    end
+  endtask
+
   initial begin
     clk = 1'b0;
     resetn = 1'b0;
@@ -154,6 +182,7 @@ module mem_timing_cut_tb;
     es_bus_1 = {`ES_TO_MS_BUS_WD{1'b0}};
     data_addr_ok = 1'b0;
     data_data_ok = 1'b0;
+    data_addr_is_sram = 1'b1;
     data_rdata = 32'b0;
     icacop_ready = 1'b0;
     icacop_done = 1'b0;
@@ -232,9 +261,66 @@ module mem_timing_cut_tb;
     if (!data_req || !data_wr || data_addr !== 32'h1c40_0300 ||
         data_wdata !== 32'hcafe_babe || br_taken)
       fail("correct-path lane1 store was not retained");
-    accept_memory_response(32'b0);
-    if (accepted_data_requests != 2)
+    accept_memory_address();
+    if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1)
+      fail("accepted SRAM store did not retire before data completion");
+    if (!dut.ms_data_pending || data_data_ok)
+      fail("posted SRAM store lost its pending response state");
+
+    // A non-memory packet may pass while the posted store response is pending.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0038, 32'h55, 32'b0,
+                        1'b0, 1'b1, 1'b0, 5'd7,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_003c,
+                        1'b0, 1'b0, 5'b0),
+      1'b1, make_packet(32'h1c00_003c, 32'h66, 32'b0,
+                        1'b0, 1'b1, 1'b0, 5'd8,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_0040,
+                        1'b0, 1'b0, 5'b0));
+    if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1 ||
+        !dut.ms_data_pending)
+      fail("posted store response blocked an independent ALU packet");
+
+    // A younger memory packet may enter MEM, but it must not issue its request
+    // until the posted store response has completed.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0040, 32'h1c40_0400, 32'b0,
+                        1'b1, 1'b1, 1'b0, 5'd9,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_0044,
+                        1'b0, 1'b0, 5'b0),
+      1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+    if (data_req || ms_allowin)
+      fail("younger load bypassed a pending posted store");
+    complete_memory_response(32'b0);
+    if (!data_req || data_wr || data_addr !== 32'h1c40_0400)
+      fail("younger load did not issue after posted store completion");
+    accept_memory_response(32'h89ab_cdef);
+    if (!ms_allowin || !ms_to_ws_valid_0)
+      fail("younger load did not retire after its own response");
+    if (accepted_data_requests != 3)
       fail("unexpected number of accepted memory requests");
+    @(posedge clk);
+    #1;
+
+    // MMIO/non-SRAM stores retain the original data_ok retirement contract.
+    data_addr_is_sram = 1'b0;
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0040, 32'h1f00_03f8, 32'h0000_0047,
+                        1'b0, 1'b0, 1'b1, 5'b0,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_0044,
+                        1'b0, 1'b0, 5'b0),
+      1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+    if (!data_req || !data_wr || ms_allowin)
+      fail("non-SRAM store request did not wait for address acceptance");
+    accept_memory_address();
+    if (ms_allowin || ms_to_ws_valid_0)
+      fail("non-SRAM store retired before data completion");
+    complete_memory_response(32'b0);
+    if (!ms_allowin || !ms_to_ws_valid_0)
+      fail("non-SRAM store did not retire after data completion");
+    data_addr_is_sram = 1'b1;
+    if (accepted_data_requests != 4)
+      fail("unexpected request count after non-SRAM store");
     @(posedge clk);
     #1;
 

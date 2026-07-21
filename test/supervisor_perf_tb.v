@@ -33,6 +33,39 @@
 // ============================================================================
 `define BR_TABLE_SIZE 256
 
+// ============================================================================
+// ES_TO_MS_BUS 位提取宏（lane 0 与 lane 1 位置相同）
+// ============================================================================
+`define ES_BUS_PC            293:262
+`define ES_BUS_PRED_TAKEN    184
+`define ES_BUS_PRED_TARGET   183:152
+`define ES_BUS_IS_BJ         151
+`define ES_BUS_REAL_TAKEN    150
+`define ES_BUS_REAL_TARGET   149:118
+`define ES_BUS_REDIRECT_MISS 85
+
+// ============================================================================
+// MS_FWD_BUS 位提取宏
+// ============================================================================
+`define MS_FWD_VALID     40
+`define MS_FWD_GR_WE     39
+`define MS_FWD_FWD_VALID 38
+`define MS_FWD_RES_MEM   37
+`define MS_FWD_DEST      36:32
+
+// ============================================================================
+// ES_FWD_BUS 位提取宏
+// ============================================================================
+`define ES_FWD_VALID     40
+`define ES_FWD_GR_WE     39
+`define ES_FWD_FWD_VALID 38
+`define ES_FWD_RES_MEM   37
+
+// ============================================================================
+// BPU 分支历史表大小（用于 per-PC 统计）
+// ============================================================================
+`define BR_TABLE_SIZE 256
+
 module supervisor_perf_tb;
   localparam integer BOOT_LEN = 38;
   localparam integer STREAM_WORDS = 32'h0030_0000 / 4;
@@ -700,6 +733,86 @@ module supervisor_perf_tb;
         $display("");
       end
 
+
+      // =====================================================================
+      // 性能报告
+      // =====================================================================
+      $display("================================================================");
+      $display("===  Supervisor Performance Counter  ===");
+      $display("================================================================");
+      $display("TEST=%0d  cycles=%0d  instr=%0d",
+               test_id, benchmark_cycle_count, commit_count);
+      $display("");
+
+      // -- IPC --
+      $display("--- IPC ---");
+      $display("  IPC                         = %.4f",
+               (benchmark_cycle_count > 0) ?
+               (commit_count * 1.0 / benchmark_cycle_count) : 0.0);
+      $display("  Dual-issue cycle ratio      = %.2f%% (%0d/%0d)",
+               pct(dual_issue_cycle_count, benchmark_cycle_count),
+               dual_issue_cycle_count, benchmark_cycle_count);
+      $display("");
+
+      // -- Frontend --
+      $display("--- Frontend Stalls ---");
+      print_stall("icache_miss",   fe_icache_miss_cycles);
+      print_stall("icache_refill", fe_icache_refill_cycles);
+      print_stall("ibuf_empty",    fe_ibuf_empty_cycles);
+      print_stall("ibuf_full",     fe_ibuf_full_cycles);
+      print_stall("redirect_flush",fe_redirect_flush_cycles);
+      $display("");
+
+      // -- Issue --
+      $display("--- Issue Stalls ---");
+      print_stall("issue_no_inst",     is_no_inst_cycles);
+      print_stall("issue_backend_full",is_backend_full_cycles);
+      print_stall("issue_raw_load",    is_raw_load_cycles);
+      print_stall("issue_raw_other",   is_raw_other_cycles);
+      print_stall("issue_pair_blocked",is_pair_blocked_cycles);
+      $display("");
+
+      // -- Memory --
+      $display("--- Memory Stalls ---");
+      print_stall("load_addr_wait",       mem_load_addr_wait_cycles);
+      print_stall("load_data_wait",       mem_load_data_wait_cycles);
+      print_stall("store_addr_wait",      mem_store_addr_wait_cycles);
+      print_stall("store_data_wait",      mem_store_data_wait_cycles);
+      $display("  store_buffer_full           = N/A (no store buffer)");
+      $display("");
+
+      // -- Branch --
+      $display("--- Branch Prediction ---");
+      $display("  branch_count                = %0d", br_total_count);
+      $display("  branch_mispredict           = %0d", br_mispredict_count);
+      ratio = (br_total_count > 0) ?
+              (br_mispredict_count * 100.0 / br_total_count) : 0.0;
+      $display("  mispredict_rate             = %.2f%%", ratio);
+      $display("  btb_miss                    = %0d (%.2f%%)",
+               br_btb_miss_count,
+               (br_mispredict_count > 0) ?
+               (br_btb_miss_count * 100.0 / br_mispredict_count) : 0.0);
+      $display("  direction_miss              = %0d (%.2f%%)",
+               br_dir_miss_count,
+               (br_mispredict_count > 0) ?
+               (br_dir_miss_count * 100.0 / br_mispredict_count) : 0.0);
+      $display("  target_miss                 = %0d (%.2f%%)",
+               br_target_miss_count,
+               (br_mispredict_count > 0) ?
+               (br_target_miss_count * 100.0 / br_mispredict_count) : 0.0);
+      $display("");
+
+      // -- Per-PC branch detail (top 20 by mispredict count) --
+      if (br_pc_count > 0)
+      begin
+        $display("--- Branch Per-PC (top 20 by mispredicts) ---");
+        $display("  %-10s %-10s %-10s %-6s %-6s %-6s %-6s",
+                 "PC", "total", "mispredict", "rate", "BTB", "dir", "tgt");
+        // 简单冒泡排序找出 mispredict 最多的前20个
+        print_top_branches();
+        $display("");
+      end
+
       $display("PASS supervisor performance test=%0d cycles=%0d instr=%0d IPC=%.4f",
                test_id, benchmark_cycle_count, commit_count,
                (benchmark_cycle_count > 0) ?
@@ -801,8 +914,14 @@ module supervisor_perf_tb;
     uart_rx_data  = 8'b0;
     tx_count      = 0;
     cycle_count   = 0;
-    benchmark_cycle_count    = 0;
+    benchmark_cycle_count     = 0;
     commit_count             = 0;
+    dual_issue_cycle_count = 0;
+    stall_if_count    = 0;
+    stall_issue_count = 0;
+    stall_mem_count   = 0;
+    branch_count      = 0;
+    branch_mispredict_count = 0;
     dual_issue_cycle_count   = 0;
     fe_icache_miss_cycles    = 0;
     fe_icache_refill_cycles  = 0;
