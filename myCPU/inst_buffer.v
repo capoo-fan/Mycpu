@@ -90,7 +90,6 @@ module inst_buffer(
   reg                           next_front_valid_0;
   reg                           next_front_valid_1;
   reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_0;
-  reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_1;
 
   reg [1:0] head_step;
 
@@ -122,14 +121,12 @@ module inst_buffer(
     next_front_valid_0 = front_valid_0_r;
     next_front_valid_1 = front_valid_1_r;
     next_front_bus_0   = front_bus_0_r;
-    next_front_bus_1   = front_bus_1_r;
 
     if (pop_1)
     begin
       next_front_valid_0 = (cnt != CNT_ZERO);
       next_front_valid_1 = (cnt > CNT_ONE);
       next_front_bus_0   = fifo_front_0;
-      next_front_bus_1   = fifo_front_1;
     end
     else if (pop_0)
     begin
@@ -140,7 +137,6 @@ module inst_buffer(
         if (cnt != CNT_ZERO)
         begin
           next_front_valid_1 = 1'b1;
-          next_front_bus_1   = fifo_front_0;
         end
         else
           next_front_valid_1 = 1'b0;
@@ -150,7 +146,6 @@ module inst_buffer(
         next_front_valid_0 = (cnt != CNT_ZERO);
         next_front_valid_1 = (cnt > CNT_ONE);
         next_front_bus_0   = fifo_front_0;
-        next_front_bus_1   = fifo_front_1;
       end
     end
     else if (!front_valid_0_r)
@@ -158,13 +153,126 @@ module inst_buffer(
       next_front_valid_0 = (cnt != CNT_ZERO);
       next_front_valid_1 = (cnt > CNT_ONE);
       next_front_bus_0   = fifo_front_0;
-      next_front_bus_1   = fifo_front_1;
     end
     else if (!front_valid_1_r && (cnt != CNT_ZERO))
     begin
       next_front_valid_1 = 1'b1;
-      next_front_bus_1   = fifo_front_0;
     end
+  end
+
+  reg [44:0] next_front_bus_1_g0;
+  reg [44:0] next_front_bus_1_g1;
+  reg [44:0] next_front_bus_1_g2;
+  reg [44:0] next_front_bus_1_g3;
+  reg [44:0] next_front_bus_1_g4;
+  reg [42:0] next_front_bus_1_g5;
+
+  always @(*)
+  begin
+    next_front_bus_1_g0 = front_bus_1_g0;
+    if (pop_1)
+      next_front_bus_1_g0 = fifo_front_1[44:0];
+    else if (pop_0)
+    begin
+      if (front_valid_1_r && (cnt != CNT_ZERO))
+        next_front_bus_1_g0 = fifo_front_0[44:0];
+      else if (!front_valid_1_r)
+        next_front_bus_1_g0 = fifo_front_1[44:0];
+    end
+    else if (!front_valid_0_r)
+      next_front_bus_1_g0 = fifo_front_1[44:0];
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      next_front_bus_1_g0 = fifo_front_0[44:0];
+  end
+
+  always @(*)
+  begin
+    next_front_bus_1_g1 = front_bus_1_g1;
+    if (pop_1)
+      next_front_bus_1_g1 = fifo_front_1[89:45];
+    else if (pop_0)
+    begin
+      if (front_valid_1_r && (cnt != CNT_ZERO))
+        next_front_bus_1_g1 = fifo_front_0[89:45];
+      else if (!front_valid_1_r)
+        next_front_bus_1_g1 = fifo_front_1[89:45];
+    end
+    else if (!front_valid_0_r)
+      next_front_bus_1_g1 = fifo_front_1[89:45];
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      next_front_bus_1_g1 = fifo_front_0[89:45];
+  end
+
+  always @(*)
+  begin
+    next_front_bus_1_g2 = front_bus_1_g2;
+    if (pop_1)
+      next_front_bus_1_g2 = fifo_front_1[134:90];
+    else if (pop_0)
+    begin
+      if (front_valid_1_r && (cnt != CNT_ZERO))
+        next_front_bus_1_g2 = fifo_front_0[134:90];
+      else if (!front_valid_1_r)
+        next_front_bus_1_g2 = fifo_front_1[134:90];
+    end
+    else if (!front_valid_0_r)
+      next_front_bus_1_g2 = fifo_front_1[134:90];
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      next_front_bus_1_g2 = fifo_front_0[134:90];
+  end
+
+  always @(*)
+  begin
+    next_front_bus_1_g3 = front_bus_1_g3;
+    if (pop_1)
+      next_front_bus_1_g3 = fifo_front_1[179:135];
+    else if (pop_0)
+    begin
+      if (front_valid_1_r && (cnt != CNT_ZERO))
+        next_front_bus_1_g3 = fifo_front_0[179:135];
+      else if (!front_valid_1_r)
+        next_front_bus_1_g3 = fifo_front_1[179:135];
+    end
+    else if (!front_valid_0_r)
+      next_front_bus_1_g3 = fifo_front_1[179:135];
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      next_front_bus_1_g3 = fifo_front_0[179:135];
+  end
+
+  always @(*)
+  begin
+    next_front_bus_1_g4 = front_bus_1_g4;
+    if (pop_1)
+      next_front_bus_1_g4 = fifo_front_1[224:180];
+    else if (pop_0)
+    begin
+      if (front_valid_1_r && (cnt != CNT_ZERO))
+        next_front_bus_1_g4 = fifo_front_0[224:180];
+      else if (!front_valid_1_r)
+        next_front_bus_1_g4 = fifo_front_1[224:180];
+    end
+    else if (!front_valid_0_r)
+      next_front_bus_1_g4 = fifo_front_1[224:180];
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      next_front_bus_1_g4 = fifo_front_0[224:180];
+  end
+
+  always @(*)
+  begin
+    next_front_bus_1_g5 = front_bus_1_g5;
+    if (pop_1)
+      next_front_bus_1_g5 = fifo_front_1[267:225];
+    else if (pop_0)
+    begin
+      if (front_valid_1_r && (cnt != CNT_ZERO))
+        next_front_bus_1_g5 = fifo_front_0[267:225];
+      else if (!front_valid_1_r)
+        next_front_bus_1_g5 = fifo_front_1[267:225];
+    end
+    else if (!front_valid_0_r)
+      next_front_bus_1_g5 = fifo_front_1[267:225];
+    else if (!front_valid_1_r && (cnt != CNT_ZERO))
+      next_front_bus_1_g5 = fifo_front_0[267:225];
   end
 
 
@@ -277,25 +385,27 @@ module inst_buffer(
       if (front0_we_g5)
         front_bus_0_g5 <= next_front_bus_0[267:225];
       if (front1_we_g0)
-        front_bus_1_g0 <= next_front_bus_1[44:0];
+        front_bus_1_g0 <= next_front_bus_1_g0;
       if (front1_we_g1)
-        front_bus_1_g1 <= next_front_bus_1[89:45];
+        front_bus_1_g1 <= next_front_bus_1_g1;
       if (front1_we_g2)
-        front_bus_1_g2 <= next_front_bus_1[134:90];
+        front_bus_1_g2 <= next_front_bus_1_g2;
       if (front1_we_g3)
-        front_bus_1_g3 <= next_front_bus_1[179:135];
+        front_bus_1_g3 <= next_front_bus_1_g3;
       if (front1_we_g4)
-        front_bus_1_g4 <= next_front_bus_1[224:180];
+        front_bus_1_g4 <= next_front_bus_1_g4;
       if (front1_we_g5)
-        front_bus_1_g5 <= next_front_bus_1[267:225];
+        front_bus_1_g5 <= next_front_bus_1_g5;
       if (front0_hot_raddr1_we)
         front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
       if (front0_hot_raddr2_we)
         front_raddr2_0_hot_r <= next_front_bus_0[HOT_RADDR2_LSB +: 5];
       if (front1_hot_raddr1_we)
-        front_raddr1_1_hot_r <= next_front_bus_1[HOT_RADDR1_LSB +: 5];
+        front_raddr1_1_hot_r <=
+             next_front_bus_1_g3[HOT_RADDR1_LSB-135 +: 5];
       if (front1_hot_raddr2_we)
-        front_raddr2_1_hot_r <= next_front_bus_1[HOT_RADDR2_LSB +: 5];
+        front_raddr2_1_hot_r <=
+             next_front_bus_1_g3[HOT_RADDR2_LSB-135 +: 5];
     end
   end
 

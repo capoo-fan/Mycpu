@@ -6,6 +6,8 @@ module issue_special_tb;
   reg         resetn;
   reg         front_valid_0;
   reg         front_valid_1;
+  reg         br_taken;
+  reg         es_allowin;
   reg  [31:0] inst_0;
   reg  [31:0] inst_1;
   reg         special_block;
@@ -94,9 +96,9 @@ module issue_special_tb;
     .front_valid_1(front_valid_1), .front_bus_1(front_bus_1),
     .front_raddr1_1_hot(front_raddr1_1_hot),
     .front_raddr2_1_hot(front_raddr2_1_hot),
-    .pop_0(pop_0), .pop_1(pop_1), .br_taken(1'b0),
+    .pop_0(pop_0), .pop_1(pop_1), .br_taken(br_taken),
     .special_fire(special_fire), .special_block(special_block),
-    .es_allowin(1'b1),
+    .es_allowin(es_allowin),
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
     .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
@@ -104,7 +106,12 @@ module issue_special_tb;
     .ds_to_es_bus_0(), .ds_to_es_bus_1()
   );
 
-  always #5 clk = ~clk;
+  task tick;
+    begin
+      #1 clk = 1'b1;
+      #1 clk = 1'b0;
+    end
+  endtask
 
   task check_issue;
     input expected_0;
@@ -131,6 +138,10 @@ module issue_special_tb;
       es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
       ms_fwd_bus_0 = {`MS_FWD_BUS_WD{1'b0}};
       ms_fwd_bus_1 = {`MS_FWD_BUS_WD{1'b0}};
+      dut.ex_wait_valid_0 = 1'b0;
+      dut.ex_wait_dest_0 = 5'b0;
+      dut.ex_wait_valid_1 = 1'b0;
+      dut.ex_wait_dest_1 = 5'b0;
     end
   endtask
 
@@ -141,16 +152,130 @@ module issue_special_tb;
     begin
       clear_producers();
       case (producer_slot)
-        0: es_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b0,
-                            producer_dest, 32'h1000_0000};
-        1: es_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b0,
-                            producer_dest, 32'h2000_0000};
+        0: begin
+          es_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b0,
+                          producer_dest, 32'h1000_0000};
+          dut.ex_wait_valid_0 = !producer_ready &&
+                                (producer_dest != 5'b0);
+          dut.ex_wait_dest_0 = producer_dest;
+        end
+        1: begin
+          es_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b0,
+                          producer_dest, 32'h2000_0000};
+          dut.ex_wait_valid_1 = !producer_ready &&
+                                (producer_dest != 5'b0);
+          dut.ex_wait_dest_1 = producer_dest;
+        end
         2: ms_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b1,
                             producer_dest, 32'h3000_0000};
         3: ms_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b1,
                             producer_dest, 32'h4000_0000};
         default: $fatal(1, "invalid producer slot");
       endcase
+    end
+  endtask
+
+  task check_local_wait;
+    input expected_valid_0;
+    input [4:0] expected_dest_0;
+    input expected_valid_1;
+    input [4:0] expected_dest_1;
+    input [255:0] name;
+    begin
+      if ((dut.ex_wait_valid_0 !== expected_valid_0) ||
+          (expected_valid_0 &&
+           (dut.ex_wait_dest_0 !== expected_dest_0)) ||
+          (dut.ex_wait_valid_1 !== expected_valid_1) ||
+          (expected_valid_1 &&
+           (dut.ex_wait_dest_1 !== expected_dest_1))) begin
+        $display("FAIL %0s local_wait=%b/%0d,%b/%0d", name,
+                 dut.ex_wait_valid_0, dut.ex_wait_dest_0,
+                 dut.ex_wait_valid_1, dut.ex_wait_dest_1);
+        $fatal(1, "issue_special_tb failed");
+      end
+    end
+  endtask
+
+  task check_local_wait_pipeline;
+    begin
+      // Lane0 load metadata is captured with the same handshake as EX.
+      front_valid_0 = 1'b1;
+      front_valid_1 = 1'b0;
+      inst_0 = make_ld_w(5'd12, 5'd4);
+      clear_producers();
+      check_issue(1'b1, 1'b0, "lane0 load enters EX wait mirror");
+      tick();
+      check_local_wait(1'b1, 5'd12, 1'b0, 5'd0,
+                       "lane0 load mirror capture");
+      es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                      5'd12, 32'h1111_1111};
+      inst_0 = make_addi(5'd10, 5'd12);
+      check_issue(1'b0, 1'b0,
+                  "captured lane0 load blocks dependent consumer");
+
+      // EX backpressure freezes the local metadata exactly as it freezes EX.
+      es_allowin = 1'b0;
+      inst_0 = make_addi(5'd10, 5'd0);
+      tick();
+      check_local_wait(1'b1, 5'd12, 1'b0, 5'd0,
+                       "EX backpressure holds wait mirror");
+
+      // When EX advances, an independently issued ALU operation replaces the
+      // old load metadata without adding a bubble.
+      es_allowin = 1'b1;
+      check_issue(1'b1, 1'b0, "independent issue replaces load mirror");
+      tick();
+      es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
+      check_local_wait(1'b0, 5'd0, 1'b0, 5'd0,
+                       "ordinary ALU clears wait mirror");
+
+      // Lane1 captures independently when a load dual-issues behind lane0.
+      front_valid_1 = 1'b1;
+      inst_0 = make_addi(5'd10, 5'd0);
+      inst_1 = make_ld_w(5'd13, 5'd4);
+      check_issue(1'b1, 1'b1, "lane1 load dual issue");
+      tick();
+      check_local_wait(1'b0, 5'd0, 1'b1, 5'd13,
+                       "lane1 load mirror capture");
+      es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
+                      5'd13, 32'h2222_2222};
+      inst_0 = make_addi(5'd10, 5'd0);
+      inst_1 = make_addi(5'd11, 5'd13);
+      check_issue(1'b1, 1'b0,
+                  "captured lane1 load blocks only dependent lane1");
+
+      // A pipeline flush has priority over the EX advance/capture path.
+      br_taken = 1'b1;
+      tick();
+      br_taken = 1'b0;
+      es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
+      check_local_wait(1'b0, 5'd0, 1'b0, 5'd0,
+                       "flush clears wait mirror");
+
+      // CPUCFG is non-forwardable in EX and therefore uses the same mirror.
+      front_valid_1 = 1'b0;
+      inst_0 = INST_CPUCFG;
+      check_issue(1'b1, 1'b0, "CPUCFG enters EX wait mirror");
+      tick();
+      check_local_wait(1'b1, 5'd3, 1'b0, 5'd0,
+                       "CPUCFG mirror capture");
+      br_taken = 1'b1;
+      tick();
+      br_taken = 1'b0;
+
+      // A multiply is controlled by es_allowin and must not occupy the local
+      // destination scoreboard.
+      inst_0 = make_mul(5'd20, 5'd2, 5'd3);
+      check_issue(1'b1, 1'b0, "multiply issues without wait mirror entry");
+      tick();
+      check_local_wait(1'b0, 5'd0, 1'b0, 5'd0,
+                       "multiply excluded from wait mirror");
+
+      // The remaining combinational matrix tests inject producer metadata
+      // directly and do not advance the manual test clock.
+      clear_producers();
+      front_valid_0 = 1'b1;
+      front_valid_1 = 1'b1;
     end
   endtask
 
@@ -198,6 +323,8 @@ module issue_special_tb;
     resetn = 1'b0;
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
+    br_taken = 1'b0;
+    es_allowin = 1'b1;
     special_block = 1'b0;
     es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
     es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
@@ -205,8 +332,11 @@ module issue_special_tb;
     ms_fwd_bus_1 = {`MS_FWD_BUS_WD{1'b0}};
     inst_0 = INST_ADDI_R2;
     inst_1 = INST_ADDI_R3;
-    #1;
+    tick();
+    tick();
     resetn = 1'b1;
+
+    check_local_wait_pipeline();
 
     check_issue(1'b1, 1'b1, "ordinary dual issue");
 
@@ -239,9 +369,9 @@ module issue_special_tb;
     special_block = 1'b0;
     inst_0 = INST_ADDI_R3_FROM_R2;
     inst_1 = INST_ADDI_R3;
-    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b0, 5'd2, 32'h1234_5678};
+    set_producer(1, 1'b0, 5'd2);
     check_issue(1'b0, 1'b0, "unready ES producer blocks lane0 and pair");
-    es_fwd_bus_1 = {1'b1, 1'b1, 1'b1, 1'b0, 5'd2, 32'h1234_5678};
+    set_producer(1, 1'b1, 5'd2);
     check_issue(1'b1, 1'b1, "ES producer forwards without extra stall");
 
     inst_0 = INST_ADDI_R3;
@@ -258,50 +388,34 @@ module issue_special_tb;
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b0;
     inst_0 = make_st_w(5'd12, 5'd5);
-    clear_producers();
-    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd12, 32'h1111_1111};
+    set_producer(0, 1'b0, 5'd12);
     check_issue(1'b0, 1'b0, "lane0 Store data waits for lane0 EX load");
-    clear_producers();
-    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd12, 32'h2222_2222};
+    set_producer(1, 1'b0, 5'd12);
     check_issue(1'b0, 1'b0, "lane0 Store data waits for lane1 EX load");
 
     // Store addresses and ordinary ALU consumers use the same interlock.
-    clear_producers();
-    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd5, 32'h3333_3333};
+    set_producer(0, 1'b0, 5'd5);
     check_issue(1'b0, 1'b0, "lane0 Store address still waits for EX load");
     inst_0 = make_addi(5'd10, 5'd12);
-    clear_producers();
-    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd12, 32'h4444_4444};
+    set_producer(0, 1'b0, 5'd12);
     check_issue(1'b0, 1'b0, "Load to ALU still inserts the normal interlock");
 
     // A blocked lane1 Store still permits an independent lane0 instruction.
     front_valid_1 = 1'b1;
     inst_0 = make_addi(5'd10, 5'd0);
     inst_1 = make_st_w(5'd12, 5'd5);
-    clear_producers();
-    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd12, 32'h5555_5555};
+    set_producer(0, 1'b0, 5'd12);
     check_issue(1'b1, 1'b0, "lane1 Store data waits for lane0 EX load");
-    clear_producers();
-    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd12, 32'h6666_6666};
+    set_producer(1, 1'b0, 5'd12);
     check_issue(1'b1, 1'b0, "lane1 Store data waits for lane1 EX load");
-    clear_producers();
-    es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd5, 32'h7777_7777};
+    set_producer(1, 1'b0, 5'd5);
     check_issue(1'b1, 1'b0, "lane1 Store address still waits for EX load");
 
     // Store/multiply ordering needs no special bypass rule after the Store is
     // interlocked in ISSUE; normal lane ordering determines what can issue.
     inst_0 = make_st_w(5'd12, 5'd5);
     inst_1 = make_mul(5'd20, 5'd0, 5'd0);
-    clear_producers();
-    es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                    5'd12, 32'h8888_8888};
+    set_producer(0, 1'b0, 5'd12);
     check_issue(1'b0, 1'b0, "blocked lane0 Store also blocks lane1 multiply");
     inst_0 = make_mul(5'd20, 5'd0, 5'd0);
     inst_1 = make_st_w(5'd12, 5'd5);
