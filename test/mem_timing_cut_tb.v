@@ -20,6 +20,8 @@ module mem_timing_cut_tb;
   wire ms_to_ws_valid_1;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_1;
+  wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
+  wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
   wire br_taken;
   wire [31:0] br_target;
   wire bpu_valid;
@@ -45,7 +47,7 @@ module mem_timing_cut_tb;
     .ms_to_ws_valid_0(ms_to_ws_valid_0),
     .ms_to_ws_valid_1(ms_to_ws_valid_1),
     .ms_to_ws_bus_0(ms_to_ws_bus_0), .ms_to_ws_bus_1(ms_to_ws_bus_1),
-    .ms_fwd_bus_0(), .ms_fwd_bus_1(),
+    .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
     .csr_busy(), .cacop_busy(),
     .br_taken(br_taken), .br_target(br_target),
     .bpu_valid(bpu_valid), .bpu_is_bj(), .bpu_pc(bpu_pc),
@@ -85,6 +87,7 @@ module mem_timing_cut_tb;
     input [4:0] cacop_code;
     begin
       make_packet = {
+        1'b1,
         pc, result, rkd,
         res_from_mem, gr_we, mem_we, dest,
         1'b0, 1'b0, 1'b0, 1'b0, 1'b0,
@@ -140,8 +143,15 @@ module mem_timing_cut_tb;
       data_addr_ok = 1'b0;
       data_rdata = response;
       data_data_ok = 1'b1;
+      #1;
+      if ((ms_fwd_bus_0[37] && ms_fwd_bus_0[38]) ||
+          (ms_fwd_bus_1[37] && ms_fwd_bus_1[38]))
+        fail("external SRAM response forwarded before the register boundary");
       @(posedge clk);
       #1;
+      if ((ms_fwd_bus_0[37] && !ms_fwd_bus_0[38]) ||
+          (ms_fwd_bus_1[37] && !ms_fwd_bus_1[38]))
+        fail("registered load result did not become forwardable");
       @(negedge clk);
       data_data_ok = 1'b0;
     end
@@ -208,6 +218,22 @@ module mem_timing_cut_tb;
                         1'b0, 1'b0, 5'b0));
     if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1)
       fail("ordinary dual packet did not pass MEM immediately");
+    if (!ms_fwd_bus_0[38] || ms_fwd_bus_0[31:0] !== 32'h11)
+      fail("ordinary ALU result lost MEM forwarding");
+    @(posedge clk);
+    #1;
+
+    // A special result remains a visible producer but is never selected as
+    // MEM forwarding data. Its dependent consumer must wait for WB/RF bypass.
+    es_bus_0 = make_packet(32'h1c00_0008, 32'hc001_c0de, 32'b0,
+                           1'b0, 1'b1, 1'b0, 5'd12,
+                           1'b0, 1'b0, 32'b0, 32'h1c00_000c,
+                           1'b0, 1'b0, 5'b0);
+    es_bus_0[`ES_TO_MS_BUS_WD-1] = 1'b0;
+    submit_pair(1'b1, es_bus_0, 1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+    if (!ms_fwd_bus_0[40] || !ms_fwd_bus_0[39] || ms_fwd_bus_0[38] ||
+        ms_fwd_bus_0[36:32] !== 5'd12 || ms_fwd_bus_0[31:0] !== 32'b0)
+      fail("special result was not isolated from MEM forwarding");
     @(posedge clk);
     #1;
 

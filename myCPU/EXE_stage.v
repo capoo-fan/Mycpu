@@ -208,11 +208,18 @@ module EXE_stage(
   assign csr_busy  = es_valid_0 && es_is_csr_0;
   assign cacop_busy = es_valid_0 && es_is_cacop_0;
 
+  wire [31:0] es_exec_result_0 = es_is_mul_0 ? es_mul_result_0 : alu_result_0;
+  wire [31:0] es_exec_result_1 = es_is_mul_1 ? es_mul_result_1 : alu_result_1;
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
-       es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) :
-       es_is_mul_0 ? es_mul_result_0 : alu_result_0;
-  wire [31:0] es_final_result_1 = es_is_cpucfg_1 ? cpucfg_result(es_alu_src1_1) :
-       es_is_mul_1 ? es_mul_result_1 : alu_result_1;
+       es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
+  wire [31:0] es_final_result_1 = es_is_cpucfg_1 ?
+       cpucfg_result(es_alu_src1_1) : es_exec_result_1;
+
+  //去除掉低频指令的前递
+  wire es_result_forwardable_0 =
+       !(es_is_csr_0 || es_is_cpucfg_0 || es_is_cacop_0);
+  wire es_result_forwardable_1 =
+       !(es_is_csr_1 || es_is_cpucfg_1 || es_is_cacop_1);
 
   wire        es_is_bj_0;
   wire        es_real_taken_0;
@@ -258,15 +265,18 @@ module EXE_stage(
        (es_real_target_1 != es_pred_target_1);
   wire es_redirect_miss_1 = es_is_bj_1 && (es_taken_miss_1 || es_target_miss_1);
 
-  wire es_fwd_valid_0 = !es_res_from_mem_0 && !mul_pending_0;
-  wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_1;
+  wire es_fwd_valid_0 = es_result_forwardable_0 &&
+       !es_res_from_mem_0 && !mul_pending_0;
+  wire es_fwd_valid_1 = es_result_forwardable_1 &&
+       !es_res_from_mem_1 && !mul_pending_1;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
-                         es_res_from_mem_0, es_dest_0, es_final_result_0};
+                         es_res_from_mem_0, es_dest_0, es_exec_result_0};
   assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-                         es_res_from_mem_1, es_dest_1, es_final_result_1};
+                         es_res_from_mem_1, es_dest_1, es_exec_result_1};
 
-  assign es_to_ms_bus_0 = {es_pc_0,
+  assign es_to_ms_bus_0 = {es_result_forwardable_0,
+                           es_pc_0,
                            es_final_result_0,
                            es_rkd_value_0,
                            es_res_from_mem_0,
@@ -293,7 +303,8 @@ module EXE_stage(
                            es_csr_wvalue_0
                           };
 
-  assign es_to_ms_bus_1 = {es_pc_1,
+  assign es_to_ms_bus_1 = {es_result_forwardable_1,
+                           es_pc_1,
                            es_final_result_1,
                            es_rkd_value_1,
                            es_res_from_mem_1,
@@ -554,5 +565,22 @@ module EXE_stage(
         .alu_result (alu_result_1),
         .mul_result (mul_product_1)
       );
+
+`ifndef SYNTHESIS
+  always @(posedge clk)
+  begin
+    if (resetn)
+    begin
+      if (es_valid_0 && mul_pending_0 && es_fwd_valid_0)
+        $fatal(1, "unfinished lane0 multiply became forwardable");
+      if (es_valid_1 && mul_pending_1 && es_fwd_valid_1)
+        $fatal(1, "unfinished lane1 multiply became forwardable");
+      if (es_valid_0 && !es_result_forwardable_0 && es_fwd_valid_0)
+        $fatal(1, "lane0 special result entered EX forwarding");
+      if (es_valid_1 && !es_result_forwardable_1 && es_fwd_valid_1)
+        $fatal(1, "lane1 special result entered EX forwarding");
+    end
+  end
+`endif
 
 endmodule

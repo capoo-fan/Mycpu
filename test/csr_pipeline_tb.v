@@ -15,9 +15,9 @@ module csr_pipeline_tb;
   wire [31:0] data_addr;
   reg  [31:0] lane1_wb_pc;
 
-  reg [31:0] expected_pc [0:8];
-  reg [ 4:0] expected_reg[0:8];
-  reg [31:0] expected_data[0:8];
+  reg [31:0] expected_pc [0:11];
+  reg [ 4:0] expected_reg[0:11];
+  reg [31:0] expected_data[0:11];
   integer event_count;
   integer cycle_count;
   reg saw_mapped_fetch;
@@ -44,7 +44,7 @@ module csr_pipeline_tb;
     input [ 4:0] commit_reg;
     input [31:0] commit_data;
     begin
-      if (event_count > 8 || commit_pc !== expected_pc[event_count] ||
+      if (event_count > 11 || commit_pc !== expected_pc[event_count] ||
           commit_reg !== expected_reg[event_count] ||
           commit_data !== expected_data[event_count])
       begin
@@ -68,15 +68,18 @@ module csr_pipeline_tb;
     input [31:0] addr;
     begin
       case (addr[5:2])
-        4'd0: rom_word = 32'h1404_0002;
-        4'd1: rom_word = 32'h0380_0442;
-        4'd2: rom_word = 32'h0406_0022;
-        4'd3: rom_word = 32'h0280_4003;
-        4'd4: rom_word = 32'h0400_0023;
-        4'd5: rom_word = 32'h0280_2004;
-        4'd6: rom_word = 32'h0280_6005;
-        4'd7: rom_word = 32'h0400_00a4;
-        4'd8: rom_word = 32'h0281_5406;
+        4'd0: rom_word = 32'h0280_040a; // addi.w  r10, r0, 1
+        4'd1: rom_word = 32'h0000_6d4b; // cpucfg  r11, r10
+        4'd2: rom_word = 32'h0280_056c; // addi.w  r12, r11, 1
+        4'd3: rom_word = 32'h1404_0002;
+        4'd4: rom_word = 32'h0380_0442;
+        4'd5: rom_word = 32'h0406_0022;
+        4'd6: rom_word = 32'h0280_4003;
+        4'd7: rom_word = 32'h0400_0023;
+        4'd8: rom_word = 32'h0280_2004;
+        4'd9: rom_word = 32'h0280_6005;
+        4'd10: rom_word = 32'h0400_00a4;
+        4'd11: rom_word = 32'h0281_5406;
         default: rom_word = 32'h5000_0000;
       endcase
     end
@@ -145,15 +148,18 @@ module csr_pipeline_tb;
     cycle_count       = 0;
     saw_mapped_fetch  = 1'b0;
 
-    expected_pc[0] = 32'h1c00_0000; expected_reg[0] = 5'd2; expected_data[0] = 32'h0200_0000;
-    expected_pc[1] = 32'h1c00_0004; expected_reg[1] = 5'd2; expected_data[1] = 32'h0200_0001;
-    expected_pc[2] = 32'h1c00_0008; expected_reg[2] = 5'd2; expected_data[2] = 32'h0000_0000;
-    expected_pc[3] = 32'h1c00_000c; expected_reg[3] = 5'd3; expected_data[3] = 32'h0000_0010;
-    expected_pc[4] = 32'h1c00_0010; expected_reg[4] = 5'd3; expected_data[4] = 32'h0000_0008;
-    expected_pc[5] = 32'h1c00_0014; expected_reg[5] = 5'd4; expected_data[5] = 32'h0000_0008;
-    expected_pc[6] = 32'h1c00_0018; expected_reg[6] = 5'd5; expected_data[6] = 32'h0000_0018;
-    expected_pc[7] = 32'h1c00_001c; expected_reg[7] = 5'd4; expected_data[7] = 32'h0000_0010;
-    expected_pc[8] = 32'h1c00_0020; expected_reg[8] = 5'd6; expected_data[8] = 32'h0000_0055;
+    expected_pc[0] = 32'h1c00_0000; expected_reg[0] = 5'd10; expected_data[0] = 32'h0000_0001;
+    expected_pc[1] = 32'h1c00_0004; expected_reg[1] = 5'd11; expected_data[1] = 32'h0001_f1f0;
+    expected_pc[2] = 32'h1c00_0008; expected_reg[2] = 5'd12; expected_data[2] = 32'h0001_f1f1;
+    expected_pc[3] = 32'h1c00_000c; expected_reg[3] = 5'd2; expected_data[3] = 32'h0200_0000;
+    expected_pc[4] = 32'h1c00_0010; expected_reg[4] = 5'd2; expected_data[4] = 32'h0200_0001;
+    expected_pc[5] = 32'h1c00_0014; expected_reg[5] = 5'd2; expected_data[5] = 32'h0000_0000;
+    expected_pc[6] = 32'h1c00_0018; expected_reg[6] = 5'd3; expected_data[6] = 32'h0000_0010;
+    expected_pc[7] = 32'h1c00_001c; expected_reg[7] = 5'd3; expected_data[7] = 32'h0000_0008;
+    expected_pc[8] = 32'h1c00_0020; expected_reg[8] = 5'd4; expected_data[8] = 32'h0000_0008;
+    expected_pc[9] = 32'h1c00_0024; expected_reg[9] = 5'd5; expected_data[9] = 32'h0000_0018;
+    expected_pc[10] = 32'h1c00_0028; expected_reg[10] = 5'd4; expected_data[10] = 32'h0000_0010;
+    expected_pc[11] = 32'h1c00_002c; expected_reg[11] = 5'd6; expected_data[11] = 32'h0000_0055;
 
     repeat (6) @(posedge clk);
     resetn = 1'b1;
