@@ -34,6 +34,16 @@ module BPU (
     end
   endfunction
 
+  // 将相邻热点循环在 PC 高位上的差异折叠进 2-bit 行索引。
+  // 表容量和命中比较路径保持不变，但可避免 MATRIX 中 0x...2074
+  // 与 0x...20d4 长期争用同一 bank/row。
+  function [BPU_ROW_W-1:0] btb_row;
+    input [31:0] pc;
+    begin
+      btb_row = pc[4:3] ^ pc[7:6];
+    end
+  endfunction
+
   // counter 更新函数
   function [1:0] train_counter;
     input [1:0] old_counter;
@@ -52,7 +62,7 @@ module BPU (
   reg [31:0]          btb_target  [0:BPU_BANKS-1][0:BPU_ROWS-1];
 
   wire [BPU_TAG_W-1:0]   pred_tag  = btb_tag(if_pc);
-  wire [BPU_ROW_W-1:0]   pred_row  = if_pc[4:3];
+  wire [BPU_ROW_W-1:0]   pred_row  = btb_row(if_pc);
   wire                   pred_bank = if_pc[2];
 
   wire pred_hit_bank0 = btb_valid[1'b0][pred_row] &&
@@ -78,7 +88,7 @@ module BPU (
   wire                   update_valid_s1 = ex_valid && ex_is_bj;
   wire [BPU_TAG_W-1:0]   update_tag_s1   = btb_tag(ex_pc);
   wire                   update_bank_s1  = ex_pc[2];
-  wire [BPU_ROW_W-1:0]   update_row_s1   = ex_pc[4:3];
+  wire [BPU_ROW_W-1:0]   update_row_s1   = btb_row(ex_pc);
 
   wire                 read_valid_s1;
   wire [BPU_TAG_W-1:0] read_tag_s1;

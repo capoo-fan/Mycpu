@@ -159,6 +159,9 @@ module supervisor_perf_tb;
   reg [63:0] is_raw_load_cycles;
   reg [63:0] is_raw_other_cycles;
   reg [63:0] is_pair_blocked_cycles;
+  reg [63:0] ex_mul_wait_cycles;
+  reg [63:0] pair_mem_conflict_cycles;
+  reg [63:0] pair_raw_conflict_cycles;
 
   // -- Memory 停顿 --
   reg [63:0] mem_load_addr_wait_cycles;
@@ -400,6 +403,19 @@ module supervisor_perf_tb;
       if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
           cpu.issue_pop_0 && !cpu.issue_pop_1)
         is_pair_blocked_cycles <= is_pair_blocked_cycles + 1;
+
+      if (cpu.u_exe.mul_pending_0 || cpu.u_exe.mul_pending_1)
+        ex_mul_wait_cycles <= ex_mul_wait_cycles + 1;
+
+      if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
+          cpu.issue_pop_0 && !cpu.issue_pop_1 &&
+          cpu.u_issue.mem_op_0 && cpu.u_issue.mem_op_1)
+        pair_mem_conflict_cycles <= pair_mem_conflict_cycles + 1;
+
+      if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
+          cpu.issue_pop_0 && !cpu.issue_pop_1 &&
+          cpu.u_issue.raw_0_to_1)
+        pair_raw_conflict_cycles <= pair_raw_conflict_cycles + 1;
 
       // === MEMORY 停顿 ===
       // load_addr_wait: 等待 load 地址握手
@@ -693,6 +709,9 @@ module supervisor_perf_tb;
       print_stall("issue_raw_load",    is_raw_load_cycles);
       print_stall("issue_raw_other",   is_raw_other_cycles);
       print_stall("issue_pair_blocked",is_pair_blocked_cycles);
+      print_stall("ex_mul_wait",        ex_mul_wait_cycles);
+      print_stall("pair_mem_conflict",  pair_mem_conflict_cycles);
+      print_stall("pair_raw_conflict",  pair_raw_conflict_cycles);
       $display("");
 
       // -- Memory --
@@ -773,6 +792,9 @@ module supervisor_perf_tb;
       print_stall("issue_raw_load",    is_raw_load_cycles);
       print_stall("issue_raw_other",   is_raw_other_cycles);
       print_stall("issue_pair_blocked",is_pair_blocked_cycles);
+      print_stall("ex_mul_wait",        ex_mul_wait_cycles);
+      print_stall("pair_mem_conflict",  pair_mem_conflict_cycles);
+      print_stall("pair_raw_conflict",  pair_raw_conflict_cycles);
       $display("");
 
       // -- Memory --
@@ -930,6 +952,9 @@ module supervisor_perf_tb;
     is_raw_load_cycles       = 0;
     is_raw_other_cycles      = 0;
     is_pair_blocked_cycles   = 0;
+    ex_mul_wait_cycles       = 0;
+    pair_mem_conflict_cycles = 0;
+    pair_raw_conflict_cycles = 0;
     mem_load_addr_wait_cycles = 0;
     mem_load_data_wait_cycles = 0;
     mem_store_addr_wait_cycles = 0;
