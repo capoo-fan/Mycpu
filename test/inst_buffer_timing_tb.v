@@ -184,29 +184,37 @@ module inst_buffer_timing_tb;
     if (!push_ready)
       fail("buffer did not become ready after flush");
 
-    // Fill the two-entry queued portion completely, then combine a wrapped
-    // dual push with a dual pop.  This also checks the empty/full boundary.
+    // Fill all four FIFO entries behind the two front registers.  cnt==2
+    // still has room for one dual push; cnt==4 must apply backpressure.
     drive_cycle(1'b1, 8'd21, 1'b1, 8'd22, 1'b0, 1'b0);
     drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b0, 1'b0);
     check_front(1'b1, 8'd21, 1'b1, 8'd22, "boundary initial refill");
     drive_cycle(1'b1, 8'd23, 1'b1, 8'd24, 1'b0, 1'b0);
-    check_front(1'b1, 8'd21, 1'b1, 8'd22, "queued portion full");
+    check_front(1'b1, 8'd21, 1'b1, 8'd22, "queued portion half full");
+    if (!push_ready || full)
+      fail("half-full FIFO rejected a safe two-entry push");
+
+    drive_cycle(1'b1, 8'd25, 1'b1, 8'd26, 1'b0, 1'b0);
+    check_front(1'b1, 8'd21, 1'b1, 8'd22, "four-entry FIFO full");
     if (push_ready || !full)
-      fail("full buffer still accepted a two-entry push");
+      fail("four-entry FIFO did not apply backpressure");
 
     drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b1, 1'b0);
     check_front(1'b1, 8'd22, 1'b1, 8'd23, "full boundary single pop");
-    if (!push_ready)
-      fail("single pop did not restore push readiness");
+    if (push_ready || !full)
+      fail("three queued entries incorrectly accepted a dual push");
 
-    drive_cycle(1'b1, 8'd25, 1'b1, 8'd26, 1'b1, 1'b1);
-    check_front(1'b1, 8'd24, 1'b0, 8'd0,
-                "simultaneous wrapped dual pop and push");
-    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b0, 1'b0);
-    check_front(1'b1, 8'd24, 1'b1, 8'd25,
-                "refill after simultaneous dual pop and push");
+    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b1, 1'b0);
+    check_front(1'b1, 8'd23, 1'b1, 8'd24,
+                "second full-boundary single pop");
+    if (!push_ready || full)
+      fail("two queued entries did not restore push readiness");
+
     drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b1, 1'b1);
-    check_front(1'b1, 8'd26, 1'b0, 8'd0, "final wrapped entry");
+    check_front(1'b1, 8'd25, 1'b1, 8'd26,
+                "full-depth wrapped direct refill");
+    drive_cycle(1'b0, 8'd0, 1'b0, 8'd0, 1'b1, 1'b1);
+    check_front(1'b0, 8'd0, 1'b0, 8'd0, "full-depth final drain");
 
     $display("PASS inst_buffer_timing_tb");
     $finish;

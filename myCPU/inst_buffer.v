@@ -410,7 +410,9 @@ module inst_buffer(
   end
 
   // fifo 更新
-  assign push_ready = (cnt <= CNT_ONE);
+  // FIFO 有 4 项；最坏一次 push 两项，因此 cnt==2 时仍可安全接收。
+  // 只依据本地计数给 ready，避免重新引入 pop/ISSUE 到 IF 的组合链。
+  assign push_ready = (cnt <= 3'd2);
   assign full       = !push_ready;
 
   wire push_fire_0 = push_valid_0 && push_ready;
