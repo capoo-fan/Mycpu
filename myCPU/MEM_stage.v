@@ -15,6 +15,7 @@ module MEM_stage(
     output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_1,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_0,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_1,
+    output wire                         ms_result_unready,
     output wire                         csr_busy,
     output wire                         cacop_busy,
     output wire                         br_taken,
@@ -340,6 +341,9 @@ module MEM_stage(
                          ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0};
   assign ms_fwd_bus_1 = {ms_lane1_eff_valid, ms_gr_we_1, ms_fwd_valid_1,
                          ms_res_from_mem_1, ms_dest_1, ms_fwd_data_1};
+  assign ms_result_unready =
+       (ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0) ||
+       (ms_lane1_eff_valid && ms_gr_we_1 && !ms_fwd_valid_1);
 
   assign ms_to_ws_bus_0 = {ms_pc_0,
                            ms_alu_result_0,

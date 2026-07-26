@@ -11,10 +11,7 @@ module issue_special_tb;
   reg  [31:0] inst_0;
   reg  [31:0] inst_1;
   reg         special_block;
-  reg  [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
-  reg  [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
-  reg  [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
-  reg  [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
+  reg         ms_result_unready;
   wire [`DS_DEC_BUS_WD-1:0] dec_0;
   wire [`DS_DEC_BUS_WD-1:0] dec_1;
   wire [`FS_TO_DS_BUS_WD-1:0] fs_0 = {32'h1c00_0000, inst_0, 1'b0, 32'b0};
@@ -99,8 +96,7 @@ module issue_special_tb;
     .pop_0(pop_0), .pop_1(pop_1), .br_taken(br_taken),
     .special_fire(special_fire), .special_block(special_block),
     .es_allowin(es_allowin),
-    .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
-    .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
+    .ms_result_unready(ms_result_unready),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
     .ds_to_es_valid_0(issue_0), .ds_to_es_valid_1(issue_1),
     .ds_to_es_bus_0(), .ds_to_es_bus_1()
@@ -134,10 +130,7 @@ module issue_special_tb;
 
   task clear_producers;
     begin
-      es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
-      es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
-      ms_fwd_bus_0 = {`MS_FWD_BUS_WD{1'b0}};
-      ms_fwd_bus_1 = {`MS_FWD_BUS_WD{1'b0}};
+      ms_result_unready = 1'b0;
       dut.ex_wait_valid_0 = 1'b0;
       dut.ex_wait_dest_0 = 5'b0;
       dut.ex_wait_valid_1 = 1'b0;
@@ -153,23 +146,16 @@ module issue_special_tb;
       clear_producers();
       case (producer_slot)
         0: begin
-          es_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b0,
-                          producer_dest, 32'h1000_0000};
           dut.ex_wait_valid_0 = !producer_ready &&
                                 (producer_dest != 5'b0);
           dut.ex_wait_dest_0 = producer_dest;
         end
         1: begin
-          es_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b0,
-                          producer_dest, 32'h2000_0000};
           dut.ex_wait_valid_1 = !producer_ready &&
                                 (producer_dest != 5'b0);
           dut.ex_wait_dest_1 = producer_dest;
         end
-        2: ms_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b1,
-                            producer_dest, 32'h3000_0000};
-        3: ms_fwd_bus_1 = {1'b1, 1'b1, producer_ready, 1'b1,
-                            producer_dest, 32'h4000_0000};
+        2, 3: ms_result_unready = !producer_ready;
         default: $fatal(1, "invalid producer slot");
       endcase
     end
@@ -207,8 +193,6 @@ module issue_special_tb;
       tick();
       check_local_wait(1'b1, 5'd12, 1'b0, 5'd0,
                        "lane0 load mirror capture");
-      es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                      5'd12, 32'h1111_1111};
       inst_0 = make_addi(5'd10, 5'd12);
       check_issue(1'b0, 1'b0,
                   "captured lane0 load blocks dependent consumer");
@@ -225,7 +209,6 @@ module issue_special_tb;
       es_allowin = 1'b1;
       check_issue(1'b1, 1'b0, "independent issue replaces load mirror");
       tick();
-      es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
       check_local_wait(1'b0, 5'd0, 1'b0, 5'd0,
                        "ordinary ALU clears wait mirror");
 
@@ -237,8 +220,6 @@ module issue_special_tb;
       tick();
       check_local_wait(1'b0, 5'd0, 1'b1, 5'd13,
                        "lane1 load mirror capture");
-      es_fwd_bus_1 = {1'b1, 1'b1, 1'b0, 1'b1,
-                      5'd13, 32'h2222_2222};
       inst_0 = make_addi(5'd10, 5'd0);
       inst_1 = make_addi(5'd11, 5'd13);
       check_issue(1'b1, 1'b0,
@@ -248,7 +229,6 @@ module issue_special_tb;
       br_taken = 1'b1;
       tick();
       br_taken = 1'b0;
-      es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
       check_local_wait(1'b0, 5'd0, 1'b0, 5'd0,
                        "flush clears wait mirror");
 
@@ -326,10 +306,7 @@ module issue_special_tb;
     br_taken = 1'b0;
     es_allowin = 1'b1;
     special_block = 1'b0;
-    es_fwd_bus_0 = {`ES_FWD_BUS_WD{1'b0}};
-    es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
-    ms_fwd_bus_0 = {`MS_FWD_BUS_WD{1'b0}};
-    ms_fwd_bus_1 = {`MS_FWD_BUS_WD{1'b0}};
+    ms_result_unready = 1'b0;
     inst_0 = INST_ADDI_R2;
     inst_1 = INST_ADDI_R3;
     tick();
@@ -376,10 +353,9 @@ module issue_special_tb;
 
     inst_0 = INST_ADDI_R3;
     inst_1 = INST_ADDI_R5_FROM_R2;
-    es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
-    ms_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1, 5'd2, 32'h89ab_cdef};
+    ms_result_unready = 1'b1;
     check_issue(1'b0, 1'b0, "unready MEM load blocks the issue window");
-    ms_fwd_bus_0 = {1'b1, 1'b1, 1'b1, 1'b1, 5'd2, 32'h89ab_cdef};
+    ms_result_unready = 1'b0;
     check_issue(1'b1, 1'b1, "MEM producer forwards without extra stall");
 
     // The timing cut deliberately applies the ordinary load-use interlock to

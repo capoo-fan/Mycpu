@@ -21,14 +21,6 @@
 `define MS_FWD_DEST      36:32
 
 // ============================================================================
-// ES_FWD_BUS 位提取宏
-// ============================================================================
-`define ES_FWD_VALID     40
-`define ES_FWD_GR_WE     39
-`define ES_FWD_FWD_VALID 38
-`define ES_FWD_RES_MEM   37
-
-// ============================================================================
 // BPU 分支历史表大小（用于 per-PC 统计）
 // ============================================================================
 `define BR_TABLE_SIZE 256
@@ -52,14 +44,6 @@
 `define MS_FWD_FWD_VALID 38
 `define MS_FWD_RES_MEM   37
 `define MS_FWD_DEST      36:32
-
-// ============================================================================
-// ES_FWD_BUS 位提取宏
-// ============================================================================
-`define ES_FWD_VALID     40
-`define ES_FWD_GR_WE     39
-`define ES_FWD_FWD_VALID 38
-`define ES_FWD_RES_MEM   37
 
 // ============================================================================
 // BPU 分支历史表大小（用于 per-PC 统计）
@@ -204,7 +188,6 @@ module supervisor_perf_tb;
 
   // -- 重建的内部信号 --
   wire ms_unready_load_tb;
-  wire es_mul_pending_tb;
   wire [31:0] es_to_ms_bus_0_flat;
   wire [31:0] es_to_ms_bus_1_flat;
 
@@ -215,10 +198,6 @@ module supervisor_perf_tb;
   // MS_FWD_BUS_WD = 41
   wire [63:0] ms_fwd_0_padded = {23'b0, cpu.ms_fwd_bus_0};
   wire [63:0] ms_fwd_1_padded = {23'b0, cpu.ms_fwd_bus_1};
-
-  // ES_FWD_BUS_WD = 41
-  wire [63:0] es_fwd_0_padded = {23'b0, cpu.es_fwd_bus_0};
-  wire [63:0] es_fwd_1_padded = {23'b0, cpu.es_fwd_bus_1};
 
   mycpu_top cpu(
               .clk(clk), .resetn(resetn),
@@ -275,17 +254,6 @@ module supervisor_perf_tb;
       (ms_fwd_1_padded[`MS_FWD_VALID] &&
        ms_fwd_1_padded[`MS_FWD_GR_WE] &&
        !ms_fwd_1_padded[`MS_FWD_FWD_VALID]);
-
-  // es_mul_pending: EXE 阶段有未完成的乘法
-  assign es_mul_pending_tb =
-      (es_fwd_0_padded[`ES_FWD_VALID] &&
-       es_fwd_0_padded[`ES_FWD_GR_WE] &&
-       !es_fwd_0_padded[`ES_FWD_FWD_VALID] &&
-       !es_fwd_0_padded[`ES_FWD_RES_MEM]) ||
-      (es_fwd_1_padded[`ES_FWD_VALID] &&
-       es_fwd_1_padded[`ES_FWD_GR_WE] &&
-       !es_fwd_1_padded[`ES_FWD_FWD_VALID] &&
-       !es_fwd_1_padded[`ES_FWD_RES_MEM]);
 
   // =========================================================================
   // 主计数器逻辑

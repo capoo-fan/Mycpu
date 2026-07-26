@@ -75,11 +75,10 @@ module mycpu_top(
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_1;
 
-  // 前递总线
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
+  // MEM/WB 到 EX 的旁路总线
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
+  wire                       ms_result_unready;
 
   // 写回总线
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
@@ -331,10 +330,7 @@ module mycpu_top(
                 .br_taken         (pipeline_flush),
                 .special_block    (special_block),
                 .es_allowin       (es_allowin),
-                .es_fwd_bus_0     (es_fwd_bus_0),
-                .es_fwd_bus_1     (es_fwd_bus_1),
-                .ms_fwd_bus_0     (ms_fwd_bus_0),
-                .ms_fwd_bus_1     (ms_fwd_bus_1),
+                .ms_result_unready(ms_result_unready),
                 .ws_to_rf_bus     (ws_to_rf_bus),
                 .ds_to_es_valid_0 (ds_to_es_valid_0),
                 .ds_to_es_valid_1 (ds_to_es_valid_1),
@@ -357,8 +353,9 @@ module mycpu_top(
               .es_to_ms_valid_1 (es_to_ms_valid_1),
               .es_to_ms_bus_0   (es_to_ms_bus_0),
               .es_to_ms_bus_1   (es_to_ms_bus_1),
-              .es_fwd_bus_0     (es_fwd_bus_0),
-              .es_fwd_bus_1     (es_fwd_bus_1),
+              .ms_fwd_bus_0     (ms_fwd_bus_0),
+              .ms_fwd_bus_1     (ms_fwd_bus_1),
+              .ws_to_rf_bus     (ws_to_rf_bus),
               .csr_busy         (es_csr_busy),
               .cacop_busy       (es_cacop_busy),
               .csr_raddr        (csr_raddr),
@@ -381,6 +378,7 @@ module mycpu_top(
               .ms_to_ws_bus_1    (ms_to_ws_bus_1),
               .ms_fwd_bus_0      (ms_fwd_bus_0),
               .ms_fwd_bus_1      (ms_fwd_bus_1),
+              .ms_result_unready (ms_result_unready),
               .csr_busy          (ms_csr_busy),
               .cacop_busy        (ms_cacop_busy),
               .br_taken          (br_taken),

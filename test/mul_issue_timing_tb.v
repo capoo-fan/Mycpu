@@ -37,8 +37,6 @@ module mul_issue_timing_tb;
   wire es_to_ms_valid_1;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_1;
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
 
   function [31:0] make_mul;
     input [4:0] rd;
@@ -70,9 +68,7 @@ module mul_issue_timing_tb;
     .front_raddr2_1_hot(front_raddr2_1_hot),
     .pop_0(pop_0), .pop_1(pop_1), .special_fire(),
     .br_taken(flush), .special_block(1'b0), .es_allowin(es_allowin),
-    .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
-    .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
-    .ms_fwd_bus_1({`MS_FWD_BUS_WD{1'b0}}),
+    .ms_result_unready(1'b0),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
     .ds_to_es_valid_0(ds_to_es_valid_0),
     .ds_to_es_valid_1(ds_to_es_valid_1),
@@ -90,7 +86,9 @@ module mul_issue_timing_tb;
     .es_to_ms_valid_0(es_to_ms_valid_0),
     .es_to_ms_valid_1(es_to_ms_valid_1),
     .es_to_ms_bus_0(es_to_ms_bus_0), .es_to_ms_bus_1(es_to_ms_bus_1),
-    .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
+    .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
+    .ms_fwd_bus_1({`MS_FWD_BUS_WD{1'b0}}),
+    .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
     .csr_busy(), .cacop_busy(), .csr_raddr(), .csr_rdata(32'b0)
   );
 
@@ -208,7 +206,7 @@ module mul_issue_timing_tb;
     expect_blocked_cycles(2);
     @(posedge clk);
     #1;
-    if (!es_fwd_bus_0[38] || !pop_0 || pop_1)
+    if (u_exe.mul_pending_0 || !pop_0 || pop_1)
       fail("lane0 RAW consumer did not issue on multiply completion");
 
     // A lane1 multiply blocks a dependent lane1 instruction but must not add
@@ -227,7 +225,7 @@ module mul_issue_timing_tb;
     expect_blocked_cycles(2);
     @(posedge clk);
     #1;
-    if (!es_fwd_bus_1[38] || !pop_0 || !pop_1)
+    if (u_exe.mul_pending_1 || !pop_0 || !pop_1)
       fail("dependent pair did not issue on lane1 multiply completion");
 
     // Both multipliers complete together. MEM backpressure may hold the packet,
@@ -246,7 +244,7 @@ module mul_issue_timing_tb;
     expect_blocked_cycles(2);
     @(posedge clk);
     #1;
-    if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
+    if (u_exe.mul_pending_0 || u_exe.mul_pending_1 || pop_0 || pop_1)
       fail("MEM backpressure handling at multiply completion is incorrect");
     @(negedge clk);
     ms_allowin = 1'b1;
@@ -264,7 +262,7 @@ module mul_issue_timing_tb;
     expect_pop(1'b0, 1'b0, "flush did not block ISSUE");
     @(posedge clk);
     #1;
-    if (u_exe.mul_pending_0 !== 1'b0 || es_fwd_bus_0[40] !== 1'b0)
+    if (u_exe.mul_pending_0 !== 1'b0 || u_exe.es_valid_0 !== 1'b0)
       fail("flush did not clear multiply pending state");
     @(negedge clk);
     flush = 1'b0;
