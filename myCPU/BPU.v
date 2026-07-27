@@ -81,9 +81,9 @@ module BPU (
                                                 (pred_bank ? btb_target[1'b1][pred_row] :
                                                              btb_target[1'b0][pred_row]);
 
-  assign pred_taken = if_valid && raw_pred_taken;
-  assign pred_target = pred_taken ? raw_pred_target : 32'b0;
-  assign pred_lane = pred_taken ? raw_pred_lane : 1'b0;
+  assign pred_taken  = if_valid && raw_pred_taken;
+  assign pred_target = raw_pred_target;
+  assign pred_lane   = pred_taken ? raw_pred_lane : 1'b0;
 
   wire                   update_valid_s1 = ex_valid && ex_is_bj;
   wire [BPU_TAG_W-1:0]   update_tag_s1   = btb_tag(ex_pc);
