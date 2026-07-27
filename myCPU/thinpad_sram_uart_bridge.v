@@ -52,7 +52,7 @@ module thinpad_sram_uart_bridge(
     localparam [1:0] S_ACCESS = 2'd1;
     localparam [1:0] S_DONE   = 2'd2;
     // One accepted cycle + one ACCESS cycle; read keeps CE/OE active in DONE.
-    localparam [1:0] SRAM_WAIT_LAST = 2'd0;
+    localparam [1:0] SRAM_WAIT_LAST = 2'd1;
 
     // CPU 导出翻译后的物理地址。
     //解码完整的窗口，以便 UART 和未映射的外设不能与 SRAM 别名。
