@@ -29,7 +29,7 @@ module ISSUE_stage(
     output wire                           ds_to_es_valid_0,
     output wire                           ds_to_es_valid_1,
     output wire [`DS_TO_ES_BUS_WD-1:  0]  ds_to_es_bus_0,
-    output wire [`DS_TO_ES_BUS_WD-1:  0]  ds_to_es_bus_1
+    output wire [`DS_TO_ES_BUS_1_WD-1:0]  ds_to_es_bus_1
   );
 
   // 两条指令译码
@@ -138,10 +138,7 @@ module ISSUE_stage(
   wire        inst_b_1;
   wire        is_cpucfg_1;
   wire        is_cacop_1;
-  wire [ 4:0] cacop_code_1;
   wire        is_csr_1;
-  wire        is_csrxchg_1;
-  wire [13:0] csr_num_1;
 
   assign {alu_op_1, imm_1, br_offs_1, jirl_offs_1,
           rf_raddr1_1, rf_raddr2_1, dest_1,
@@ -150,9 +147,10 @@ module ISSUE_stage(
           ld_byte_1, ld_half_1, ld_sign_ext_1, st_byte_1, st_half_1,
           need_rj_1, need_rkd_1, is_bj_1,
           inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1, inst_bltu_1, inst_bgeu_1,
-          inst_jirl_1, inst_bl_1, inst_b_1,
-          is_cpucfg_1, is_cacop_1, cacop_code_1,
-          is_csr_1, is_csrxchg_1, csr_num_1} = dec_bus_1;
+          inst_jirl_1, inst_bl_1, inst_b_1} = dec_bus_1[`DS_DEC_BUS_WD-1:23];
+  assign is_cpucfg_1 = dec_bus_1[22];
+  assign is_cacop_1  = dec_bus_1[21];
+  assign is_csr_1    = dec_bus_1[15];
 
   // 拆解前递总线
   wire        es_valid_0;
@@ -441,7 +439,7 @@ module ISSUE_stage(
        (res_from_mem_0 || is_cpucfg_0 || is_csr_0 || is_cacop_0);
   wire capture_ex_wait_1 = ds_to_es_valid_1 && gr_we_1 &&
        (dest_1 != 5'b0) &&
-       (res_from_mem_1 || is_cpucfg_1 || is_csr_1 || is_cacop_1);
+       res_from_mem_1;
 
   always @(posedge clk)
   begin
@@ -589,13 +587,7 @@ module ISSUE_stage(
                            ds_pred_taken_1,
                            ds_pred_target_1,
                            ds_br_op_1,
-                           ds_br_offs_1,
-                           1'b0,
-                           1'b0,
-                           5'b0,
-                           1'b0,
-                           1'b0,
-                           14'b0
+                           ds_br_offs_1
                           };
 
 endmodule

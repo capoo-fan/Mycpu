@@ -115,7 +115,7 @@ module csr_pipeline_tb;
     if (!resetn)
       lane1_wb_pc <= 32'b0;
     else if (dut.ms_to_ws_valid_1)
-      lane1_wb_pc <= dut.ms_to_ws_bus_1[184:153];
+      lane1_wb_pc <= dut.ms_to_ws_bus_1[105:74];
 
     if (resetn && inst_req && (inst_addr[31:29] == 3'b001))
       saw_mapped_fetch <= 1'b1;

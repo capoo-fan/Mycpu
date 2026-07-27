@@ -69,11 +69,11 @@ module mycpu_top(
   wire        ms_to_ws_valid_1;
 
   wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_0;
-  wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_1;
+  wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
-  wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_1;
+  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
-  wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_1;
+  wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1;
 
   // 前递总线
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;

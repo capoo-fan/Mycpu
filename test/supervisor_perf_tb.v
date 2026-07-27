@@ -208,9 +208,10 @@ module supervisor_perf_tb;
   wire [31:0] es_to_ms_bus_0_flat;
   wire [31:0] es_to_ms_bus_1_flat;
 
-  // ES_TO_MS_BUS_WD = 295, pad to 320 for convenient bit indexing
+  // lane0 keeps the 295-bit special-instruction payload. lane1 drops that
+  // payload; append 85 zero bits so the shared branch-field indices stay put.
   wire [319:0] es_bus_0_padded = {25'b0, cpu.es_to_ms_bus_0};
-  wire [319:0] es_bus_1_padded = {25'b0, cpu.es_to_ms_bus_1};
+  wire [319:0] es_bus_1_padded = {26'b0, cpu.es_to_ms_bus_1, 85'b0};
 
   // MS_FWD_BUS_WD = 41
   wire [63:0] ms_fwd_0_padded = {23'b0, cpu.ms_fwd_bus_0};

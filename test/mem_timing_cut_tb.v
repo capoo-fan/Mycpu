@@ -7,7 +7,7 @@ module mem_timing_cut_tb;
   reg es_valid_0;
   reg es_valid_1;
   reg [`ES_TO_MS_BUS_WD-1:0] es_bus_0;
-  reg [`ES_TO_MS_BUS_WD-1:0] es_bus_1;
+  reg [`ES_TO_MS_BUS_1_WD-1:0] es_bus_1;
   reg data_addr_ok;
   reg data_data_ok;
   reg data_addr_is_sram;
@@ -19,7 +19,7 @@ module mem_timing_cut_tb;
   wire ms_to_ws_valid_0;
   wire ms_to_ws_valid_1;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
-  wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_1;
+  wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
   wire br_taken;
@@ -99,6 +99,30 @@ module mem_timing_cut_tb;
     end
   endfunction
 
+  function [`ES_TO_MS_BUS_1_WD-1:0] make_packet_1;
+    input [31:0] pc;
+    input [31:0] result;
+    input [31:0] rkd;
+    input res_from_mem;
+    input gr_we;
+    input mem_we;
+    input [4:0] dest;
+    input is_bj;
+    input real_taken;
+    input [31:0] real_target;
+    input [31:0] next_pc;
+    input redirect_miss;
+    begin
+      make_packet_1 = {
+        pc, result, rkd,
+        res_from_mem, gr_we, mem_we, dest,
+        1'b0, 1'b0, 1'b0, 1'b0, 1'b0,
+        1'b0, 32'b0,
+        is_bj, real_taken, real_target, next_pc, redirect_miss
+      };
+    end
+  endfunction
+
   task fail;
     input [511:0] message;
     begin
@@ -111,7 +135,7 @@ module mem_timing_cut_tb;
     input valid_0;
     input [`ES_TO_MS_BUS_WD-1:0] packet_0;
     input valid_1;
-    input [`ES_TO_MS_BUS_WD-1:0] packet_1;
+    input [`ES_TO_MS_BUS_1_WD-1:0] packet_1;
     begin
       while (!ms_allowin)
         @(posedge clk);
@@ -126,7 +150,7 @@ module mem_timing_cut_tb;
       es_valid_0 = 1'b0;
       es_valid_1 = 1'b0;
       es_bus_0 = {`ES_TO_MS_BUS_WD{1'b0}};
-      es_bus_1 = {`ES_TO_MS_BUS_WD{1'b0}};
+      es_bus_1 = {`ES_TO_MS_BUS_1_WD{1'b0}};
     end
   endtask
 
@@ -189,7 +213,7 @@ module mem_timing_cut_tb;
     es_valid_0 = 1'b0;
     es_valid_1 = 1'b0;
     es_bus_0 = {`ES_TO_MS_BUS_WD{1'b0}};
-    es_bus_1 = {`ES_TO_MS_BUS_WD{1'b0}};
+    es_bus_1 = {`ES_TO_MS_BUS_1_WD{1'b0}};
     data_addr_ok = 1'b0;
     data_data_ok = 1'b0;
     data_addr_is_sram = 1'b1;
@@ -212,10 +236,10 @@ module mem_timing_cut_tb;
                         1'b0, 1'b1, 1'b0, 5'd2,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0004,
                         1'b0, 1'b0, 5'b0),
-      1'b1, make_packet(32'h1c00_0004, 32'h22, 32'b0,
+      1'b1, make_packet_1(32'h1c00_0004, 32'h22, 32'b0,
                         1'b0, 1'b1, 1'b0, 5'd3,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0008,
-                        1'b0, 1'b0, 5'b0));
+                        1'b0));
     if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1)
       fail("ordinary dual packet did not pass MEM immediately");
     if (!ms_fwd_bus_0[38] || ms_fwd_bus_0[31:0] !== 32'h11)
@@ -230,7 +254,7 @@ module mem_timing_cut_tb;
                            1'b0, 1'b0, 32'b0, 32'h1c00_000c,
                            1'b0, 1'b0, 5'b0);
     es_bus_0[`ES_TO_MS_BUS_WD-1] = 1'b0;
-    submit_pair(1'b1, es_bus_0, 1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+    submit_pair(1'b1, es_bus_0, 1'b0, {`ES_TO_MS_BUS_1_WD{1'b0}});
     if (!ms_fwd_bus_0[40] || !ms_fwd_bus_0[39] || ms_fwd_bus_0[38] ||
         ms_fwd_bus_0[36:32] !== 5'd12 || ms_fwd_bus_0[31:0] !== 32'b0)
       fail("special result was not isolated from MEM forwarding");
@@ -243,10 +267,10 @@ module mem_timing_cut_tb;
                         1'b0, 1'b1, 1'b0, 5'd4,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0014,
                         1'b0, 1'b0, 5'b0),
-      1'b1, make_packet(32'h1c00_0014, 32'h1c40_0100, 32'b0,
+      1'b1, make_packet_1(32'h1c00_0014, 32'h1c40_0100, 32'b0,
                         1'b1, 1'b1, 1'b0, 5'd5,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0018,
-                        1'b0, 1'b0, 5'b0));
+                        1'b0));
     if (!data_req || data_wr || data_addr !== 32'h1c40_0100 || ms_allowin)
       fail("lane1 load control was not registered correctly");
     accept_memory_response(32'h1234_5678);
@@ -263,10 +287,10 @@ module mem_timing_cut_tb;
                         1'b0, 1'b1, 1'b0, 5'd1,
                         1'b1, 1'b1, 32'h1c00_1000, 32'h1c00_0024,
                         1'b1, 1'b0, 5'b0),
-      1'b1, make_packet(32'h1c00_0024, 32'h1c40_0200, 32'ha5a5_5a5a,
+      1'b1, make_packet_1(32'h1c00_0024, 32'h1c40_0200, 32'ha5a5_5a5a,
                         1'b0, 1'b0, 1'b1, 5'b0,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0028,
-                        1'b0, 1'b0, 5'b0));
+                        1'b0));
     if (br_taken || br_target !== 32'b0)
       fail("lane0 redirect was not delayed by one cycle");
     if (data_req || data_wr || ms_to_ws_valid_1)
@@ -306,10 +330,10 @@ module mem_timing_cut_tb;
                         1'b0, 1'b0, 1'b0, 5'b0,
                         1'b1, 1'b0, 32'b0, 32'h1c00_0034,
                         1'b0, 1'b0, 5'b0),
-      1'b1, make_packet(32'h1c00_0034, 32'h1c40_0300, 32'hcafe_babe,
+      1'b1, make_packet_1(32'h1c00_0034, 32'h1c40_0300, 32'hcafe_babe,
                         1'b0, 1'b0, 1'b1, 5'b0,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0038,
-                        1'b0, 1'b0, 5'b0));
+                        1'b0));
     if (!data_req || !data_wr || data_addr !== 32'h1c40_0300 ||
         data_wdata !== 32'hcafe_babe || br_taken)
       fail("correct-path lane1 store was not retained");
@@ -325,10 +349,10 @@ module mem_timing_cut_tb;
                         1'b0, 1'b1, 1'b0, 5'd7,
                         1'b0, 1'b0, 32'b0, 32'h1c00_003c,
                         1'b0, 1'b0, 5'b0),
-      1'b1, make_packet(32'h1c00_003c, 32'h66, 32'b0,
+      1'b1, make_packet_1(32'h1c00_003c, 32'h66, 32'b0,
                         1'b0, 1'b1, 1'b0, 5'd8,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0040,
-                        1'b0, 1'b0, 5'b0));
+                        1'b0));
     if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1 ||
         !dut.ms_data_pending)
       fail("posted store response blocked an independent ALU packet");
@@ -340,7 +364,7 @@ module mem_timing_cut_tb;
                         1'b1, 1'b1, 1'b0, 5'd9,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0044,
                         1'b0, 1'b0, 5'b0),
-      1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+      1'b0, {`ES_TO_MS_BUS_1_WD{1'b0}});
     if (data_req || ms_allowin)
       fail("younger load bypassed a pending posted store");
     complete_memory_response(32'b0);
@@ -361,7 +385,7 @@ module mem_timing_cut_tb;
                         1'b0, 1'b0, 1'b1, 5'b0,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0044,
                         1'b0, 1'b0, 5'b0),
-      1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+      1'b0, {`ES_TO_MS_BUS_1_WD{1'b0}});
     if (!data_req || !data_wr || ms_allowin)
       fail("non-SRAM store request did not wait for address acceptance");
     accept_memory_address();
@@ -383,10 +407,10 @@ module mem_timing_cut_tb;
                         1'b0, 1'b1, 1'b0, 5'd6,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0044,
                         1'b0, 1'b0, 5'b0),
-      1'b1, make_packet(32'h1c00_0044, 32'b0, 32'b0,
+      1'b1, make_packet_1(32'h1c00_0044, 32'b0, 32'b0,
                         1'b0, 1'b0, 1'b0, 5'b0,
                         1'b1, 1'b1, 32'h1c00_2000, 32'h1c00_0048,
-                        1'b1, 1'b0, 5'b0));
+                        1'b1));
     if (br_taken || !bpu_valid || bpu_pc !== 32'h1c00_0044 ||
         !ms_to_ws_valid_0 || !ms_to_ws_valid_1)
       fail("lane1 branch detect/update/retirement failed");
@@ -405,7 +429,7 @@ module mem_timing_cut_tb;
                         1'b0, 1'b0, 1'b0, 5'b0,
                         1'b0, 1'b0, 32'b0, 32'h1c00_0054,
                         1'b0, 1'b1, 5'h10),
-      1'b0, {`ES_TO_MS_BUS_WD{1'b0}});
+      1'b0, {`ES_TO_MS_BUS_1_WD{1'b0}});
     if (!icacop_req_valid || icacop_req_code !== 5'h10 ||
         icacop_req_addr !== 32'h1c00_0080 || ms_allowin)
       fail("CACOP request state was not registered correctly");

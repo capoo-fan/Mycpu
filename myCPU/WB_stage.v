@@ -1,12 +1,12 @@
 `include "mycpu.vh"
 
 module WB_stage(
-    input  wire                         clk,
-    input  wire                         resetn,
-    input  wire                         ms_to_ws_valid_0,
-    input  wire                         ms_to_ws_valid_1,
-    input  wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_0,
-    input  wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_1,
+    input  wire                          clk,
+    input  wire                          resetn,
+    input  wire                          ms_to_ws_valid_0,
+    input  wire                          ms_to_ws_valid_1,
+    input  wire [`MS_TO_WS_BUS_WD-1:0]   ms_to_ws_bus_0,
+    input  wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1,
 
     output wire                         ws_allowin,
     output wire [`WS_TO_RF_BUS_WD-1:0]  ws_to_rf_bus,
@@ -47,10 +47,6 @@ module WB_stage(
   reg         ws_ld_byte_1;
   reg         ws_ld_half_1;
   reg         ws_ld_sign_ext_1;
-  reg         ws_is_csr_1;
-  reg  [13:0] ws_csr_num_1;
-  reg  [31:0] ws_csr_wmask_1;
-  reg  [31:0] ws_csr_wvalue_1;
 
   localparam [2:0] CSR_IDLE       = 3'd0;
   localparam [2:0] CSR_APPLY      = 3'd1;
@@ -91,15 +87,10 @@ module WB_stage(
   wire        ms_ld_half_1;
   wire        ms_ld_sign_ext_1;
   wire [31:0] ms_mem_rdata_1;
-  wire        ms_is_csr_1;
-  wire [13:0] ms_csr_num_1;
-  wire [31:0] ms_csr_wmask_1;
-  wire [31:0] ms_csr_wvalue_1;
 
   assign {unused_ms_pc_1, ms_alu_result_1, ms_res_from_mem_1, ms_gr_we_1, ms_dest_1,
           ms_ld_byte_1, ms_ld_half_1, ms_ld_sign_ext_1,
-          ms_mem_rdata_1, ms_is_csr_1, ms_csr_num_1,
-          ms_csr_wmask_1, ms_csr_wvalue_1} = ms_to_ws_bus_1;
+          ms_mem_rdata_1} = ms_to_ws_bus_1;
 
   // 加载数据的函数
   function [31:0] load_result;
@@ -229,10 +220,6 @@ module WB_stage(
       ws_ld_byte_1      <= 1'b0;
       ws_ld_half_1      <= 1'b0;
       ws_ld_sign_ext_1  <= 1'b0;
-      ws_is_csr_1       <= 1'b0;
-      ws_csr_num_1      <= 14'b0;
-      ws_csr_wmask_1    <= 32'b0;
-      ws_csr_wvalue_1   <= 32'b0;
     end
     else if (ws_allowin)
     begin
@@ -269,16 +256,11 @@ module WB_stage(
         ws_ld_byte_1      <= ms_ld_byte_1;
         ws_ld_half_1      <= ms_ld_half_1;
         ws_ld_sign_ext_1  <= ms_ld_sign_ext_1;
-        ws_is_csr_1       <= ms_is_csr_1;
-        ws_csr_num_1      <= ms_csr_num_1;
-        ws_csr_wmask_1    <= ms_csr_wmask_1;
-        ws_csr_wvalue_1   <= ms_csr_wvalue_1;
       end
       else
       begin
         ws_gr_we_1        <= 1'b0;
         ws_res_from_mem_1 <= 1'b0;
-        ws_is_csr_1       <= 1'b0;
       end
     end
   end

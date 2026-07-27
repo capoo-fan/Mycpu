@@ -6,13 +6,13 @@ module MEM_stage(
     input  wire                         es_to_ms_valid_0,
     input  wire                         es_to_ms_valid_1,
     input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
-    input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_1,
+    input  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
     input  wire                         ws_allowin,
     output wire                         ms_allowin,
     output wire                         ms_to_ws_valid_0,
     output wire                         ms_to_ws_valid_1,
     output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_0,
-    output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_1,
+    output wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_0,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_1,
     output wire                         csr_busy,
@@ -83,7 +83,6 @@ module MEM_stage(
   reg  [31:0] ms_csr_wvalue_0;
 
   reg         ms_valid_1;
-  reg         ms_result_forwardable_1;
   reg  [31:0] ms_pc_1;
   reg  [31:0] ms_alu_result_1;
   reg  [31:0] ms_rkd_value_1;
@@ -103,12 +102,6 @@ module MEM_stage(
   reg  [31:0] ms_real_target_1;
   reg  [31:0] ms_next_pc_1;
   reg         ms_redirect_miss_1;
-  reg         ms_is_cacop_1;
-  reg  [ 4:0] ms_cacop_code_1;
-  reg         ms_is_csr_1;
-  reg  [13:0] ms_csr_num_1;
-  reg  [31:0] ms_csr_wmask_1;
-  reg  [31:0] ms_csr_wvalue_1;
 
   wire        es_result_forwardable_0;
   wire [31:0] es_pc_0;
@@ -149,7 +142,6 @@ module MEM_stage(
           es_is_csr_0, es_csr_num_0, es_csr_wmask_0,
           es_csr_wvalue_0} = es_to_ms_bus_0;
 
-  wire        es_result_forwardable_1;
   wire [31:0] es_pc_1;
   wire [31:0] es_final_result_1;
   wire [31:0] es_rkd_value_1;
@@ -169,24 +161,14 @@ module MEM_stage(
   wire [31:0] es_real_target_1;
   wire [31:0] es_next_pc_1;
   wire        es_redirect_miss_1;
-  wire        es_is_cacop_1;
-  wire [ 4:0] es_cacop_code_1;
-  wire        es_is_csr_1;
-  wire [13:0] es_csr_num_1;
-  wire [31:0] es_csr_wmask_1;
-  wire [31:0] es_csr_wvalue_1;
 
-  assign {es_result_forwardable_1,
-          es_pc_1, es_final_result_1, es_rkd_value_1,
+  assign {es_pc_1, es_final_result_1, es_rkd_value_1,
           es_res_from_mem_1, es_gr_we_1, es_mem_we_1, es_dest_1,
           es_ld_byte_1, es_ld_half_1, es_ld_sign_ext_1,
           es_st_byte_1, es_st_half_1,
           es_pred_taken_1, es_pred_target_1,
           es_is_bj_1, es_real_taken_1, es_real_target_1,
-          es_next_pc_1, es_redirect_miss_1,
-          es_is_cacop_1, es_cacop_code_1,
-          es_is_csr_1, es_csr_num_1, es_csr_wmask_1,
-          es_csr_wvalue_1} = es_to_ms_bus_1;
+          es_next_pc_1, es_redirect_miss_1} = es_to_ms_bus_1;
 
   assign csr_busy = ms_valid_0 && ms_is_csr_0;
   assign cacop_busy = ms_valid_0 && ms_is_cacop_0;
@@ -329,12 +311,11 @@ module MEM_stage(
   // 在同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
   wire ms_fwd_valid_0 = ms_result_forwardable_0 &&
        (!ms_res_from_mem_0 || mem_data_ready);
-  wire ms_fwd_valid_1 = ms_result_forwardable_1 &&
-       (!ms_res_from_mem_1 || mem_data_ready);
+  wire ms_fwd_valid_1 = !ms_res_from_mem_1 || mem_data_ready;
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 :
        (ms_result_forwardable_0 ? ms_alu_result_0 : 32'b0);
-  wire [31:0] ms_fwd_data_1 = ms_res_from_mem_1 ? ms_load_result_1 :
-       (ms_result_forwardable_1 ? ms_alu_result_1 : 32'b0);
+  wire [31:0] ms_fwd_data_1 = ms_res_from_mem_1 ?
+       ms_load_result_1 : ms_alu_result_1;
 
   assign ms_fwd_bus_0 = {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
                          ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0};
@@ -364,11 +345,7 @@ module MEM_stage(
                            ms_ld_byte_1,
                            ms_ld_half_1,
                            ms_ld_sign_ext_1,
-                           ms_final_rdata,
-                           ms_is_csr_1,
-                           ms_csr_num_1,
-                           ms_csr_wmask_1,
-                           ms_csr_wvalue_1
+                           ms_final_rdata
                           };
 
   always @(posedge clk)
@@ -518,7 +495,6 @@ module MEM_stage(
       ms_csr_wmask_0    <= 32'b0;
       ms_csr_wvalue_0   <= 32'b0;
 
-      ms_result_forwardable_1 <= 1'b0;
       ms_pc_1           <= 32'b0;
       ms_gr_we_1        <= 1'b0;
       ms_mem_we_1       <= 1'b0;
@@ -538,12 +514,6 @@ module MEM_stage(
       ms_real_target_1  <= 32'b0;
       ms_next_pc_1      <= 32'b0;
       ms_redirect_miss_1 <= 1'b0;
-      ms_is_cacop_1     <= 1'b0;
-      ms_cacop_code_1   <= 5'b0;
-      ms_is_csr_1       <= 1'b0;
-      ms_csr_num_1      <= 14'b0;
-      ms_csr_wmask_1    <= 32'b0;
-      ms_csr_wvalue_1   <= 32'b0;
     end
     else if (br_taken || branch_redirect_fire)
     begin
@@ -558,7 +528,6 @@ module MEM_stage(
       ms_res_from_mem_1 <= 1'b0;
       ms_is_bj_1        <= 1'b0;
       ms_redirect_miss_1 <= 1'b0;
-      ms_is_cacop_1     <= 1'b0;
     end
     else if (ms_allowin)
     begin
@@ -605,7 +574,6 @@ module MEM_stage(
 
       if (es_to_ms_valid_1)
       begin
-        ms_result_forwardable_1 <= es_result_forwardable_1;
         ms_pc_1           <= es_pc_1;
         ms_alu_result_1   <= es_final_result_1;
         ms_rkd_value_1    <= es_rkd_value_1;
@@ -625,23 +593,14 @@ module MEM_stage(
         ms_real_target_1  <= es_real_target_1;
         ms_next_pc_1      <= es_next_pc_1;
         ms_redirect_miss_1 <= es_redirect_miss_1;
-        ms_is_cacop_1     <= es_is_cacop_1;
-        ms_cacop_code_1   <= es_cacop_code_1;
-        ms_is_csr_1       <= es_is_csr_1;
-        ms_csr_num_1      <= es_csr_num_1;
-        ms_csr_wmask_1    <= es_csr_wmask_1;
-        ms_csr_wvalue_1   <= es_csr_wvalue_1;
       end
       else
       begin
-        ms_result_forwardable_1 <= 1'b0;
         ms_gr_we_1        <= 1'b0;
         ms_mem_we_1       <= 1'b0;
         ms_res_from_mem_1 <= 1'b0;
         ms_is_bj_1        <= 1'b0;
         ms_redirect_miss_1 <= 1'b0;
-        ms_is_cacop_1     <= 1'b0;
-        ms_is_csr_1       <= 1'b0;
       end
     end
   end
@@ -653,8 +612,6 @@ module MEM_stage(
     begin
       if (ms_valid_0 && !ms_result_forwardable_0 && ms_fwd_valid_0)
         $fatal(1, "lane0 special result entered MEM forwarding");
-      if (ms_valid_1 && !ms_result_forwardable_1 && ms_fwd_valid_1)
-        $fatal(1, "lane1 special result entered MEM forwarding");
       if (ms_res_from_mem_0 && ms_fwd_valid_0 && !ms_rdata_buf_valid)
         $fatal(1, "lane0 load forwarded an unregistered SRAM response");
       if (ms_res_from_mem_1 && ms_fwd_valid_1 && !ms_rdata_buf_valid)

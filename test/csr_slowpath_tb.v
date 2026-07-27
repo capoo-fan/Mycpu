@@ -29,7 +29,7 @@ module csr_slowpath_tb;
     .clk(clk), .resetn(resetn),
     .ms_to_ws_valid_0(ms_valid), .ms_to_ws_valid_1(1'b0),
     .ms_to_ws_bus_0(ms_bus),
-    .ms_to_ws_bus_1({`MS_TO_WS_BUS_WD{1'b0}}),
+    .ms_to_ws_bus_1({`MS_TO_WS_BUS_1_WD{1'b0}}),
     .ws_allowin(ws_allowin), .ws_to_rf_bus(), .csr_busy(csr_busy),
     .csr_we(csr_we), .csr_waddr(csr_waddr),
     .csr_wmask(csr_wmask), .csr_wdata(csr_wdata),

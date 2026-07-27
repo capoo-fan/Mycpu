@@ -31,12 +31,12 @@ module mul_issue_timing_tb;
   wire ds_to_es_valid_0;
   wire ds_to_es_valid_1;
   wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_0;
-  wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_1;
+  wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1;
   wire es_allowin;
   wire es_to_ms_valid_0;
   wire es_to_ms_valid_1;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
-  wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_1;
+  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1;
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
 

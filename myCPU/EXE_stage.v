@@ -6,14 +6,14 @@ module EXE_stage(
     input  wire                         ds_to_es_valid_0,
     input  wire                         ds_to_es_valid_1,
     input  wire [`DS_TO_ES_BUS_WD-1:0]  ds_to_es_bus_0,
-    input  wire [`DS_TO_ES_BUS_WD-1:0]  ds_to_es_bus_1,
+    input  wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1,
     input  wire                         flush,
     input  wire                         ms_allowin,
     output wire                         es_allowin,
     output wire                         es_to_ms_valid_0,
     output wire                         es_to_ms_valid_1,
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
-    output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_1,
+    output wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_0,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_1,
     output wire                         csr_busy,
@@ -81,13 +81,6 @@ module EXE_stage(
   reg  [31:0] es_pred_target_1;
   reg  [ 3:0] es_br_op_1;
   reg  [31:0] es_br_offs_1;
-  reg         es_is_cpucfg_1;
-  reg         es_is_cacop_1;
-  reg  [ 4:0] es_cacop_code_1;
-  reg         es_is_csr_1;
-  reg  [13:0] es_csr_num_1;
-  reg  [31:0] es_csr_wmask_1;
-  reg  [31:0] es_csr_wvalue_1;
 
   wire [31:0] ds_pc_0;
   wire [11:0] ds_alu_op_0;
@@ -147,21 +140,14 @@ module EXE_stage(
   wire [31:0] ds_pred_target_1;
   wire [ 3:0] ds_br_op_1;
   wire [31:0] ds_br_offs_1;
-  wire        ds_is_cpucfg_1;
-  wire        ds_is_cacop_1;
-  wire [ 4:0] ds_cacop_code_1;
-  wire        ds_is_csr_1;
-  wire        ds_is_csrxchg_1;
-  wire [13:0] ds_csr_num_1;
 
   assign {ds_pc_1, ds_alu_op_1, ds_alu_src1_1, ds_alu_src2_1, ds_rkd_value_1,
           ds_res_from_mem_1, ds_gr_we_1, ds_mem_we_1, ds_dest_1,
           ds_is_mul_1, ds_mul_signed_1, ds_mul_hi_1,
           ds_ld_byte_1, ds_ld_half_1, ds_ld_sign_ext_1,
           ds_st_byte_1, ds_st_half_1,
-          ds_pred_taken_1, ds_pred_target_1, ds_br_op_1, ds_br_offs_1,
-          ds_is_cpucfg_1, ds_is_cacop_1, ds_cacop_code_1,
-          ds_is_csr_1, ds_is_csrxchg_1, ds_csr_num_1} = ds_to_es_bus_1;
+          ds_pred_taken_1, ds_pred_target_1,
+          ds_br_op_1, ds_br_offs_1} = ds_to_es_bus_1;
 
   // 乘法 IP 的结果在进入 EX 后第三拍可用。mul_pending 在倒数一拍
   // 的时钟沿清零，使完成状态先寄存，再送往 ISSUE，切断计数器到
@@ -208,14 +194,10 @@ module EXE_stage(
   wire [31:0] es_exec_result_1 = es_is_mul_1 ? es_mul_result_1 : alu_result_1;
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
-  wire [31:0] es_final_result_1 = es_is_cpucfg_1 ?
-       cpucfg_result(es_alu_src1_1) : es_exec_result_1;
 
   //去除掉低频指令的前递
   wire es_result_forwardable_0 =
        !(es_is_csr_0 || es_is_cpucfg_0 || es_is_cacop_0);
-  wire es_result_forwardable_1 =
-       !(es_is_csr_1 || es_is_cpucfg_1 || es_is_cacop_1);
 
   wire        es_is_bj_0;
   wire        es_real_taken_0;
@@ -263,8 +245,7 @@ module EXE_stage(
 
   wire es_fwd_valid_0 = es_result_forwardable_0 &&
        !es_res_from_mem_0 && !mul_pending_0;
-  wire es_fwd_valid_1 = es_result_forwardable_1 &&
-       !es_res_from_mem_1 && !mul_pending_1;
+  wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_1;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
                          es_res_from_mem_0, es_dest_0, es_exec_result_0};
@@ -299,9 +280,8 @@ module EXE_stage(
                            es_csr_wvalue_0
                           };
 
-  assign es_to_ms_bus_1 = {es_result_forwardable_1,
-                           es_pc_1,
-                           es_final_result_1,
+  assign es_to_ms_bus_1 = {es_pc_1,
+                           es_exec_result_1,
                            es_rkd_value_1,
                            es_res_from_mem_1,
                            es_gr_we_1,
@@ -318,13 +298,7 @@ module EXE_stage(
                            es_real_taken_1,
                            es_real_target_1,
                            es_next_pc_1,
-                           es_redirect_miss_1,
-                           es_is_cacop_1,
-                           es_cacop_code_1,
-                           es_is_csr_1,
-                           es_csr_num_1,
-                           es_csr_wmask_1,
-                           es_csr_wvalue_1
+                           es_redirect_miss_1
                           };
 
   always @(posedge clk)
@@ -400,13 +374,6 @@ module EXE_stage(
       es_pred_target_1  <= 32'b0;
       es_br_op_1        <= `BR_NONE;
       es_br_offs_1      <= 32'b0;
-      es_is_cpucfg_1    <= 1'b0;
-      es_is_cacop_1     <= 1'b0;
-      es_cacop_code_1   <= 5'b0;
-      es_is_csr_1       <= 1'b0;
-      es_csr_num_1      <= 14'b0;
-      es_csr_wmask_1    <= 32'b0;
-      es_csr_wvalue_1   <= 32'b0;
     end
     else if (flush)
     begin
@@ -423,9 +390,6 @@ module EXE_stage(
       es_res_from_mem_1 <= 1'b0;
       es_is_mul_1       <= 1'b0;
       es_br_op_1        <= `BR_NONE;
-      es_is_cpucfg_1    <= 1'b0;
-      es_is_cacop_1     <= 1'b0;
-      es_is_csr_1       <= 1'b0;
     end
     else if (es_allowin)
     begin
@@ -482,13 +446,6 @@ module EXE_stage(
       es_pred_target_1  <= ds_pred_target_1;
       es_br_op_1        <= ds_to_es_valid_1 ? ds_br_op_1 : `BR_NONE;
       es_br_offs_1      <= ds_br_offs_1;
-      es_is_cpucfg_1    <= ds_to_es_valid_1 && ds_is_cpucfg_1;
-      es_is_cacop_1     <= ds_to_es_valid_1 && ds_is_cacop_1;
-      es_cacop_code_1   <= ds_cacop_code_1;
-      es_is_csr_1       <= ds_to_es_valid_1 && ds_is_csr_1;
-      es_csr_num_1      <= ds_csr_num_1;
-      es_csr_wmask_1    <= ds_is_csrxchg_1 ? ds_alu_src1_1 : 32'hffff_ffff;
-      es_csr_wvalue_1   <= ds_rkd_value_1;
     end
   end
 
@@ -573,8 +530,6 @@ module EXE_stage(
         $fatal(1, "unfinished lane1 multiply became forwardable");
       if (es_valid_0 && !es_result_forwardable_0 && es_fwd_valid_0)
         $fatal(1, "lane0 special result entered EX forwarding");
-      if (es_valid_1 && !es_result_forwardable_1 && es_fwd_valid_1)
-        $fatal(1, "lane1 special result entered EX forwarding");
     end
   end
 `endif
