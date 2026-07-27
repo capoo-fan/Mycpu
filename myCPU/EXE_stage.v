@@ -114,9 +114,8 @@ module EXE_stage(
   wire        ds_is_cacop_0;
   wire [ 4:0] ds_cacop_code_0;
   wire        ds_is_csr_0;
+  wire        ds_is_csrxchg_0;
   wire [13:0] ds_csr_num_0;
-  wire [31:0] ds_csr_wmask_0;
-  wire [31:0] ds_csr_wvalue_0;
 
   assign {ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
           ds_res_from_mem_0, ds_gr_we_0, ds_mem_we_0, ds_dest_0,
@@ -125,8 +124,7 @@ module EXE_stage(
           ds_st_byte_0, ds_st_half_0,
           ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0,
           ds_is_cpucfg_0, ds_is_cacop_0, ds_cacop_code_0,
-          ds_is_csr_0, ds_csr_num_0, ds_csr_wmask_0,
-          ds_csr_wvalue_0} = ds_to_es_bus_0;
+          ds_is_csr_0, ds_is_csrxchg_0, ds_csr_num_0} = ds_to_es_bus_0;
 
   wire [31:0] ds_pc_1;
   wire [11:0] ds_alu_op_1;
@@ -153,9 +151,8 @@ module EXE_stage(
   wire        ds_is_cacop_1;
   wire [ 4:0] ds_cacop_code_1;
   wire        ds_is_csr_1;
+  wire        ds_is_csrxchg_1;
   wire [13:0] ds_csr_num_1;
-  wire [31:0] ds_csr_wmask_1;
-  wire [31:0] ds_csr_wvalue_1;
 
   assign {ds_pc_1, ds_alu_op_1, ds_alu_src1_1, ds_alu_src2_1, ds_rkd_value_1,
           ds_res_from_mem_1, ds_gr_we_1, ds_mem_we_1, ds_dest_1,
@@ -164,8 +161,7 @@ module EXE_stage(
           ds_st_byte_1, ds_st_half_1,
           ds_pred_taken_1, ds_pred_target_1, ds_br_op_1, ds_br_offs_1,
           ds_is_cpucfg_1, ds_is_cacop_1, ds_cacop_code_1,
-          ds_is_csr_1, ds_csr_num_1, ds_csr_wmask_1,
-          ds_csr_wvalue_1} = ds_to_es_bus_1;
+          ds_is_csr_1, ds_is_csrxchg_1, ds_csr_num_1} = ds_to_es_bus_1;
 
   // 乘法 IP 的结果在进入 EX 后第三拍可用。mul_pending 在倒数一拍
   // 的时钟沿清零，使完成状态先寄存，再送往 ISSUE，切断计数器到
@@ -462,8 +458,8 @@ module EXE_stage(
       es_cacop_code_0   <= ds_cacop_code_0;
       es_is_csr_0       <= ds_to_es_valid_0 && ds_is_csr_0;
       es_csr_num_0      <= ds_csr_num_0;
-      es_csr_wmask_0    <= ds_csr_wmask_0;
-      es_csr_wvalue_0   <= ds_csr_wvalue_0;
+      es_csr_wmask_0    <= ds_is_csrxchg_0 ? ds_alu_src1_0 : 32'hffff_ffff;
+      es_csr_wvalue_0   <= ds_rkd_value_0;
 
       es_pc_1           <= ds_pc_1;
       es_alu_op_1       <= ds_alu_op_1;
@@ -491,8 +487,8 @@ module EXE_stage(
       es_cacop_code_1   <= ds_cacop_code_1;
       es_is_csr_1       <= ds_to_es_valid_1 && ds_is_csr_1;
       es_csr_num_1      <= ds_csr_num_1;
-      es_csr_wmask_1    <= ds_csr_wmask_1;
-      es_csr_wvalue_1   <= ds_csr_wvalue_1;
+      es_csr_wmask_1    <= ds_is_csrxchg_1 ? ds_alu_src1_1 : 32'hffff_ffff;
+      es_csr_wvalue_1   <= ds_rkd_value_1;
     end
   end
 

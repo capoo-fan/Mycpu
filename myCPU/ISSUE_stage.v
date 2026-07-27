@@ -507,11 +507,6 @@ module ISSUE_stage(
   wire [31:0] ds_alu_src2_1 = src2_is_imm_1 ? imm_1   : rkd_value_1;
   wire [31:0] ds_rkd_value_1 = inst_jirl_1 ? rj_value_1 : rkd_value_1;
 
-  wire [31:0] csr_wmask_0  = is_csrxchg_0 ? rj_value_0 : 32'hffff_ffff;
-  wire [31:0] csr_wvalue_0 = rkd_value_0;
-  wire [31:0] csr_wmask_1  = is_csrxchg_1 ? rj_value_1 : 32'hffff_ffff;
-  wire [31:0] csr_wvalue_1 = rkd_value_1;
-
   function [3:0] make_br_op;
     input inst_beq;
     input inst_bne;
@@ -570,9 +565,8 @@ module ISSUE_stage(
                            is_cacop_0,
                            cacop_code_0,
                            is_csr_0,
-                           csr_num_0,
-                           csr_wmask_0,
-                           csr_wvalue_0
+                           is_csrxchg_0,
+                           csr_num_0
                           };
 
   assign ds_to_es_bus_1 = {ds_pc_1,
@@ -600,9 +594,8 @@ module ISSUE_stage(
                            1'b0,
                            5'b0,
                            1'b0,
-                           14'b0,
-                           32'b0,
-                           32'b0
+                           1'b0,
+                           14'b0
                           };
 
 endmodule
