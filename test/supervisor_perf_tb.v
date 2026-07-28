@@ -33,39 +33,6 @@
 // ============================================================================
 `define BR_TABLE_SIZE 256
 
-// ============================================================================
-// ES_TO_MS_BUS 位提取宏（lane 0 与 lane 1 位置相同）
-// ============================================================================
-`define ES_BUS_PC            293:262
-`define ES_BUS_PRED_TAKEN    184
-`define ES_BUS_PRED_TARGET   183:152
-`define ES_BUS_IS_BJ         151
-`define ES_BUS_REAL_TAKEN    150
-`define ES_BUS_REAL_TARGET   149:118
-`define ES_BUS_REDIRECT_MISS 85
-
-// ============================================================================
-// MS_FWD_BUS 位提取宏
-// ============================================================================
-`define MS_FWD_VALID     40
-`define MS_FWD_GR_WE     39
-`define MS_FWD_FWD_VALID 38
-`define MS_FWD_RES_MEM   37
-`define MS_FWD_DEST      36:32
-
-// ============================================================================
-// ES_FWD_BUS 位提取宏
-// ============================================================================
-`define ES_FWD_VALID     40
-`define ES_FWD_GR_WE     39
-`define ES_FWD_FWD_VALID 38
-`define ES_FWD_RES_MEM   37
-
-// ============================================================================
-// BPU 分支历史表大小（用于 per-PC 统计）
-// ============================================================================
-`define BR_TABLE_SIZE 256
-
 module supervisor_perf_tb;
   localparam integer BOOT_LEN = 38;
   localparam integer STREAM_WORDS = 32'h0030_0000 / 4;
@@ -162,6 +129,11 @@ module supervisor_perf_tb;
   reg [63:0] ex_mul_wait_cycles;
   reg [63:0] pair_mem_conflict_cycles;
   reg [63:0] pair_raw_conflict_cycles;
+  reg [63:0] pair_branch_conflict_cycles;
+  reg [63:0] pair_special_conflict_cycles;
+  reg [63:0] pair_slot1_stall_cycles;
+  reg [63:0] pair_other_cycles;
+  reg [63:0] issue_special_block_cycles;
 
   // -- Memory 停顿 --
   reg [63:0] mem_load_addr_wait_cycles;
@@ -394,10 +366,11 @@ module supervisor_perf_tb;
       if (ms_unready_load_tb)
         is_raw_load_cycles <= is_raw_load_cycles + 1;
 
-      // issue_raw_other: RAW 停顿（非 load-use，含乘法/ALU 前递气泡）
-      // 判定：有指令但不能发射，不是 backend full，不是 load-use
+      // issue_raw_other: 非 load-use 的 RAW 停顿
+      // 排除：backend full, load-use, branch, special_block
       if (cpu.ibuf_front_valid_0 && !cpu.issue_pop_0 &&
-          cpu.es_allowin && !ms_unready_load_tb && !cpu.br_taken)
+          cpu.es_allowin && !ms_unready_load_tb && !cpu.br_taken &&
+          !cpu.special_block)
         is_raw_other_cycles <= is_raw_other_cycles + 1;
 
       // issue_pair_blocked: 两槽都有效但只有 slot0 发射
@@ -408,15 +381,31 @@ module supervisor_perf_tb;
       if (cpu.u_exe.mul_pending_0 || cpu.u_exe.mul_pending_1)
         ex_mul_wait_cycles <= ex_mul_wait_cycles + 1;
 
+      // --- pair_blocked 原因细分 ---
+      // 条件：两槽均有效，slot0 发射但 slot1 未发射
       if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
-          cpu.issue_pop_0 && !cpu.issue_pop_1 &&
-          cpu.u_issue.mem_op_0 && cpu.u_issue.mem_op_1)
-        pair_mem_conflict_cycles <= pair_mem_conflict_cycles + 1;
+          cpu.issue_pop_0 && !cpu.issue_pop_1)
+      begin
+        if (cpu.u_issue.mem_op_0 && cpu.u_issue.mem_op_1)
+          pair_mem_conflict_cycles <= pair_mem_conflict_cycles + 1;
+        else if (cpu.u_issue.raw_0_to_1)
+          pair_raw_conflict_cycles <= pair_raw_conflict_cycles + 1;
+        else if (cpu.u_issue.is_bj_0 && cpu.u_issue.is_bj_1)
+          pair_branch_conflict_cycles <= pair_branch_conflict_cycles + 1;
+        else if (cpu.u_issue.special_0 || cpu.u_issue.special_1)
+          pair_special_conflict_cycles <= pair_special_conflict_cycles + 1;
+        else if (cpu.u_issue.stall_1_for_consume)
+          pair_slot1_stall_cycles <= pair_slot1_stall_cycles + 1;
+        else
+          pair_other_cycles <= pair_other_cycles + 1;
+      end
 
-      if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
-          cpu.issue_pop_0 && !cpu.issue_pop_1 &&
-          cpu.u_issue.raw_0_to_1)
-        pair_raw_conflict_cycles <= pair_raw_conflict_cycles + 1;
+      // issue_special_block: special_block 导致的单发射
+      if (cpu.ibuf_front_valid_0 && !cpu.issue_pop_0 &&
+          cpu.es_allowin && !ms_unready_load_tb && !cpu.br_taken &&
+          cpu.u_issue.stall_0_for_consume === 1'b0 &&
+          cpu.special_block)
+        issue_special_block_cycles <= issue_special_block_cycles + 1;
 
       // === MEMORY 停顿 ===
       // load_addr_wait: 等待 load 地址握手
@@ -705,14 +694,21 @@ module supervisor_perf_tb;
 
       // -- Issue --
       $display("--- Issue Stalls ---");
-      print_stall("issue_no_inst",     is_no_inst_cycles);
-      print_stall("issue_backend_full",is_backend_full_cycles);
-      print_stall("issue_raw_load",    is_raw_load_cycles);
-      print_stall("issue_raw_other",   is_raw_other_cycles);
-      print_stall("issue_pair_blocked",is_pair_blocked_cycles);
-      print_stall("ex_mul_wait",        ex_mul_wait_cycles);
-      print_stall("pair_mem_conflict",  pair_mem_conflict_cycles);
-      print_stall("pair_raw_conflict",  pair_raw_conflict_cycles);
+      print_stall("issue_no_inst",        is_no_inst_cycles);
+      print_stall("issue_backend_full",   is_backend_full_cycles);
+      print_stall("issue_raw_load",       is_raw_load_cycles);
+      print_stall("issue_raw_other",      is_raw_other_cycles);
+      print_stall("issue_special_block",  issue_special_block_cycles);
+      print_stall("ex_mul_wait",          ex_mul_wait_cycles);
+      $display("");
+      $display("--- Pair-Blocked Breakdown ---");
+      print_stall("pair_blocked_total",   is_pair_blocked_cycles);
+      print_stall("  mem_conflict",        pair_mem_conflict_cycles);
+      print_stall("  raw_conflict",        pair_raw_conflict_cycles);
+      print_stall("  branch_conflict",     pair_branch_conflict_cycles);
+      print_stall("  special_conflict",    pair_special_conflict_cycles);
+      print_stall("  slot1_stall",         pair_slot1_stall_cycles);
+      print_stall("  other",               pair_other_cycles);
       $display("");
 
       // -- Memory --
@@ -756,88 +752,59 @@ module supervisor_perf_tb;
         $display("");
       end
 
+      // =====================================================================
+      // 双发射瓶颈诊断摘要
+      // =====================================================================
+      $display("--- Dual-Issue Bottleneck Analysis ---");
+      $display("  Pair-blocked cycles         = %0d (%.2f%% of total)",
+               is_pair_blocked_cycles,
+               pct(is_pair_blocked_cycles, benchmark_cycle_count));
+      $display("  Breakdown of pair-blocked (why slot1 blocked):");
+      $display("    mem_conflict  (both mem ops)  = %6.2f%% (%0d)",
+               pct(pair_mem_conflict_cycles,  is_pair_blocked_cycles),
+               pair_mem_conflict_cycles);
+      $display("    raw_conflict  (RAW 0->1)      = %6.2f%% (%0d)",
+               pct(pair_raw_conflict_cycles,  is_pair_blocked_cycles),
+               pair_raw_conflict_cycles);
+      $display("    branch_conflict (both branch) = %6.2f%% (%0d)",
+               pct(pair_branch_conflict_cycles, is_pair_blocked_cycles),
+               pair_branch_conflict_cycles);
+      $display("    special_conflict (CSR/CACOP)  = %6.2f%% (%0d)",
+               pct(pair_special_conflict_cycles, is_pair_blocked_cycles),
+               pair_special_conflict_cycles);
+      $display("    slot1_stall  (slot1 RAW wait) = %6.2f%% (%0d)",
+               pct(pair_slot1_stall_cycles, is_pair_blocked_cycles),
+               pair_slot1_stall_cycles);
+      $display("    other        (unclassified)   = %6.2f%% (%0d)",
+               pct(pair_other_cycles, is_pair_blocked_cycles),
+               pair_other_cycles);
+      $display("");
 
       // =====================================================================
-      // 性能报告
+      // 单发射原因总览（整体瓶颈分布）
       // =====================================================================
-      $display("================================================================");
-      $display("===  Supervisor Performance Counter  ===");
-      $display("================================================================");
-      $display("TEST=%0d  cycles=%0d  instr=%0d",
-               test_id, benchmark_cycle_count, commit_count);
+      $display("--- Issue Bottleneck Overview (why slot0 can't fire) ---");
+      $display("  %-28s = %6.2f%% (%0d)",
+               "no_inst (frontend empty)",
+               pct(is_no_inst_cycles, benchmark_cycle_count),
+               is_no_inst_cycles);
+      $display("  %-28s = %6.2f%% (%0d)",
+               "backend_full (EX/MEM/WB busy)",
+               pct(is_backend_full_cycles, benchmark_cycle_count),
+               is_backend_full_cycles);
+      $display("  %-28s = %6.2f%% (%0d)",
+               "raw_load (load-use stall)",
+               pct(is_raw_load_cycles, benchmark_cycle_count),
+               is_raw_load_cycles);
+      $display("  %-28s = %6.2f%% (%0d)",
+               "raw_other (ALU/MUL RAW stall)",
+               pct(is_raw_other_cycles, benchmark_cycle_count),
+               is_raw_other_cycles);
+      $display("  %-28s = %6.2f%% (%0d)",
+               "special_block (CSR/CACOP)",
+               pct(issue_special_block_cycles, benchmark_cycle_count),
+               issue_special_block_cycles);
       $display("");
-
-      // -- IPC --
-      $display("--- IPC ---");
-      $display("  IPC                         = %.4f",
-               (benchmark_cycle_count > 0) ?
-               (commit_count * 1.0 / benchmark_cycle_count) : 0.0);
-      $display("  Dual-issue cycle ratio      = %.2f%% (%0d/%0d)",
-               pct(dual_issue_cycle_count, benchmark_cycle_count),
-               dual_issue_cycle_count, benchmark_cycle_count);
-      $display("");
-
-      // -- Frontend --
-      $display("--- Frontend Stalls ---");
-      print_stall("icache_miss",   fe_icache_miss_cycles);
-      print_stall("icache_refill", fe_icache_refill_cycles);
-      print_stall("ibuf_empty",    fe_ibuf_empty_cycles);
-      print_stall("ibuf_full",     fe_ibuf_full_cycles);
-      print_stall("redirect_flush",fe_redirect_flush_cycles);
-      $display("");
-
-      // -- Issue --
-      $display("--- Issue Stalls ---");
-      print_stall("issue_no_inst",     is_no_inst_cycles);
-      print_stall("issue_backend_full",is_backend_full_cycles);
-      print_stall("issue_raw_load",    is_raw_load_cycles);
-      print_stall("issue_raw_other",   is_raw_other_cycles);
-      print_stall("issue_pair_blocked",is_pair_blocked_cycles);
-      print_stall("ex_mul_wait",        ex_mul_wait_cycles);
-      print_stall("pair_mem_conflict",  pair_mem_conflict_cycles);
-      print_stall("pair_raw_conflict",  pair_raw_conflict_cycles);
-      $display("");
-
-      // -- Memory --
-      $display("--- Memory Stalls ---");
-      print_stall("load_addr_wait",       mem_load_addr_wait_cycles);
-      print_stall("load_data_wait",       mem_load_data_wait_cycles);
-      print_stall("store_addr_wait",      mem_store_addr_wait_cycles);
-      print_stall("store_data_wait",      mem_store_data_wait_cycles);
-      $display("  store_buffer_full           = N/A (no store buffer)");
-      $display("");
-
-      // -- Branch --
-      $display("--- Branch Prediction ---");
-      $display("  branch_count                = %0d", br_total_count);
-      $display("  branch_mispredict           = %0d", br_mispredict_count);
-      ratio = (br_total_count > 0) ?
-              (br_mispredict_count * 100.0 / br_total_count) : 0.0;
-      $display("  mispredict_rate             = %.2f%%", ratio);
-      $display("  btb_miss                    = %0d (%.2f%%)",
-               br_btb_miss_count,
-               (br_mispredict_count > 0) ?
-               (br_btb_miss_count * 100.0 / br_mispredict_count) : 0.0);
-      $display("  direction_miss              = %0d (%.2f%%)",
-               br_dir_miss_count,
-               (br_mispredict_count > 0) ?
-               (br_dir_miss_count * 100.0 / br_mispredict_count) : 0.0);
-      $display("  target_miss                 = %0d (%.2f%%)",
-               br_target_miss_count,
-               (br_mispredict_count > 0) ?
-               (br_target_miss_count * 100.0 / br_mispredict_count) : 0.0);
-      $display("");
-
-      // -- Per-PC branch detail (top 20 by mispredict count) --
-      if (br_pc_count > 0)
-      begin
-        $display("--- Branch Per-PC (top 20 by mispredicts) ---");
-        $display("  %-10s %-10s %-10s %-6s %-6s %-6s %-6s",
-                 "PC", "total", "mispredict", "rate", "BTB", "dir", "tgt");
-        // 简单冒泡排序找出 mispredict 最多的前20个
-        print_top_branches();
-        $display("");
-      end
 
       $display("PASS supervisor performance test=%0d cycles=%0d instr=%0d IPC=%.4f",
                test_id, benchmark_cycle_count, commit_count,
@@ -954,8 +921,13 @@ module supervisor_perf_tb;
     is_raw_other_cycles      = 0;
     is_pair_blocked_cycles   = 0;
     ex_mul_wait_cycles       = 0;
-    pair_mem_conflict_cycles = 0;
-    pair_raw_conflict_cycles = 0;
+    pair_mem_conflict_cycles   = 0;
+    pair_raw_conflict_cycles   = 0;
+    pair_branch_conflict_cycles = 0;
+    pair_special_conflict_cycles = 0;
+    pair_slot1_stall_cycles    = 0;
+    pair_other_cycles          = 0;
+    issue_special_block_cycles = 0;
     mem_load_addr_wait_cycles = 0;
     mem_load_data_wait_cycles = 0;
     mem_store_addr_wait_cycles = 0;
