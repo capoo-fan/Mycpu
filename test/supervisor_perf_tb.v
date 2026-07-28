@@ -125,6 +125,9 @@ module supervisor_perf_tb;
   reg [63:0] is_backend_full_cycles;
   reg [63:0] is_raw_load_cycles;
   reg [63:0] is_raw_other_cycles;
+  reg [63:0] ms_unready_any_cycles;
+  reg [63:0] ms_unready_backend_cycles;
+  reg [63:0] ms_unready_issueable_unrelated_cycles;
   reg [63:0] is_pair_blocked_cycles;
   reg [63:0] ex_mul_wait_cycles;
   reg [63:0] pair_mem_conflict_cycles;
@@ -240,7 +243,8 @@ module supervisor_perf_tb;
   // 信号重建：从总线上提取内部信号
   // =========================================================================
 
-  // ms_unready_load: MEM 阶段有未完成的 load，阻塞发射
+  // ms_unready_load: MEM 阶段存在未完成的寄存器结果。修改后的 ISSUE
+  // 只在头部指令的真实源依赖该结果时阻塞；这里保留信号用于观测。
   assign ms_unready_load_tb =
       (ms_fwd_0_padded[`MS_FWD_VALID] &&
        ms_fwd_0_padded[`MS_FWD_GR_WE] &&
@@ -362,14 +366,28 @@ module supervisor_perf_tb;
       if (!cpu.es_allowin)
         is_backend_full_cycles <= is_backend_full_cycles + 1;
 
-      // issue_raw_load: load-use 停顿（ms_unready_load 阻塞发射窗口）
-      if (ms_unready_load_tb)
+      // issue_raw_load: 头部 slot0 确实依赖 MEM 未就绪结果。
+      if (cpu.ibuf_front_valid_0 && cpu.u_issue.ms_stall_0_for_consume)
         is_raw_load_cycles <= is_raw_load_cycles + 1;
+
+      // 区分“MEM 有未完成结果”和“该结果真正阻塞发射”。如果未完成
+      // 结果与 backend_full 重叠，删除 ISSUE 全局门控也不会增加吞吐。
+      if (ms_unready_load_tb)
+        ms_unready_any_cycles <= ms_unready_any_cycles + 1;
+      if (ms_unready_load_tb && !cpu.es_allowin)
+        ms_unready_backend_cycles <= ms_unready_backend_cycles + 1;
+      if (ms_unready_load_tb && cpu.es_allowin &&
+          cpu.ibuf_front_valid_0 &&
+          cpu.u_issue.stall_0_for_consume === 1'b0 &&
+          !cpu.br_taken && !cpu.special_block)
+        ms_unready_issueable_unrelated_cycles <=
+            ms_unready_issueable_unrelated_cycles + 1;
 
       // issue_raw_other: 非 load-use 的 RAW 停顿
       // 排除：backend full, load-use, branch, special_block
       if (cpu.ibuf_front_valid_0 && !cpu.issue_pop_0 &&
-          cpu.es_allowin && !ms_unready_load_tb && !cpu.br_taken &&
+          cpu.es_allowin &&
+          !cpu.u_issue.ms_stall_0_for_consume && !cpu.br_taken &&
           !cpu.special_block)
         is_raw_other_cycles <= is_raw_other_cycles + 1;
 
@@ -402,7 +420,7 @@ module supervisor_perf_tb;
 
       // issue_special_block: special_block 导致的单发射
       if (cpu.ibuf_front_valid_0 && !cpu.issue_pop_0 &&
-          cpu.es_allowin && !ms_unready_load_tb && !cpu.br_taken &&
+          cpu.es_allowin && !cpu.br_taken &&
           cpu.u_issue.stall_0_for_consume === 1'b0 &&
           cpu.special_block)
         issue_special_block_cycles <= issue_special_block_cycles + 1;
@@ -698,6 +716,10 @@ module supervisor_perf_tb;
       print_stall("issue_backend_full",   is_backend_full_cycles);
       print_stall("issue_raw_load",       is_raw_load_cycles);
       print_stall("issue_raw_other",      is_raw_other_cycles);
+      print_stall("ms_unready_any",       ms_unready_any_cycles);
+      print_stall("ms_unready_backend",   ms_unready_backend_cycles);
+      print_stall("ms_unready_issueable_unrelated",
+                  ms_unready_issueable_unrelated_cycles);
       print_stall("issue_special_block",  issue_special_block_cycles);
       print_stall("ex_mul_wait",          ex_mul_wait_cycles);
       $display("");
@@ -919,6 +941,9 @@ module supervisor_perf_tb;
     is_backend_full_cycles   = 0;
     is_raw_load_cycles       = 0;
     is_raw_other_cycles      = 0;
+    ms_unready_any_cycles    = 0;
+    ms_unready_backend_cycles = 0;
+    ms_unready_issueable_unrelated_cycles = 0;
     is_pair_blocked_cycles   = 0;
     ex_mul_wait_cycles       = 0;
     pair_mem_conflict_cycles   = 0;

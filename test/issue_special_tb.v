@@ -303,14 +303,14 @@ module issue_special_tb;
         inst_0 = make_addi(5'd10, 5'd0);
         inst_1 = make_addi(5'd11, 5'd2);
         set_producer(producer_slot, 1'b0, 5'd2);
-        check_issue(producer_slot < 2, 1'b0, "lane1 rj unready RAW");
+        check_issue(1'b1, 1'b0, "lane1 rj unready RAW");
         set_producer(producer_slot, 1'b1, 5'd2);
         check_issue(1'b1, 1'b1, "lane1 rj ready RAW");
 
         // lane1 rkd
         inst_1 = make_add(5'd11, 5'd0, 5'd2);
         set_producer(producer_slot, 1'b0, 5'd2);
-        check_issue(producer_slot < 2, 1'b0, "lane1 rkd unready RAW");
+        check_issue(1'b1, 1'b0, "lane1 rkd unready RAW");
         set_producer(producer_slot, 1'b1, 5'd2);
         check_issue(1'b1, 1'b1, "lane1 rkd ready RAW");
       end
@@ -378,9 +378,17 @@ module issue_special_tb;
     inst_1 = INST_ADDI_R5_FROM_R2;
     es_fwd_bus_1 = {`ES_FWD_BUS_WD{1'b0}};
     ms_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1, 5'd2, 32'h89ab_cdef};
-    check_issue(1'b0, 1'b0, "unready MEM load blocks the issue window");
+    check_issue(1'b1, 1'b0,
+                "unready MEM load blocks only dependent lane1");
     ms_fwd_bus_0 = {1'b1, 1'b1, 1'b1, 1'b1, 5'd2, 32'h89ab_cdef};
     check_issue(1'b1, 1'b1, "MEM producer forwards without extra stall");
+
+    inst_0 = INST_ADDI_R3;
+    inst_1 = make_addi(5'd5, 5'd4);
+    ms_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
+                    5'd2, 32'h89ab_cdef};
+    check_issue(1'b1, 1'b1,
+                "unrelated MEM load does not close issue window");
 
     // The timing cut deliberately applies the ordinary load-use interlock to
     // Store data as well. This keeps Store/load classification out of the
