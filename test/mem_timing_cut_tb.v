@@ -23,6 +23,8 @@ module mem_timing_cut_tb;
   wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_1_WD-1:0] ms_fwd_bus_1;
+  wire load_wakeup_valid;
+  wire [31:0] load_wakeup_data;
   wire br_taken;
   wire [31:0] br_target;
   wire bpu_valid;
@@ -50,6 +52,8 @@ module mem_timing_cut_tb;
     .ms_to_ws_valid_1(ms_to_ws_valid_1),
     .ms_to_ws_bus_0(ms_to_ws_bus_0), .ms_to_ws_bus_1(ms_to_ws_bus_1),
     .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
+    .load_wakeup_valid(load_wakeup_valid),
+    .load_wakeup_data(load_wakeup_data),
     .csr_busy(), .cacop_busy(),
     .br_taken(br_taken), .br_target(br_target),
     .bpu_valid(bpu_valid), .bpu_is_bj(), .bpu_pc(bpu_pc),
@@ -189,6 +193,8 @@ module mem_timing_cut_tb;
         fail("load did not take the data_ok-to-WB completion path");
       if (ms_to_ws_bus_0[110:79] !== response)
         fail("load completion path did not carry the SRAM response to WB");
+      if (!load_wakeup_valid || load_wakeup_data !== response)
+        fail("SRAM load response did not produce the controlled wakeup");
       @(posedge clk);
       #1;
       if (ms_fwd_bus_0[40])

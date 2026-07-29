@@ -57,6 +57,7 @@ module asymmetric_issue_tb;
     .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
     .ms_fwd_bus_1({`MS_FWD_BUS_1_WD{1'b0}}),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
+    .load_wakeup_valid(1'b0),
     .ds_to_es_valid_0(ds_to_es_valid_0),
     .ds_to_es_valid_1(ds_to_es_valid_1),
     .ds_to_es_bus_0(), .ds_to_es_bus_1()

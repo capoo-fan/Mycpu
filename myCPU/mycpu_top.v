@@ -80,6 +80,8 @@ module mycpu_top(
   wire [`ES_FWD_BUS_1_WD-1:0] es_fwd_bus_1;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_1_WD-1:0] ms_fwd_bus_1;
+  wire        load_wakeup_valid;
+  wire [31:0] load_wakeup_data;
 
   // 写回总线
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
@@ -336,6 +338,7 @@ module mycpu_top(
                 .ms_fwd_bus_0     (ms_fwd_bus_0),
                 .ms_fwd_bus_1     (ms_fwd_bus_1),
                 .ws_to_rf_bus     (ws_to_rf_bus),
+                .load_wakeup_valid(load_wakeup_valid),
                 .ds_to_es_valid_0 (ds_to_es_valid_0),
                 .ds_to_es_valid_1 (ds_to_es_valid_1),
                 .ds_to_es_bus_0   (ds_to_es_bus_0),
@@ -352,6 +355,8 @@ module mycpu_top(
               .ds_to_es_bus_1   (ds_to_es_bus_1),
               .flush            (pipeline_flush),
               .ms_allowin       (ms_allowin),
+              .load_wakeup_valid(load_wakeup_valid),
+              .load_wakeup_data (load_wakeup_data),
               .es_allowin       (es_allowin),
               .es_to_ms_valid_0 (es_to_ms_valid_0),
               .es_to_ms_valid_1 (es_to_ms_valid_1),
@@ -382,6 +387,8 @@ module mycpu_top(
               .ms_to_ws_bus_1    (ms_to_ws_bus_1),
               .ms_fwd_bus_0      (ms_fwd_bus_0),
               .ms_fwd_bus_1      (ms_fwd_bus_1),
+              .load_wakeup_valid (load_wakeup_valid),
+              .load_wakeup_data  (load_wakeup_data),
               .csr_busy          (ms_csr_busy),
               .cacop_busy        (ms_cacop_busy),
               .br_taken          (br_taken),

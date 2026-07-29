@@ -39,6 +39,8 @@ module load_store_late_forward_tb;
   wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
   wire [`MS_FWD_BUS_1_WD-1:0] ms_fwd_bus_1;
+  wire load_wakeup_valid;
+  wire [31:0] load_wakeup_data;
   wire ws_allowin;
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
   wire data_req;
@@ -62,6 +64,25 @@ module load_store_late_forward_tb;
     end
   endfunction
 
+  function [31:0] make_slli;
+    input [4:0] rd;
+    input [4:0] rj;
+    input [4:0] shamt;
+    begin
+      make_slli = 32'h0040_8000 |
+                  {17'b0, shamt, rj, rd};
+    end
+  endfunction
+
+  function [31:0] make_mul;
+    input [4:0] rd;
+    input [4:0] rj;
+    input [4:0] rk;
+    begin
+      make_mul = 32'h001c_0000 | {17'b0, rk, rj, rd};
+    end
+  endfunction
+
   inst_decoder dec0(.inst(inst_0), .dec_bus(dec_0));
 
   ISSUE_stage u_issue(
@@ -76,6 +97,7 @@ module load_store_late_forward_tb;
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
     .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
     .ws_to_rf_bus(ws_to_rf_bus),
+    .load_wakeup_valid(load_wakeup_valid),
     .ds_to_es_valid_0(ds_to_es_valid_0),
     .ds_to_es_valid_1(ds_to_es_valid_1),
     .ds_to_es_bus_0(ds_to_es_bus_0),
@@ -88,7 +110,10 @@ module load_store_late_forward_tb;
     .ds_to_es_valid_1(ds_to_es_valid_1),
     .ds_to_es_bus_0(ds_to_es_bus_0),
     .ds_to_es_bus_1(ds_to_es_bus_1),
-    .flush(1'b0), .ms_allowin(ms_allowin), .es_allowin(es_allowin),
+    .flush(1'b0), .ms_allowin(ms_allowin),
+    .load_wakeup_valid(load_wakeup_valid),
+    .load_wakeup_data(load_wakeup_data),
+    .es_allowin(es_allowin),
     .es_to_ms_valid_0(es_to_ms_valid_0),
     .es_to_ms_valid_1(es_to_ms_valid_1),
     .es_to_ms_bus_0(es_to_ms_bus_0), .es_to_ms_bus_1(es_to_ms_bus_1),
@@ -108,6 +133,8 @@ module load_store_late_forward_tb;
     .ms_to_ws_valid_1(ms_to_ws_valid_1),
     .ms_to_ws_bus_0(ms_to_ws_bus_0), .ms_to_ws_bus_1(ms_to_ws_bus_1),
     .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
+    .load_wakeup_valid(load_wakeup_valid),
+    .load_wakeup_data(load_wakeup_data),
     .csr_busy(), .cacop_busy(), .br_taken(), .br_target(),
     .bpu_valid(), .bpu_is_bj(), .bpu_pc(),
     .bpu_real_taken(), .bpu_real_target(),
@@ -230,6 +257,92 @@ module load_store_late_forward_tb;
     #1;
     if (pop_0 || pop_1)
       fail("load-dependent store address issued before the address was ready");
+
+    // ld.w r12, r0, 0; slli.w r12, r12, 1
+    // 普通 ALU 消费者应在 data_ok 返回拍进入 EX，而不是再等 WB。
+    reset_dut();
+    inst_0 = make_load(5'd12, 5'd0);
+    front_valid_0 = 1'b1;
+    #1;
+    if (!pop_0)
+      fail("ALU wakeup setup load did not issue");
+    @(posedge clk);
+    @(negedge clk);
+    inst_0 = make_slli(5'd12, 5'd12, 5'd1);
+    #1;
+    if (pop_0)
+      fail("ALU consumer bypassed the load before data completion");
+    @(posedge clk);
+    #1;
+    if (!data_req || pop_0)
+      fail("ALU wakeup load did not wait in MEM");
+    @(negedge clk);
+    data_addr_ok = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    data_addr_ok = 1'b0;
+    data_rdata = 32'h1234_5678;
+    data_data_ok = 1'b1;
+    #1;
+    if (!load_wakeup_valid || load_wakeup_data !== 32'h1234_5678)
+      fail("ALU load response did not create the expected wakeup");
+    if (!pop_0 || !ds_to_es_valid_0 || ds_to_es_bus_0[1:0] !== 2'b10)
+      fail("ALU consumer did not issue on the load response cycle");
+    if (u_exe.ds_alu_src1_final !== 32'h1234_5678)
+      fail("ALU wakeup data did not reach the EX input mux");
+    @(posedge clk);
+    #1;
+    if (!u_exe.es_valid_0 ||
+        u_exe.es_alu_src1_0 !== 32'h1234_5678)
+      fail("ALU consumer did not capture wakeup data in EX");
+    @(negedge clk);
+    front_valid_0 = 1'b0;
+    data_data_ok = 1'b0;
+    @(posedge clk);
+    #1;
+    if (!ms_fwd_bus_0[38] ||
+        ms_fwd_bus_0[31:0] !== 32'h2468_acf0)
+      fail("ALU consumer produced the wrong result after wakeup");
+
+    // ld.w r12, r0, 0; mul.w r15, r12, r12
+    // 乘法器在发射边沿采样 ISSUE 数据，因此两个 DSP 输入都必须在
+    // data_ok 拍直接选择返回值。
+    reset_dut();
+    inst_0 = make_load(5'd12, 5'd0);
+    front_valid_0 = 1'b1;
+    #1;
+    if (!pop_0)
+      fail("multiply wakeup setup load did not issue");
+    @(posedge clk);
+    @(negedge clk);
+    inst_0 = make_mul(5'd15, 5'd12, 5'd12);
+    #1;
+    if (pop_0)
+      fail("multiply consumer bypassed the load before data completion");
+    @(posedge clk);
+    @(negedge clk);
+    data_addr_ok = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    data_addr_ok = 1'b0;
+    data_rdata = 32'h0000_1234;
+    data_data_ok = 1'b1;
+    #1;
+    if (!load_wakeup_valid || !pop_0 || !ds_to_es_valid_0 ||
+        ds_to_es_bus_0[1:0] !== 2'b11)
+      fail("multiply consumer did not wake both operands");
+    if (u_exe.mul_src1_0 !== 32'h0000_1234 ||
+        u_exe.mul_src2_0 !== 32'h0000_1234)
+      fail("load response did not reach both multiplier launch inputs");
+    @(posedge clk);
+    #1;
+    if (!u_exe.es_valid_0 || !u_exe.mul_pending_0 ||
+        u_exe.es_alu_src1_0 !== 32'h0000_1234 ||
+        u_exe.es_alu_src2_0 !== 32'h0000_1234)
+      fail("multiply consumer did not capture load wakeup operands");
+    @(negedge clk);
+    front_valid_0 = 1'b0;
+    data_data_ok = 1'b0;
 
     $display("PASS load_store_late_forward_tb");
     $finish;

@@ -102,6 +102,7 @@ module issue_special_tb;
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
     .ms_fwd_bus_0(ms_fwd_bus_0), .ms_fwd_bus_1(ms_fwd_bus_1),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
+    .load_wakeup_valid(1'b0),
     .ds_to_es_valid_0(issue_0), .ds_to_es_valid_1(issue_1),
     .ds_to_es_bus_0(), .ds_to_es_bus_1()
   );

@@ -16,6 +16,8 @@ module MEM_stage(
     output wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_0,
     output wire [`MS_FWD_BUS_1_WD-1:0]  ms_fwd_bus_1,
+    output wire                         load_wakeup_valid,
+    output wire [31:0]                  load_wakeup_data,
     output wire                         csr_busy,
     output wire                         cacop_busy,
     output wire                         br_taken,
@@ -186,7 +188,7 @@ module MEM_stage(
   // 处理 SRAM 的握手
   reg  ms_addr_sent;
   reg  ms_data_pending;
-  reg  ms_postable_store;
+  reg  ms_addr_is_sram_q;
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
   reg  cacop_req_sent;
@@ -207,11 +209,10 @@ module MEM_stage(
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
   // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
-  // ms_postable_store 已寄存 ms_mem_we_0 && data_sram_addr_is_sram，
-  // 因此它本身就是提前退休条件。不要再把 ms_mem_we_0 接回
-  // MEM->EX->ISSUE 的组合反压长路径。ms_data_pending 继续阻止
-  // 更年轻的访存，直到该 store 的 data_ok 返回。
-  wire posted_store_ready = ms_postable_store;
+  // 地址握手时已寄存 SRAM 属性；store 用它作为提前退休条件，
+  // Load 唤醒也复用同一个 bit，避免返回拍再次经过宽地址译码。
+  // ms_data_pending 继续阻止更年轻的访存，直到 data_ok 返回。
+  wire posted_store_ready = ms_mem_we_0 && ms_addr_is_sram_q;
   wire ms_ready_go  = ms_has_cacop ? cacop_ready_go :
        (!ms_has_mem_op || load_data_ready || posted_store_ready);
 
@@ -301,6 +302,15 @@ module MEM_stage(
 
   wire [31:0] ms_load_result_0 = load_result(ms_alu_result_0, ms_final_rdata,
        ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
+
+  // 受控 Load 返回拍唤醒：只对片上 SRAM 的普通 lane0 Load 产生一次
+  // 瞬时事件。ISSUE 复用普通 MEM 前递中的目的 tag 做精确 RAW
+  // 放行，数据单独直达 EX 输入寄存器，不进入宽前递网络。
+  assign load_wakeup_valid = ms_valid_0 && ms_data_ok &&
+       ms_res_from_mem_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
+       ms_addr_is_sram_q;
+  assign load_wakeup_data = ms_load_result_0;
+
   // 特殊结果只进入 WB；load 的 ISSUE 前递只能使用已经寄存的
   // ms_rdata_buf。ms_final_rdata 虽可在完成拍读取 SRAM 返回值，
   // 但 ms_fwd_valid_0 此时保持为 0，避免外部 SRAM 返回路径在
@@ -449,11 +459,11 @@ module MEM_stage(
   always @(posedge clk)
   begin
     if (reset || br_taken || branch_redirect_fire)
-      ms_postable_store <= 1'b0;
+      ms_addr_is_sram_q <= 1'b0;
     else if (ms_allowin)
-      ms_postable_store <= 1'b0;
+      ms_addr_is_sram_q <= 1'b0;
     else if (got_addr_ok)
-      ms_postable_store <= ms_mem_we_0 && data_sram_addr_is_sram;
+      ms_addr_is_sram_q <= data_sram_addr_is_sram;
   end
 
   always @(posedge clk)

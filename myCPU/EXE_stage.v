@@ -9,6 +9,8 @@ module EXE_stage(
     input  wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1,
     input  wire                         flush,
     input  wire                         ms_allowin,
+    input  wire                         load_wakeup_valid,
+    input  wire [31:0]                  load_wakeup_data,
     output wire                         es_allowin,
     output wire                         es_to_ms_valid_0,
     output wire                         es_to_ms_valid_1,
@@ -97,6 +99,8 @@ module EXE_stage(
   wire        ds_is_csr_0;
   wire        ds_is_csrxchg_0;
   wire [13:0] ds_csr_num_0;
+  wire        ds_load_wakeup_rj_0;
+  wire        ds_load_wakeup_rkd_0;
 
   assign {ds_store_data_late_0, ds_store_data_src_0,
           ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
@@ -106,7 +110,16 @@ module EXE_stage(
           ds_st_byte_0, ds_st_half_0,
           ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0,
           ds_is_cpucfg_0, ds_is_cacop_0, ds_cacop_code_0,
-          ds_is_csr_0, ds_is_csrxchg_0, ds_csr_num_0} = ds_to_es_bus_0;
+          ds_is_csr_0, ds_is_csrxchg_0, ds_csr_num_0,
+          ds_load_wakeup_rj_0,
+          ds_load_wakeup_rkd_0} = ds_to_es_bus_0;
+
+  // 返回数据不穿过 ISSUE 的宽前递 mux，只在 EX 输入边沿做两个
+  // 2:1 选择。当前开放类别不会把 rj/rkd 用作分支或 store 数据。
+  wire [31:0] ds_alu_src1_final =
+       ds_load_wakeup_rj_0 ? load_wakeup_data : ds_alu_src1_0;
+  wire [31:0] ds_alu_src2_final =
+       ds_load_wakeup_rkd_0 ? load_wakeup_data : ds_alu_src2_0;
 
   wire [31:0] ds_pc_1;
   wire [11:0] ds_alu_op_1;
@@ -352,8 +365,8 @@ module EXE_stage(
     begin
       es_pc_0           <= ds_pc_0;
       es_alu_op_0       <= ds_alu_op_0;
-      es_alu_src1_0     <= ds_alu_src1_0;
-      es_alu_src2_0     <= ds_alu_src2_0;
+      es_alu_src1_0     <= ds_alu_src1_final;
+      es_alu_src2_0     <= ds_alu_src2_final;
       es_rkd_value_0    <= ds_rkd_value_0;
       es_store_data_late_0 <=
           ds_to_es_valid_0 && ds_store_data_late_0;
@@ -422,9 +435,9 @@ module EXE_stage(
   // 保证当前正在离开 EX 的普通 ALU 指令仍使用其 EX 寄存器操作数。
   wire mul_launch_0 = ds_to_es_valid_0 && ds_is_mul_0;
   wire [31:0] mul_src1_0 =
-       mul_launch_0 ? ds_alu_src1_0 : es_alu_src1_0;
+       mul_launch_0 ? ds_alu_src1_final : es_alu_src1_0;
   wire [31:0] mul_src2_0 =
-       mul_launch_0 ? ds_alu_src2_0 : es_alu_src2_0;
+       mul_launch_0 ? ds_alu_src2_final : es_alu_src2_0;
 
   alu #(
         .HAS_MUL (1)
@@ -459,6 +472,10 @@ module EXE_stage(
   begin
     if (resetn)
     begin
+      if (ds_to_es_valid_0 &&
+          (ds_load_wakeup_rj_0 || ds_load_wakeup_rkd_0) &&
+          !load_wakeup_valid)
+        $fatal(1, "EX captured load wakeup data without a valid response");
       if (es_valid_0 && mul_pending_0 && es_fwd_valid_0)
         $fatal(1, "unfinished lane0 multiply became forwardable");
       if (es_valid_0 && !es_result_forwardable_0 && es_fwd_valid_0)

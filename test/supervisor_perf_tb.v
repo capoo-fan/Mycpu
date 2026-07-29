@@ -132,6 +132,9 @@ module supervisor_perf_tb;
   reg [63:0] mem_load_data_wait_cycles;
   reg [63:0] mem_store_addr_wait_cycles;
   reg [63:0] mem_store_data_wait_cycles;
+  // 仅 testbench 统计，不进入 CPU 综合。
+  reg [63:0] load_wakeup_event_count;
+  reg [63:0] load_wakeup_issue_count;
 
   // -- Benchmark 热点 PC 画像（0x1c002000..0x1c0023ff） --
   localparam integer PC_PROFILE_WORDS = 256;
@@ -331,6 +334,11 @@ module supervisor_perf_tb;
       // -- 双发射 --
       if (cpu.ms_to_ws_valid_0 && cpu.ms_to_ws_valid_1)
         dual_issue_cycle_count <= dual_issue_cycle_count + 1;
+      if (cpu.load_wakeup_valid)
+        load_wakeup_event_count <= load_wakeup_event_count + 1;
+      if (cpu.load_wakeup_valid && cpu.ds_to_es_valid_0 &&
+          (cpu.ds_to_es_bus_0[1] || cpu.ds_to_es_bus_0[0]))
+        load_wakeup_issue_count <= load_wakeup_issue_count + 1;
 
       // === FRONTEND 停顿 ===
       // icache_miss: IF 停顿但不是因为 ibuf full
@@ -825,6 +833,10 @@ module supervisor_perf_tb;
       print_stall("load_data_wait",       mem_load_data_wait_cycles);
       print_stall("store_addr_wait",      mem_store_addr_wait_cycles);
       print_stall("store_data_wait",      mem_store_data_wait_cycles);
+      $display("  load_wakeup_event           = %0d",
+               load_wakeup_event_count);
+      $display("  load_wakeup_issue           = %0d",
+               load_wakeup_issue_count);
       $display("  store_buffer_full           = N/A (no store buffer)");
       $display("");
 
@@ -1086,6 +1098,8 @@ module supervisor_perf_tb;
     mem_load_data_wait_cycles = 0;
     mem_store_addr_wait_cycles = 0;
     mem_store_data_wait_cycles = 0;
+    load_wakeup_event_count   = 0;
+    load_wakeup_issue_count   = 0;
     br_total_count           = 0;
     br_mispredict_count      = 0;
     br_btb_miss_count        = 0;

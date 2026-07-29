@@ -25,6 +25,7 @@ module ISSUE_stage(
     input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus_0,
     input  wire [`MS_FWD_BUS_1_WD-1:  0]  ms_fwd_bus_1,
     input  wire [`WS_TO_RF_BUS_WD-1:  0]  ws_to_rf_bus,
+    input  wire                           load_wakeup_valid,
     // 送到 ES 阶段的信息
     output wire                           ds_to_es_valid_0,
     output wire                           ds_to_es_valid_1,
@@ -228,6 +229,16 @@ module ISSUE_stage(
   wire src1_rj_valid  = need_rj_1  && (rf_raddr1_1 != 5'b0);
   wire src1_rkd_valid = need_rkd_1 && (rf_raddr2_1 != 5'b0);
 
+  // 最小化的返回拍唤醒只覆盖 lane0 普通寄存器 ALU/乘法消费者。
+  // 分支、访存地址、CSR/CACOP/CPUCFG 和 lane1 继续走原前递/等待路径。
+  // 目的 tag 直接复用 ms_fwd_bus_0 中的 ms_dest_0，不增加 tag 线
+  // 或比较器；现有 RAW 命中后只需再看这一位完成事件。
+  wire load_wakeup_consumer_0 = gr_we_0 && !res_from_mem_0 &&
+       !mem_we_0 && !is_bj_0 &&
+       !(is_csr_0 || is_cacop_0 || is_cpucfg_0);
+  wire load_wakeup_usable_0 =
+       load_wakeup_valid && load_wakeup_consumer_0;
+
   function [4:0] make_fwd_sel;
     input hit_es1_ready;
     input hit_es0_ready;
@@ -267,10 +278,15 @@ module ISSUE_stage(
   wire rj0_hit_ms1  = src0_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr1_0);
 
   wire rj0_wait_ms =
-       (rj0_hit_ms0 && !ms_fwd_valid_0);
+       (rj0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0);
   wire rj0_wait = src0_rj_valid &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_0)) ||
         rj0_wait_ms);
+
+  // 若有更年轻的 EX 或同包 lane1 生产者，仍按原年龄优先级取值，
+  // 不允许较老的 Load 响应覆盖它。
+  wire rj0_use_load_wakeup = load_wakeup_usable_0 && rj0_hit_ms0 &&
+       !rj0_hit_es1 && !rj0_hit_es0 && !rj0_hit_ms1;
 
   wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1,
                                         rj0_hit_es0 && es_fwd_valid_0,
@@ -292,9 +308,12 @@ module ISSUE_stage(
   wire rkd0_wait_ex =
        ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_0);
   wire rkd0_wait_ms =
-       (rkd0_hit_ms0 && !ms_fwd_valid_0);
+       (rkd0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0);
   wire rkd0_wait = src0_rkd_valid &&
        (rkd0_wait_ex || rkd0_wait_ms);
+
+  wire rkd0_use_load_wakeup = load_wakeup_usable_0 && rkd0_hit_ms0 &&
+       !rkd0_hit_es1 && !rkd0_hit_es0 && !rkd0_hit_ms1;
 
   wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1,
                                          rkd0_hit_es0 && es_fwd_valid_0,
@@ -372,10 +391,12 @@ module ISSUE_stage(
   // 任意一个未完成 load 全局关闭整个发射窗口。
   wire rj0_wait_ms_for_consume = src0_rj_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr1_0_hot)) && !ms_fwd_valid_0));
+          (ms_dest_0 == front_raddr1_0_hot)) && !ms_fwd_valid_0 &&
+          !load_wakeup_usable_0));
   wire rkd0_wait_ms_for_consume = src0_rkd_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr2_0_hot)) && !ms_fwd_valid_0));
+          (ms_dest_0 == front_raddr2_0_hot)) && !ms_fwd_valid_0 &&
+          !load_wakeup_usable_0));
   wire rj1_wait_ms_for_consume = src1_rj_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
           (ms_dest_0 == front_raddr1_1_hot)) && !ms_fwd_valid_0));
@@ -511,6 +532,14 @@ module ISSUE_stage(
               if (ms_stall_1_for_consume &&
                   (ds_to_es_valid_1 || pop_1))
                 $fatal(1, "unfinished MEM producer allowed dependent lane1");
+              if (ds_to_es_valid_0 && rj0_use_load_wakeup &&
+                  (!load_wakeup_valid || rj0_hit_es1 ||
+                   rj0_hit_es0 || rj0_hit_ms1))
+                $fatal(1, "lane0 rj selected an invalid/older load wakeup");
+              if (ds_to_es_valid_0 && rkd0_use_load_wakeup &&
+                  (!load_wakeup_valid || rkd0_hit_es1 ||
+                   rkd0_hit_es0 || rkd0_hit_ms1))
+                $fatal(1, "lane0 rkd selected an invalid/older load wakeup");
             end
           end
 `endif
@@ -582,7 +611,9 @@ module ISSUE_stage(
                            cacop_code_0,
                            is_csr_0,
                            is_csrxchg_0,
-                           csr_num_0
+                           csr_num_0,
+                           rj0_use_load_wakeup,
+                           rkd0_use_load_wakeup
                           };
 
   assign ds_to_es_bus_1 = {ds_pc_1,
