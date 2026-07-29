@@ -291,14 +291,14 @@ module ISSUE_stage(
   wire rkd0_hit_ms0 = src0_rkd_valid && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == rf_raddr2_0);
   wire rkd0_hit_ms1 = src0_rkd_valid && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr2_0);
 
-  // 保守地对所有 EX load-use 相关插入气泡，包括 Load->Store 写数据。
-  // 这避免把 Store 类型和生产者类型接入 pop 控制，缩短
-  // InstBuffer hot tag -> ISSUE pop -> InstBuffer payload 的组合路径。
+  // 地址源和普通数据源仍在 ISSUE 等待；Store 写数据单独在下方判断，
+  // 若生产者是 lane0 load，则携带源寄存器 tag 提前进入 EX。
+  wire rkd0_wait_ex =
+       ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_0);
   wire rkd0_wait_ms =
        (rkd0_hit_ms0 && !ms_fwd_valid_0);
   wire rkd0_wait = src0_rkd_valid &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_0)) ||
-        rkd0_wait_ms);
+       (rkd0_wait_ex || rkd0_wait_ms);
 
   wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1,
                                          rkd0_hit_es0 && es_fwd_valid_0,
@@ -349,7 +349,13 @@ module ISSUE_stage(
        ms_fwd_data_1, ms_fwd_data_0,
        rf_rdata2_1);
 
-  wire stall_0 = rj0_wait || rkd0_wait;
+  // Store 的地址源 rj 必须在 ISSUE 就绪；数据源 rkd 若只等待一个
+  // lane0 load，则允许先进入 EX，稍后在 MEM 从该 load/WB 前递。
+  // 对 CSR/CPUCFG/CACOP 等低频未就绪结果仍保持原有阻塞。
+  wire store_data_late_0 =
+       mem_we_0 && rkd0_wait &&
+       (rkd0_wait_ex ? es_res_from_mem_0 : ms_res_from_mem_0);
+  wire stall_0 = rj0_wait || (rkd0_wait && !store_data_late_0);
   wire stall_1 = rj1_wait || rkd1_wait;
 
   wire raw_0_to_1 = gr_we_0 && (dest_0 != 5'b0) &&
@@ -384,9 +390,10 @@ module ISSUE_stage(
   wire rj0_wait_for_consume = src0_rj_valid_for_consume &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_0_hot)) ||
         rj0_wait_ms_for_consume);
+  wire rkd0_wait_ex_for_consume = src0_rkd_valid_for_consume &&
+       ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_0_hot);
   wire rkd0_wait_for_consume = src0_rkd_valid_for_consume &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_0_hot)) ||
-        rkd0_wait_ms_for_consume);
+       (rkd0_wait_ex_for_consume || rkd0_wait_ms_for_consume);
   wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_1_hot)) ||
         rj1_wait_ms_for_consume);
@@ -394,12 +401,20 @@ module ISSUE_stage(
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_1_hot)) ||
         rkd1_wait_ms_for_consume);
 
+  wire store_data_late_0_for_consume =
+       mem_we_0 && rkd0_wait_for_consume &&
+       (rkd0_wait_ex_for_consume ?
+        es_res_from_mem_0 : ms_res_from_mem_0);
   (* keep = "true" *) wire stall_0_for_consume =
-  rj0_wait_for_consume || rkd0_wait_for_consume;
+  rj0_wait_for_consume ||
+       (rkd0_wait_for_consume && !store_data_late_0_for_consume);
   (* keep = "true" *) wire stall_1_for_consume =
   rj1_wait_for_consume || rkd1_wait_for_consume;
   wire ms_stall_0_for_consume =
        rj0_wait_ms_for_consume || rkd0_wait_ms_for_consume;
+  wire blocking_ms_stall_0_for_consume =
+       rj0_wait_ms_for_consume ||
+       (rkd0_wait_ms_for_consume && !store_data_late_0_for_consume);
   wire ms_stall_1_for_consume =
        rj1_wait_ms_for_consume || rkd1_wait_ms_for_consume;
   wire raw_0_to_1_for_consume = gr_we_0 && (dest_0 != 5'b0) &&
@@ -494,7 +509,7 @@ module ISSUE_stage(
                   (mem_op_1 || is_mul_1 || special_1 ||
                    inst_jirl_1 || inst_bl_1))
                 $fatal(1, "lane1 issued a forbidden side-effect class");
-              if (ms_stall_0_for_consume &&
+              if (blocking_ms_stall_0_for_consume &&
                   (ds_to_es_valid_0 || pop_0))
                 $fatal(1, "unfinished MEM producer allowed dependent lane0");
               if (ms_stall_1_for_consume &&
@@ -545,7 +560,9 @@ module ISSUE_stage(
                                         inst_bltu_1, inst_bgeu_1, inst_jirl_1, inst_bl_1, inst_b_1);
   wire [31:0] ds_br_offs_1 = inst_jirl_1 ? jirl_offs_1 : br_offs_1;
 
-  assign ds_to_es_bus_0 = {ds_pc_0,
+  assign ds_to_es_bus_0 = {store_data_late_0,
+                           rf_raddr2_0,
+                           ds_pc_0,
                            alu_op_0,
                            ds_alu_src1_0,
                            ds_alu_src2_0,

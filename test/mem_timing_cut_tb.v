@@ -14,6 +14,7 @@ module mem_timing_cut_tb;
   reg [31:0] data_rdata;
   reg icacop_ready;
   reg icacop_done;
+  reg [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
 
   wire ms_allowin;
   wire ms_to_ws_valid_0;
@@ -43,7 +44,8 @@ module mem_timing_cut_tb;
     .clk(clk), .resetn(resetn),
     .es_to_ms_valid_0(es_valid_0), .es_to_ms_valid_1(es_valid_1),
     .es_to_ms_bus_0(es_bus_0), .es_to_ms_bus_1(es_bus_1),
-    .ws_allowin(1'b1), .ms_allowin(ms_allowin),
+    .ws_allowin(1'b1), .ws_to_rf_bus(ws_to_rf_bus),
+    .ms_allowin(ms_allowin),
     .ms_to_ws_valid_0(ms_to_ws_valid_0),
     .ms_to_ws_valid_1(ms_to_ws_valid_1),
     .ms_to_ws_bus_0(ms_to_ws_bus_0), .ms_to_ws_bus_1(ms_to_ws_bus_1),
@@ -87,6 +89,7 @@ module mem_timing_cut_tb;
     input [4:0] cacop_code;
     begin
       make_packet = {
+        1'b0, 5'b0,
         1'b1,
         pc, result, rkd,
         res_from_mem, gr_we, mem_we, dest,
@@ -96,6 +99,23 @@ module mem_timing_cut_tb;
         is_cacop, cacop_code,
         1'b0, 14'b0, 32'b0, 32'b0
       };
+    end
+  endfunction
+
+  function [`ES_TO_MS_BUS_WD-1:0] make_late_store_packet;
+    input [31:0] pc;
+    input [31:0] addr;
+    input [31:0] stale_data;
+    input [4:0] data_src;
+    reg [`ES_TO_MS_BUS_WD-1:0] packet;
+    begin
+      packet = make_packet(pc, addr, stale_data,
+                           1'b0, 1'b0, 1'b1, 5'b0,
+                           1'b0, 1'b0, 32'b0, pc + 32'd4,
+                           1'b0, 1'b0, 5'b0);
+      packet[`ES_TO_MS_BUS_WD-1] = 1'b1;
+      packet[`ES_TO_MS_BUS_WD-2:`ES_TO_MS_BUS_WD-6] = data_src;
+      make_late_store_packet = packet;
     end
   endfunction
 
@@ -214,6 +234,7 @@ module mem_timing_cut_tb;
     data_rdata = 32'b0;
     icacop_ready = 1'b0;
     icacop_done = 1'b0;
+    ws_to_rf_bus = {`WS_TO_RF_BUS_WD{1'b0}};
     accepted_data_requests = 0;
 
     repeat (4) @(posedge clk);
@@ -247,7 +268,7 @@ module mem_timing_cut_tb;
                            1'b0, 1'b1, 1'b0, 5'd12,
                            1'b0, 1'b0, 32'b0, 32'h1c00_000c,
                            1'b0, 1'b0, 5'b0);
-    es_bus_0[`ES_TO_MS_BUS_WD-1] = 1'b0;
+    es_bus_0[`ES_TO_MS_BUS_WD-7] = 1'b0;
     submit_pair(1'b1, es_bus_0, 1'b0, {`ES_TO_MS_BUS_1_WD{1'b0}});
     if (!ms_fwd_bus_0[40] || !ms_fwd_bus_0[39] || ms_fwd_bus_0[38] ||
         ms_fwd_bus_0[36:32] !== 5'd12 || ms_fwd_bus_0[31:0] !== 32'b0)
@@ -408,6 +429,21 @@ module mem_timing_cut_tb;
       fail("unexpected request count after non-SRAM store");
     @(posedge clk);
     #1;
+
+    // A late store data tag may also be resolved by the registered WB bus.
+    // Lane1 has the same priority as the register file's write-through bypass.
+    ws_to_rf_bus = {1'b0, 5'b0, 32'b0,
+                    1'b1, 5'd13, 32'h7654_3210};
+    submit_pair(
+      1'b1, make_late_store_packet(32'h1c00_0048, 32'h1c40_0500,
+                                   32'hdead_beef, 5'd13),
+      1'b0, {`ES_TO_MS_BUS_1_WD{1'b0}});
+    if (!data_req || !data_wr || data_addr !== 32'h1c40_0500 ||
+        data_wdata !== 32'h7654_3210)
+      fail("late store data was not captured from WB");
+    accept_memory_address();
+    complete_memory_response(32'b0);
+    ws_to_rf_bus = {`WS_TO_RF_BUS_WD{1'b0}};
 
     // A lane1 branch follows the same one-cycle redirect contract and trains
     // using lane1 PC while both instructions still retire on the detect cycle.

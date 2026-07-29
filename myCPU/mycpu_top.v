@@ -374,6 +374,7 @@ module mycpu_top(
               .es_to_ms_bus_0    (es_to_ms_bus_0),
               .es_to_ms_bus_1    (es_to_ms_bus_1),
               .ws_allowin        (ws_allowin),
+              .ws_to_rf_bus      (ws_to_rf_bus),
               .ms_allowin        (ms_allowin),
               .ms_to_ws_valid_0  (ms_to_ws_valid_0),
               .ms_to_ws_valid_1  (ms_to_ws_valid_1),

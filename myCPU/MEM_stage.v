@@ -8,6 +8,7 @@ module MEM_stage(
     input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     input  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
     input  wire                         ws_allowin,
+    input  wire [`WS_TO_RF_BUS_WD-1:0]  ws_to_rf_bus,
     output wire                         ms_allowin,
     output wire                         ms_to_ws_valid_0,
     output wire                         ms_to_ws_valid_1,
@@ -58,6 +59,8 @@ module MEM_stage(
   reg  [31:0] ms_pc_0;
   reg  [31:0] ms_alu_result_0;
   reg  [31:0] ms_rkd_value_0;
+  reg         ms_store_data_ready_0;
+  reg  [ 4:0] ms_store_data_src_0;
   reg         ms_res_from_mem_0;
   reg         ms_gr_we_0;
   reg         ms_mem_we_0;
@@ -94,6 +97,8 @@ module MEM_stage(
   reg  [31:0] ms_next_pc_1;
   reg         ms_redirect_miss_1;
 
+  wire        es_store_data_late_0;
+  wire [ 4:0] es_store_data_src_0;
   wire        es_result_forwardable_0;
   wire [31:0] es_pc_0;
   wire [31:0] es_final_result_0;
@@ -121,7 +126,8 @@ module MEM_stage(
   wire [31:0] es_csr_wmask_0;
   wire [31:0] es_csr_wvalue_0;
 
-  assign {es_result_forwardable_0,
+  assign {es_store_data_late_0, es_store_data_src_0,
+          es_result_forwardable_0,
           es_pc_0, es_final_result_0, es_rkd_value_0,
           es_res_from_mem_0, es_gr_we_0, es_mem_we_0, es_dest_0,
           es_ld_byte_0, es_ld_half_0, es_ld_sign_ext_0,
@@ -150,6 +156,15 @@ module MEM_stage(
           es_pred_taken_1, es_pred_target_1,
           es_is_bj_1, es_real_taken_1, es_real_target_1,
           es_next_pc_1, es_redirect_miss_1} = es_to_ms_bus_1;
+
+  wire        ws_rf_we_0;
+  wire [ 4:0] ws_rf_waddr_0;
+  wire [31:0] ws_rf_wdata_0;
+  wire        ws_rf_we_1;
+  wire [ 4:0] ws_rf_waddr_1;
+  wire [31:0] ws_rf_wdata_1;
+  assign {ws_rf_we_0, ws_rf_waddr_0, ws_rf_wdata_0,
+          ws_rf_we_1, ws_rf_waddr_1, ws_rf_wdata_1} = ws_to_rf_bus;
 
   assign csr_busy = ms_valid_0 && ms_is_csr_0;
   assign cacop_busy = ms_valid_0 && ms_is_cacop_0;
@@ -243,7 +258,8 @@ module MEM_stage(
        (ms_ld_half_0 || ms_st_half_0) ? 2'b01 :
        2'b10;
 
-  assign data_sram_req   = ms_has_mem_op && !ms_addr_sent && !ms_data_pending;
+  assign data_sram_req   = ms_has_mem_op && !ms_addr_sent &&
+       !ms_data_pending && (!ms_mem_we_0 || ms_store_data_ready_0);
   assign data_sram_wr    = ms_mem_we_0;
   assign data_sram_size  = ms_mem_size;
   assign data_sram_wstrb = ms_mem_we_0 ? ms_st_strb : 4'b0;
@@ -282,6 +298,39 @@ module MEM_stage(
        (!ms_res_from_mem_0 || mem_data_ready);
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 :
        (ms_result_forwardable_0 ? ms_alu_result_0 : 32'b0);
+
+  // 晚到 store data 只进入 MEM 本地寄存器，不参与 ms_allowin 的
+  // 组合控制链。正常 load→store 序列在 load 释放 MEM 的同一拍从
+  // 当前 ms_fwd_data 捕获；WB 是异常排队情况下的安全回退。
+  wire incoming_store_hit_ms =
+       es_store_data_late_0 && ms_valid_0 && ms_gr_we_0 &&
+       ms_fwd_valid_0 && (ms_dest_0 != 5'b0) &&
+       (ms_dest_0 == es_store_data_src_0);
+  wire incoming_store_hit_ws1 =
+       es_store_data_late_0 && ws_rf_we_1 &&
+       (ws_rf_waddr_1 != 5'b0) &&
+       (ws_rf_waddr_1 == es_store_data_src_0);
+  wire incoming_store_hit_ws0 =
+       es_store_data_late_0 && ws_rf_we_0 &&
+       (ws_rf_waddr_0 != 5'b0) &&
+       (ws_rf_waddr_0 == es_store_data_src_0);
+  wire incoming_store_data_ready =
+       !es_store_data_late_0 || incoming_store_hit_ms ||
+       incoming_store_hit_ws1 || incoming_store_hit_ws0;
+  wire [31:0] incoming_store_data =
+       incoming_store_hit_ms  ? ms_fwd_data_0 :
+       incoming_store_hit_ws1 ? ws_rf_wdata_1 :
+       incoming_store_hit_ws0 ? ws_rf_wdata_0 :
+                                es_rkd_value_0;
+
+  wire held_store_hit_ws1 =
+       ms_valid_0 && ms_mem_we_0 && !ms_store_data_ready_0 &&
+       ws_rf_we_1 && (ws_rf_waddr_1 != 5'b0) &&
+       (ws_rf_waddr_1 == ms_store_data_src_0);
+  wire held_store_hit_ws0 =
+       ms_valid_0 && ms_mem_we_0 && !ms_store_data_ready_0 &&
+       ws_rf_we_0 && (ws_rf_waddr_0 != 5'b0) &&
+       (ws_rf_waddr_0 == ms_store_data_src_0);
 
   assign ms_fwd_bus_0 = {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
                          ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0};
@@ -427,6 +476,8 @@ module MEM_stage(
       ms_dest_0         <= 5'b0;
       ms_alu_result_0   <= 32'b0;
       ms_rkd_value_0    <= 32'b0;
+      ms_store_data_ready_0 <= 1'b1;
+      ms_store_data_src_0  <= 5'b0;
       ms_ld_byte_0      <= 1'b0;
       ms_ld_half_0      <= 1'b0;
       ms_ld_sign_ext_0  <= 1'b0;
@@ -462,6 +513,8 @@ module MEM_stage(
     begin
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;
+      ms_store_data_ready_0 <= 1'b1;
+      ms_store_data_src_0  <= 5'b0;
       ms_res_from_mem_0 <= 1'b0;
       ms_is_bj_0        <= 1'b0;
       ms_redirect_miss_0 <= 1'b0;
@@ -477,7 +530,9 @@ module MEM_stage(
         ms_result_forwardable_0 <= es_result_forwardable_0;
         ms_pc_0           <= es_pc_0;
         ms_alu_result_0   <= es_final_result_0;
-        ms_rkd_value_0    <= es_rkd_value_0;
+        ms_rkd_value_0    <= incoming_store_data;
+        ms_store_data_ready_0 <= incoming_store_data_ready;
+        ms_store_data_src_0  <= es_store_data_src_0;
         ms_res_from_mem_0 <= es_res_from_mem_0;
         ms_gr_we_0        <= es_gr_we_0;
         ms_mem_we_0       <= es_mem_we_0;
@@ -506,6 +561,8 @@ module MEM_stage(
         ms_result_forwardable_0 <= 1'b0;
         ms_gr_we_0        <= 1'b0;
         ms_mem_we_0       <= 1'b0;
+        ms_store_data_ready_0 <= 1'b1;
+        ms_store_data_src_0  <= 5'b0;
         ms_res_from_mem_0 <= 1'b0;
         ms_is_bj_0        <= 1'b0;
         ms_redirect_miss_0 <= 1'b0;
@@ -534,6 +591,12 @@ module MEM_stage(
         ms_redirect_miss_1 <= 1'b0;
       end
     end
+    else if (held_store_hit_ws1 || held_store_hit_ws0)
+    begin
+      ms_rkd_value_0 <= held_store_hit_ws1 ?
+                        ws_rf_wdata_1 : ws_rf_wdata_0;
+      ms_store_data_ready_0 <= 1'b1;
+    end
   end
 
 `ifndef SYNTHESIS
@@ -545,6 +608,8 @@ module MEM_stage(
         $fatal(1, "lane0 special result entered MEM forwarding");
       if (ms_res_from_mem_0 && ms_fwd_valid_0 && !ms_rdata_buf_valid)
         $fatal(1, "lane0 load forwarded an unregistered SRAM response");
+      if (data_sram_req && data_sram_wr && !ms_store_data_ready_0)
+        $fatal(1, "store request issued before late data became ready");
     end
   end
 `endif

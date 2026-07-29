@@ -31,6 +31,8 @@ module EXE_stage(
   reg  [31:0] es_alu_src1_0;
   reg  [31:0] es_alu_src2_0;
   reg  [31:0] es_rkd_value_0;
+  reg         es_store_data_late_0;
+  reg  [ 4:0] es_store_data_src_0;
   reg         es_res_from_mem_0;
   reg         es_gr_we_0;
   reg         es_mem_we_0;
@@ -75,6 +77,8 @@ module EXE_stage(
   wire [31:0] ds_alu_src1_0;
   wire [31:0] ds_alu_src2_0;
   wire [31:0] ds_rkd_value_0;
+  wire        ds_store_data_late_0;
+  wire [ 4:0] ds_store_data_src_0;
   wire        ds_res_from_mem_0;
   wire        ds_gr_we_0;
   wire        ds_mem_we_0;
@@ -98,7 +102,8 @@ module EXE_stage(
   wire        ds_is_csrxchg_0;
   wire [13:0] ds_csr_num_0;
 
-  assign {ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
+  assign {ds_store_data_late_0, ds_store_data_src_0,
+          ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
           ds_res_from_mem_0, ds_gr_we_0, ds_mem_we_0, ds_dest_0,
           ds_is_mul_0, ds_mul_signed_0, ds_mul_hi_0,
           ds_ld_byte_0, ds_ld_half_0, ds_ld_sign_ext_0,
@@ -225,7 +230,9 @@ module EXE_stage(
   assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1,
                          es_dest_1, es_exec_result_1};
 
-  assign es_to_ms_bus_0 = {es_result_forwardable_0,
+  assign es_to_ms_bus_0 = {es_store_data_late_0,
+                           es_store_data_src_0,
+                           es_result_forwardable_0,
                            es_pc_0,
                            es_final_result_0,
                            es_rkd_value_0,
@@ -298,6 +305,8 @@ module EXE_stage(
       es_alu_src1_0     <= 32'b0;
       es_alu_src2_0     <= 32'b0;
       es_rkd_value_0    <= 32'b0;
+      es_store_data_late_0 <= 1'b0;
+      es_store_data_src_0  <= 5'b0;
       es_is_mul_0       <= 1'b0;
       es_mul_signed_0   <= 1'b0;
       es_mul_hi_0       <= 1'b0;
@@ -334,6 +343,8 @@ module EXE_stage(
     begin
       es_gr_we_0        <= 1'b0;
       es_mem_we_0       <= 1'b0;
+      es_store_data_late_0 <= 1'b0;
+      es_store_data_src_0  <= 5'b0;
       es_res_from_mem_0 <= 1'b0;
       es_is_mul_0       <= 1'b0;
       es_br_op_0        <= `BR_NONE;
@@ -350,6 +361,9 @@ module EXE_stage(
       es_alu_src1_0     <= ds_alu_src1_0;
       es_alu_src2_0     <= ds_alu_src2_0;
       es_rkd_value_0    <= ds_rkd_value_0;
+      es_store_data_late_0 <=
+          ds_to_es_valid_0 && ds_store_data_late_0;
+      es_store_data_src_0  <= ds_store_data_src_0;
       es_res_from_mem_0 <= ds_to_es_valid_0 && ds_res_from_mem_0;
       es_gr_we_0        <= ds_to_es_valid_0 && ds_gr_we_0;
       es_mem_we_0       <= ds_to_es_valid_0 && ds_mem_we_0;
