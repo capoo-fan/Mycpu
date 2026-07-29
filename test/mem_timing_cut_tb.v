@@ -185,11 +185,14 @@ module mem_timing_cut_tb;
       #1;
       if (ms_fwd_bus_0[37] && ms_fwd_bus_0[38])
         fail("external SRAM response forwarded before the register boundary");
+      if (!ms_allowin || !ms_to_ws_valid_0)
+        fail("load did not take the data_ok-to-WB completion path");
+      if (ms_to_ws_bus_0[110:79] !== response)
+        fail("load completion path did not carry the SRAM response to WB");
       @(posedge clk);
       #1;
-      if ((ms_fwd_bus_0[37] && !ms_fwd_bus_0[38]) ||
-          (ms_fwd_bus_1[37] && !ms_fwd_bus_1[38]))
-        fail("registered load result did not become forwardable");
+      if (ms_fwd_bus_0[40])
+        fail("retired load remained as a stale MEM producer");
       @(negedge clk);
       data_data_ok = 1'b0;
     end
@@ -276,8 +279,8 @@ module mem_timing_cut_tb;
     @(posedge clk);
     #1;
 
-    // A lane0 load may pair with lane1 ALU; the packet waits until the lane0
-    // memory response is registered.
+    // A lane0 load may pair with lane1 ALU. data_ok retires both lanes directly
+    // into WB, while the external response remains isolated from MEM forwarding.
     submit_pair(
       1'b1, make_packet(32'h1c00_0010, 32'h1c40_0100, 32'b0,
                         1'b1, 1'b1, 1'b0, 5'd5,
@@ -290,10 +293,8 @@ module mem_timing_cut_tb;
     if (!data_req || data_wr || data_addr !== 32'h1c40_0100 || ms_allowin)
       fail("lane0 load control was not registered correctly");
     accept_memory_response(32'h1234_5678);
-    if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1)
-      fail("lane0 load did not release both lanes after data completion");
-    @(posedge clk);
-    #1;
+    if (dut.ms_valid_0 || dut.ms_valid_1)
+      fail("lane0 load pair remained in MEM after fast completion");
 
     // A lane0 misprediction is detected and retired in this cycle, then emits
     // exactly one registered flush pulse in the next cycle. A younger lane1
@@ -401,12 +402,10 @@ module mem_timing_cut_tb;
     if (!data_req || data_wr || data_addr !== 32'h1c40_0400)
       fail("younger load did not issue after posted store completion");
     accept_memory_response(32'h89ab_cdef);
-    if (!ms_allowin || !ms_to_ws_valid_0)
-      fail("younger load did not retire after its own response");
+    if (dut.ms_valid_0)
+      fail("younger load remained in MEM after its own response");
     if (accepted_data_requests != 3)
       fail("unexpected number of accepted memory requests");
-    @(posedge clk);
-    #1;
 
     // MMIO/non-SRAM stores retain the original data_ok retirement contract.
     data_addr_is_sram = 1'b0;

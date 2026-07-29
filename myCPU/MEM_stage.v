@@ -196,6 +196,12 @@ module MEM_stage(
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
   wire ms_data_ok  = ms_addr_sent && data_sram_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
+  
+  // Load 的完成只需把返回数据送进 WB 寄存器，并不要求先在 MEM 再
+  // 寄存一拍。这里仅把 data_ok 接到 MEM->WB 的完成控制；面向
+  // ISSUE 的 ms_fwd_valid_0 仍然只认可 ms_rdata_buf_valid。
+  wire load_data_ready = mem_data_ready ||
+       (ms_res_from_mem_0 && ms_data_ok);
 
   wire packet_valid = ms_valid_0 || ms_valid_1;
   wire cacop_ready_go = cacop_req_sent && icacop_done;
@@ -207,7 +213,7 @@ module MEM_stage(
   // 更年轻的访存，直到该 store 的 data_ok 返回。
   wire posted_store_ready = ms_postable_store;
   wire ms_ready_go  = ms_has_cacop ? cacop_ready_go :
-       (!ms_has_mem_op || mem_data_ready || posted_store_ready);
+       (!ms_has_mem_op || load_data_ready || posted_store_ready);
 
   // WB 在本设计中恒可接收。空包和普通 ALU/分支包的 wait_kind 均为
   // WAIT_NONE，因此无需再把 packet_valid 接回全局 ready 链。
@@ -266,7 +272,11 @@ module MEM_stage(
   assign data_sram_addr  = ms_alu_result_0;
   assign data_sram_wdata = ms_st_data;
 
-  wire [31:0] ms_final_rdata = ms_rdata_buf;
+  // data_ok 返回拍直接送 WB；若 WB 暂时不能接收，则下一拍回退到
+  // 已寄存的 ms_rdata_buf。当前 WB 恒可接收，但保留后一条路径可
+  // 避免接口约束变化时丢失响应。
+  wire [31:0] ms_final_rdata =
+       ms_data_ok ? data_sram_rdata : ms_rdata_buf;
 
   // 处理加载指令的结果
   function [31:0] load_result;
@@ -291,17 +301,23 @@ module MEM_stage(
 
   wire [31:0] ms_load_result_0 = load_result(ms_alu_result_0, ms_final_rdata,
        ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
-  // 特殊结果只进入 WB；load 只能使用已经寄存的 ms_rdata_buf。这里
-  // 不读取 data_sram_rdata/data_sram_data_ok，避免外部 SRAM 返回路径
-  // 在同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
+  // 特殊结果只进入 WB；load 的 ISSUE 前递只能使用已经寄存的
+  // ms_rdata_buf。ms_final_rdata 虽可在完成拍读取 SRAM 返回值，
+  // 但 ms_fwd_valid_0 此时保持为 0，避免外部 SRAM 返回路径在
+  // 同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
   wire ms_fwd_valid_0 = ms_result_forwardable_0 &&
        (!ms_res_from_mem_0 || mem_data_ready);
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 :
        (ms_result_forwardable_0 ? ms_alu_result_0 : 32'b0);
 
-  // 晚到 store data 只进入 MEM 本地寄存器，不参与 ms_allowin 的
-  // 组合控制链。正常 load→store 序列在 load 释放 MEM 的同一拍从
-  // 当前 ms_fwd_data 捕获；WB 是异常排队情况下的安全回退。
+  // 晚到 store data 只进入 MEM 本地寄存器，不参与 ISSUE 前递或
+  // ms_allowin 的控制判定。Load 完成快路径下，后继 store 可在
+  // data_ok 边沿直接锁存 load 结果；已寄存的 MEM 前递和 WB 前递
+  // 则是等待/排队情况下的回退。
+  wire incoming_store_hit_response =
+       es_store_data_late_0 && ms_valid_0 && ms_gr_we_0 &&
+       ms_res_from_mem_0 && ms_data_ok && (ms_dest_0 != 5'b0) &&
+       (ms_dest_0 == es_store_data_src_0);
   wire incoming_store_hit_ms =
        es_store_data_late_0 && ms_valid_0 && ms_gr_we_0 &&
        ms_fwd_valid_0 && (ms_dest_0 != 5'b0) &&
@@ -315,13 +331,15 @@ module MEM_stage(
        (ws_rf_waddr_0 != 5'b0) &&
        (ws_rf_waddr_0 == es_store_data_src_0);
   wire incoming_store_data_ready =
-       !es_store_data_late_0 || incoming_store_hit_ms ||
-       incoming_store_hit_ws1 || incoming_store_hit_ws0;
+       !es_store_data_late_0 || incoming_store_hit_response ||
+       incoming_store_hit_ms || incoming_store_hit_ws1 ||
+       incoming_store_hit_ws0;
   wire [31:0] incoming_store_data =
-       incoming_store_hit_ms  ? ms_fwd_data_0 :
-       incoming_store_hit_ws1 ? ws_rf_wdata_1 :
-       incoming_store_hit_ws0 ? ws_rf_wdata_0 :
-                                es_rkd_value_0;
+       incoming_store_hit_response ? ms_load_result_0 :
+       incoming_store_hit_ms       ? ms_fwd_data_0 :
+       incoming_store_hit_ws1      ? ws_rf_wdata_1 :
+       incoming_store_hit_ws0      ? ws_rf_wdata_0 :
+                                     es_rkd_value_0;
 
   wire held_store_hit_ws1 =
        ms_valid_0 && ms_mem_we_0 && !ms_store_data_ready_0 &&

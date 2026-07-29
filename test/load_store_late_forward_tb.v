@@ -201,17 +201,12 @@ module load_store_late_forward_tb;
     data_data_ok = 1'b1;
     @(posedge clk);
     #1;
-    if (!ms_fwd_bus_0[38] || !es_to_ms_valid_0)
-      fail("load completion did not release the held store");
-    @(negedge clk);
-    data_data_ok = 1'b0;
-    @(posedge clk);
-    #1;
     if (!data_req || !data_wr || data_addr !== 32'b0 ||
         data_wdata !== 32'h1234_5678)
-      fail("MEM did not late-forward load data into the store");
+      fail("load completion did not latch late store data into MEM");
 
     @(negedge clk);
+    data_data_ok = 1'b0;
     data_addr_ok = 1'b1;
     @(posedge clk);
     @(negedge clk);
