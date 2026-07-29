@@ -77,9 +77,9 @@ module mycpu_top(
 
   // 前递总线
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
+  wire [`ES_FWD_BUS_1_WD-1:0] es_fwd_bus_1;
   wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_0;
-  wire [`MS_FWD_BUS_WD-1:0] ms_fwd_bus_1;
+  wire [`MS_FWD_BUS_1_WD-1:0] ms_fwd_bus_1;
 
   // 写回总线
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;

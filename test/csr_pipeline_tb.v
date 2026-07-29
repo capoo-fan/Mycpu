@@ -110,12 +110,12 @@ module csr_pipeline_tb;
   always @(posedge clk)
   begin
     // The SoC-compatible debug outputs intentionally stay tied to constants.
-    // Capture lane1's PC at the MEM-to-WB boundary only inside the testbench;
-    // lane0's PC is already retained by WB for CSR sequencing.
+    // lane1 WB no longer carries PC. Capture the MEM-local PC only inside the
+    // testbench for the architectural commit scoreboard.
     if (!resetn)
       lane1_wb_pc <= 32'b0;
     else if (dut.ms_to_ws_valid_1)
-      lane1_wb_pc <= dut.ms_to_ws_bus_1[105:74];
+      lane1_wb_pc <= dut.u_mem.ms_pc_1;
 
     if (resetn && inst_req && (inst_addr[31:29] == 3'b001))
       saw_mapped_fetch <= 1'b1;

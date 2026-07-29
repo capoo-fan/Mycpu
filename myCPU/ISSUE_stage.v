@@ -21,9 +21,9 @@ module ISSUE_stage(
     input  wire                           es_allowin,
     // 前递信息
     input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus_0,
-    input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus_1,
+    input  wire [`ES_FWD_BUS_1_WD-1:  0]  es_fwd_bus_1,
     input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus_0,
-    input  wire [`MS_FWD_BUS_WD-1  :  0]  ms_fwd_bus_1,
+    input  wire [`MS_FWD_BUS_1_WD-1:  0]  ms_fwd_bus_1,
     input  wire [`WS_TO_RF_BUS_WD-1:  0]  ws_to_rf_bus,
     // 送到 ES 阶段的信息
     output wire                           ds_to_es_valid_0,
@@ -162,15 +162,13 @@ module ISSUE_stage(
 
   wire        es_valid_1;
   wire        es_gr_we_1;
-  wire        es_fwd_valid_1;
-  wire        es_res_from_mem_1;
   wire [ 4:0] es_dest_1;
   wire [31:0] es_fwd_data_1;
 
   assign {es_valid_0, es_gr_we_0, es_fwd_valid_0,
           es_res_from_mem_0, es_dest_0, es_fwd_data_0} = es_fwd_bus_0;
-  assign {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-          es_res_from_mem_1, es_dest_1, es_fwd_data_1} = es_fwd_bus_1;
+  assign {es_valid_1, es_gr_we_1,
+          es_dest_1, es_fwd_data_1} = es_fwd_bus_1;
 
   wire        ms_valid_0;
   wire        ms_gr_we_0;
@@ -181,32 +179,18 @@ module ISSUE_stage(
 
   wire        ms_valid_1;
   wire        ms_gr_we_1;
-  wire        ms_fwd_valid_1;
-  wire        ms_res_from_mem_1;
   wire [ 4:0] ms_dest_1;
   wire [31:0] ms_fwd_data_1;
 
   assign {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
           ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0} = ms_fwd_bus_0;
-  assign {ms_valid_1, ms_gr_we_1, ms_fwd_valid_1,
-          ms_res_from_mem_1, ms_dest_1, ms_fwd_data_1} = ms_fwd_bus_1;
+  assign {ms_valid_1, ms_gr_we_1,
+          ms_dest_1, ms_fwd_data_1} = ms_fwd_bus_1;
 
-  // ISSUE-local mirror of the EX producer metadata required by the RAW
-  // interlock.  Keeping this narrow state beside ISSUE prevents the
-  // timing-critical InstBuffer consume cone from reading the physically
-  // remote EX destination registers.
-  //
-  // Pending multiplies already hold es_allowin low and become forwardable on
-  // the completion cycle, so only loads and explicitly non-forwardable
-  // low-frequency operations need to occupy this scoreboard.
   (* keep = "true", equivalent_register_removal = "no" *)
   reg        ex_wait_valid_0;
   (* keep = "true", equivalent_register_removal = "no" *)
   reg [4:0]  ex_wait_dest_0;
-  (* keep = "true", equivalent_register_removal = "no" *)
-  reg        ex_wait_valid_1;
-  (* keep = "true", equivalent_register_removal = "no" *)
-  reg [4:0]  ex_wait_dest_1;
 
   wire        ws_rf_we_0;
   wire [ 4:0] ws_rf_waddr_0;
@@ -287,16 +271,14 @@ module ISSUE_stage(
   wire rj0_hit_ms1  = src0_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr1_0);
 
   wire rj0_wait_ms =
-       (rj0_hit_ms0 && !ms_fwd_valid_0) ||
-       (rj0_hit_ms1 && !ms_fwd_valid_1);
+       (rj0_hit_ms0 && !ms_fwd_valid_0);
   wire rj0_wait = src0_rj_valid &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_0)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == rf_raddr1_0)) ||
         rj0_wait_ms);
 
-  wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1 && es_fwd_valid_1,
+  wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1,
                                         rj0_hit_es0 && es_fwd_valid_0,
-                                        rj0_hit_ms1 && ms_fwd_valid_1,
+                                        rj0_hit_ms1,
                                         rj0_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rj_value_0 = select_fwd_data(rj0_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -313,16 +295,14 @@ module ISSUE_stage(
   // 这避免把 Store 类型和生产者类型接入 pop 控制，缩短
   // InstBuffer hot tag -> ISSUE pop -> InstBuffer payload 的组合路径。
   wire rkd0_wait_ms =
-       (rkd0_hit_ms0 && !ms_fwd_valid_0) ||
-       (rkd0_hit_ms1 && !ms_fwd_valid_1);
+       (rkd0_hit_ms0 && !ms_fwd_valid_0);
   wire rkd0_wait = src0_rkd_valid &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_0)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == rf_raddr2_0)) ||
         rkd0_wait_ms);
 
-  wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
+  wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1,
                                          rkd0_hit_es0 && es_fwd_valid_0,
-                                         rkd0_hit_ms1 && ms_fwd_valid_1,
+                                         rkd0_hit_ms1,
                                          rkd0_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rkd_value_0 = select_fwd_data(rkd0_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -337,15 +317,13 @@ module ISSUE_stage(
   wire rj1_hit_ms1  = src1_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr1_1);
 
   wire rj1_wait_ms =
-       (rj1_hit_ms0 && !ms_fwd_valid_0) ||
-       (rj1_hit_ms1 && !ms_fwd_valid_1);
+       (rj1_hit_ms0 && !ms_fwd_valid_0);
   wire rj1_wait = src1_rj_valid &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_1)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == rf_raddr1_1)) ||
         rj1_wait_ms);
-  wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1 && es_fwd_valid_1,
+  wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1,
                                         rj1_hit_es0 && es_fwd_valid_0,
-                                        rj1_hit_ms1 && ms_fwd_valid_1,
+                                        rj1_hit_ms1,
                                         rj1_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rj_value_1 = select_fwd_data(rj1_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -357,16 +335,14 @@ module ISSUE_stage(
   wire rkd1_hit_ms0 = src1_rkd_valid && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == rf_raddr2_1);
   wire rkd1_hit_ms1 = src1_rkd_valid && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr2_1);
   wire rkd1_wait_ms =
-       (rkd1_hit_ms0 && !ms_fwd_valid_0) ||
-       (rkd1_hit_ms1 && !ms_fwd_valid_1);
+       (rkd1_hit_ms0 && !ms_fwd_valid_0);
   wire rkd1_wait = src1_rkd_valid &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_1)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == rf_raddr2_1)) ||
         rkd1_wait_ms);
 
-  wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
+  wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1,
                                          rkd1_hit_es0 && es_fwd_valid_0,
-                                         rkd1_hit_ms1 && ms_fwd_valid_1,
+                                         rkd1_hit_ms1,
                                          rkd1_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rkd_value_1 = select_fwd_data(rkd1_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -394,40 +370,28 @@ module ISSUE_stage(
   // 任意一个未完成 load 全局关闭整个发射窗口。
   wire rj0_wait_ms_for_consume = src0_rj_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr1_0_hot)) && !ms_fwd_valid_0) ||
-        ((ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) &&
-          (ms_dest_1 == front_raddr1_0_hot)) && !ms_fwd_valid_1));
+          (ms_dest_0 == front_raddr1_0_hot)) && !ms_fwd_valid_0));
   wire rkd0_wait_ms_for_consume = src0_rkd_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr2_0_hot)) && !ms_fwd_valid_0) ||
-        ((ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) &&
-          (ms_dest_1 == front_raddr2_0_hot)) && !ms_fwd_valid_1));
+          (ms_dest_0 == front_raddr2_0_hot)) && !ms_fwd_valid_0));
   wire rj1_wait_ms_for_consume = src1_rj_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr1_1_hot)) && !ms_fwd_valid_0) ||
-        ((ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) &&
-          (ms_dest_1 == front_raddr1_1_hot)) && !ms_fwd_valid_1));
+          (ms_dest_0 == front_raddr1_1_hot)) && !ms_fwd_valid_0));
   wire rkd1_wait_ms_for_consume = src1_rkd_valid_for_consume &&
        (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr2_1_hot)) && !ms_fwd_valid_0) ||
-        ((ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) &&
-          (ms_dest_1 == front_raddr2_1_hot)) && !ms_fwd_valid_1));
+          (ms_dest_0 == front_raddr2_1_hot)) && !ms_fwd_valid_0));
 
   wire rj0_wait_for_consume = src0_rj_valid_for_consume &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_0_hot)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == front_raddr1_0_hot)) ||
         rj0_wait_ms_for_consume);
   wire rkd0_wait_for_consume = src0_rkd_valid_for_consume &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_0_hot)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == front_raddr2_0_hot)) ||
         rkd0_wait_ms_for_consume);
   wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_1_hot)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == front_raddr1_1_hot)) ||
         rj1_wait_ms_for_consume);
   wire rkd1_wait_for_consume = src1_rkd_valid_for_consume &&
        ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_1_hot)) ||
-        (ex_wait_valid_1 && (ex_wait_dest_1 == front_raddr2_1_hot)) ||
         rkd1_wait_ms_for_consume);
 
   (* keep = "true" *) wire stall_0_for_consume =
@@ -448,6 +412,10 @@ module ISSUE_stage(
   wire mem_op_1 = res_from_mem_1 || mem_we_1;
   wire special_0 = is_csr_0 || is_cacop_0 || is_cpucfg_0;
   wire special_1 = is_csr_1 || is_cacop_1 || is_cpucfg_1;
+  wire lane1_regular_alu = gr_we_1 && !is_bj_1 &&
+       !mem_op_1 && !is_mul_1 && !special_1;
+  wire lane1_simple_branch = is_bj_1 && !inst_jirl_1 && !inst_bl_1;
+  wire lane1_capable = lane1_regular_alu || lane1_simple_branch;
 
   wire issue_window_open = es_allowin;
 
@@ -457,8 +425,8 @@ module ISSUE_stage(
   issue_window_open && !br_taken &&
                     front_valid_0 && !stall_0 && !special_block &&
                     front_valid_1 && !stall_1 && !raw_0_to_1 &&
-                    !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
-                    !special_0 && !special_1;
+                    lane1_capable && !(is_bj_0 && is_bj_1) &&
+                    !special_0;
   (* max_fanout = 16 *) wire issue0_fire_for_consume =
   issue_window_open && !br_taken &&
                     front_valid_0 && !stall_0_for_consume && !special_block;
@@ -467,8 +435,8 @@ module ISSUE_stage(
                     front_valid_0 && !stall_0_for_consume && !special_block &&
                     front_valid_1 && !stall_1_for_consume &&
                     !raw_0_to_1_for_consume &&
-                    !(mem_op_0 && mem_op_1) && !(is_bj_0 && is_bj_1) &&
-                    !special_0 && !special_1;
+                    lane1_capable && !(is_bj_0 && is_bj_1) &&
+                    !special_0;
 
   assign ds_to_es_valid_0 = issue0_fire_for_ex;
   assign ds_to_es_valid_1 = issue1_fire_for_ex;
@@ -481,25 +449,17 @@ module ISSUE_stage(
   wire capture_ex_wait_0 = ds_to_es_valid_0 && gr_we_0 &&
        (dest_0 != 5'b0) &&
        (res_from_mem_0 || is_cpucfg_0 || is_csr_0 || is_cacop_0);
-  wire capture_ex_wait_1 = ds_to_es_valid_1 && gr_we_1 &&
-       (dest_1 != 5'b0) &&
-       res_from_mem_1;
-
   always @(posedge clk)
   begin
     if (!resetn || br_taken)
     begin
       ex_wait_valid_0 <= 1'b0;
       ex_wait_dest_0  <= 5'b0;
-      ex_wait_valid_1 <= 1'b0;
-      ex_wait_dest_1  <= 5'b0;
     end
     else if (es_allowin)
     begin
       ex_wait_valid_0 <= capture_ex_wait_0;
       ex_wait_dest_0  <= capture_ex_wait_0 ? dest_0 : 5'b0;
-      ex_wait_valid_1 <= capture_ex_wait_1;
-      ex_wait_dest_1  <= capture_ex_wait_1 ? dest_1 : 5'b0;
     end
   end
 
@@ -523,17 +483,17 @@ module ISSUE_stage(
                   ((ex_wait_valid_0 !==
                     (es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
                      (es_dest_0 != 5'b0))) ||
-                   (ex_wait_valid_0 && (ex_wait_dest_0 !== es_dest_0)) ||
-                   (ex_wait_valid_1 !==
-                    (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-                     (es_dest_1 != 5'b0))) ||
-                   (ex_wait_valid_1 && (ex_wait_dest_1 !== es_dest_1))))
+                   (ex_wait_valid_0 && (ex_wait_dest_0 !== es_dest_0))))
                 $fatal(1,
-                       "ISSUE local EX wait mirror lost synchronization local=%b/%0d,%b/%0d es=%b/%b/%b/%0d,%b/%b/%b/%0d",
+                       "ISSUE local EX wait mirror lost synchronization local=%b/%0d es=%b/%b/%b/%0d",
                        ex_wait_valid_0, ex_wait_dest_0,
-                       ex_wait_valid_1, ex_wait_dest_1,
-                       es_valid_0, es_gr_we_0, es_fwd_valid_0, es_dest_0,
-                       es_valid_1, es_gr_we_1, es_fwd_valid_1, es_dest_1);
+                       es_valid_0, es_gr_we_0, es_fwd_valid_0, es_dest_0);
+              if (ds_to_es_valid_1 && !lane1_capable)
+                $fatal(1, "unsupported instruction issued on lane1");
+              if (ds_to_es_valid_1 &&
+                  (mem_op_1 || is_mul_1 || special_1 ||
+                   inst_jirl_1 || inst_bl_1))
+                $fatal(1, "lane1 issued a forbidden side-effect class");
               if (ms_stall_0_for_consume &&
                   (ds_to_es_valid_0 || pop_0))
                 $fatal(1, "unfinished MEM producer allowed dependent lane0");
@@ -619,18 +579,8 @@ module ISSUE_stage(
                            ds_alu_src1_1,
                            ds_alu_src2_1,
                            ds_rkd_value_1,
-                           res_from_mem_1,
                            gr_we_1,
-                           mem_we_1,
                            dest_1,
-                           is_mul_1,
-                           mul_signed_1,
-                           mul_hi_1,
-                           ld_byte_1,
-                           ld_half_1,
-                           ld_sign_ext_1,
-                           st_byte_1,
-                           st_half_1,
                            ds_pred_taken_1,
                            ds_pred_target_1,
                            ds_br_op_1,

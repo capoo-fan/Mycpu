@@ -38,7 +38,7 @@ module mul_issue_timing_tb;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
   wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1;
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
-  wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_1;
+  wire [`ES_FWD_BUS_1_WD-1:0] es_fwd_bus_1;
 
   function [31:0] make_mul;
     input [4:0] rd;
@@ -72,7 +72,7 @@ module mul_issue_timing_tb;
     .br_taken(flush), .special_block(1'b0), .es_allowin(es_allowin),
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
     .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
-    .ms_fwd_bus_1({`MS_FWD_BUS_WD{1'b0}}),
+    .ms_fwd_bus_1({`MS_FWD_BUS_1_WD{1'b0}}),
     .ws_to_rf_bus({`WS_TO_RF_BUS_WD{1'b0}}),
     .ds_to_es_valid_0(ds_to_es_valid_0),
     .ds_to_es_valid_1(ds_to_es_valid_1),
@@ -168,9 +168,7 @@ module mul_issue_timing_tb;
     @(posedge clk);
     #1;
     if (u_exe.es_valid_1 !== 1'b0 || es_to_ms_valid_1 !== 1'b0 ||
-        u_exe.es_gr_we_1 !== 1'b0 || u_exe.es_mem_we_1 !== 1'b0 ||
-        u_exe.es_res_from_mem_1 !== 1'b0 ||
-        u_exe.es_is_mul_1 !== 1'b0 || u_exe.mul_pending_1 !== 1'b0)
+        u_exe.es_gr_we_1 !== 1'b0)
       fail("invalid lane1 retained an architectural side effect");
 
     // Backpressure must hold both valid and payload even though the ISSUE
@@ -211,33 +209,27 @@ module mul_issue_timing_tb;
     if (!es_fwd_bus_0[38] || !pop_0 || pop_1)
       fail("lane0 RAW consumer did not issue on multiply completion");
 
-    // A lane1 multiply blocks a dependent lane1 instruction but must not add
-    // an extra cycle when both dispatch lanes become ready.
+    // A multiply in slot1 is not lane1-capable and remains queued while the
+    // independent lane0 ALU instruction issues.
     reset_dut();
     inst_0 = make_addi(5'd10, 5'd0);
     inst_1 = make_mul(5'd5, 5'd0, 5'd0);
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
-    expect_pop(1'b1, 1'b1, "lane1 multiply pair did not issue");
-    @(posedge clk);
-    @(negedge clk);
-    inst_0 = make_addi(5'd11, 5'd0);
-    inst_1 = make_addi(5'd12, 5'd5);
-    expect_pop(1'b0, 1'b0, "EX busy did not block dependent pair");
-    expect_blocked_cycles(2);
+    expect_pop(1'b1, 1'b0, "lane1 multiply was not held for lane0");
     @(posedge clk);
     #1;
-    if (!es_fwd_bus_1[38] || !pop_0 || !pop_1)
-      fail("dependent pair did not issue on lane1 multiply completion");
+    if (u_exe.es_valid_1 || es_to_ms_valid_1)
+      fail("forbidden lane1 multiply entered EX");
 
-    // Both multipliers complete together. MEM backpressure may hold the packet,
-    // but releasing it must enable the dependent pair combinationally.
+    // Lane0 multiply may still pair with a lane1 ALU. The whole packet waits
+    // for the single multiplier, then both results are forwardable together.
     reset_dut();
     inst_0 = make_mul(5'd2, 5'd0, 5'd0);
-    inst_1 = make_mul(5'd3, 5'd0, 5'd0);
+    inst_1 = make_addi(5'd3, 5'd0);
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
-    expect_pop(1'b1, 1'b1, "dual multiply did not issue");
+    expect_pop(1'b1, 1'b1, "lane0 multiply plus lane1 ALU did not issue");
     @(posedge clk);
     @(negedge clk);
     inst_0 = make_addi(5'd4, 5'd2);
@@ -247,10 +239,11 @@ module mul_issue_timing_tb;
     @(posedge clk);
     #1;
     if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
-      fail("MEM backpressure handling at multiply completion is incorrect");
+      fail("asymmetric packet completion under MEM backpressure is incorrect");
     @(negedge clk);
     ms_allowin = 1'b1;
-    expect_pop(1'b1, 1'b1, "MEM release did not enable dependent pair immediately");
+    expect_pop(1'b1, 1'b1,
+               "MEM release did not enable asymmetric dependent pair");
 
     // Flush has priority over a pending multiply and removes its hazard state.
     reset_dut();

@@ -1,4 +1,6 @@
-module alu(
+module alu #(
+    parameter HAS_MUL = 1
+  )(
     input  wire        clk,
     input  wire        resetn,
     input  wire        mul_signed,
@@ -89,29 +91,22 @@ module alu(
 
   assign sr_result   = sr64_result[31:0];
 
-  // 综合时使用 Xilinx 乘法 IP
-  mult_gen_0 u_mult_gen_0 (
-               .CLK (clk     ),
-               .A   (alu_src1),
-               .B   (alu_src2),
-               .P   (mul_ss_result)
-             );
-
-/* 乘法仿真模型
-  reg [63:0] sim_mul_pipe [0:2];
-
-  always @(posedge clk)
-  begin
-    sim_mul_pipe[0] <= mul_signed ?
-                       ($signed({{32{alu_src1[31]}}, alu_src1})
-                        * $signed({{32{alu_src2[31]}}, alu_src2})) :
-                       ({32'b0, alu_src1} * {32'b0, alu_src2});
-    sim_mul_pipe[1] <= sim_mul_pipe[0];
-    sim_mul_pipe[2] <= sim_mul_pipe[1];
-  end
-
-  assign mul_ss_result = sim_mul_pipe[2];
-*/
+  // lane0 综合时使用 Xilinx 乘法 IP；非对称 lane1 不生成乘法器。
+  generate
+    if (HAS_MUL)
+    begin: gen_multiplier
+      mult_gen_0 u_mult_gen_0 (
+                   .CLK (clk     ),
+                   .A   (alu_src1),
+                   .B   (alu_src2),
+                   .P   (mul_ss_result)
+                 );
+    end
+    else
+    begin: gen_no_multiplier
+      assign mul_ss_result = 64'b0;
+    end
+  endgenerate
 
 
   assign mul_result = mul_ss_result;

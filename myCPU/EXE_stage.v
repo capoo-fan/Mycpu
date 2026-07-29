@@ -15,7 +15,7 @@ module EXE_stage(
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     output wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_0,
-    output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_1,
+    output wire [`ES_FWD_BUS_1_WD-1:0]  es_fwd_bus_1,
     output wire                         csr_busy,
     output wire                         cacop_busy,
     output wire [13:0]                  csr_raddr,
@@ -63,20 +63,8 @@ module EXE_stage(
   reg  [31:0] es_alu_src1_1;
   reg  [31:0] es_alu_src2_1;
   reg  [31:0] es_rkd_value_1;
-  reg         es_res_from_mem_1;
   reg         es_gr_we_1;
-  reg         es_mem_we_1;
   reg  [ 4:0] es_dest_1;
-  reg         es_is_mul_1;
-  reg         es_mul_signed_1;
-  reg         es_mul_hi_1;
-  reg  [ 1:0] mul_cnt_1;
-  reg         mul_pending_1;
-  reg         es_ld_byte_1;
-  reg         es_ld_half_1;
-  reg         es_ld_sign_ext_1;
-  reg         es_st_byte_1;
-  reg         es_st_half_1;
   reg         es_pred_taken_1;
   reg  [31:0] es_pred_target_1;
   reg  [ 3:0] es_br_op_1;
@@ -124,28 +112,15 @@ module EXE_stage(
   wire [31:0] ds_alu_src1_1;
   wire [31:0] ds_alu_src2_1;
   wire [31:0] ds_rkd_value_1;
-  wire        ds_res_from_mem_1;
   wire        ds_gr_we_1;
-  wire        ds_mem_we_1;
   wire [ 4:0] ds_dest_1;
-  wire        ds_is_mul_1;
-  wire        ds_mul_signed_1;
-  wire        ds_mul_hi_1;
-  wire        ds_ld_byte_1;
-  wire        ds_ld_half_1;
-  wire        ds_ld_sign_ext_1;
-  wire        ds_st_byte_1;
-  wire        ds_st_half_1;
   wire        ds_pred_taken_1;
   wire [31:0] ds_pred_target_1;
   wire [ 3:0] ds_br_op_1;
   wire [31:0] ds_br_offs_1;
 
   assign {ds_pc_1, ds_alu_op_1, ds_alu_src1_1, ds_alu_src2_1, ds_rkd_value_1,
-          ds_res_from_mem_1, ds_gr_we_1, ds_mem_we_1, ds_dest_1,
-          ds_is_mul_1, ds_mul_signed_1, ds_mul_hi_1,
-          ds_ld_byte_1, ds_ld_half_1, ds_ld_sign_ext_1,
-          ds_st_byte_1, ds_st_half_1,
+          ds_gr_we_1, ds_dest_1,
           ds_pred_taken_1, ds_pred_target_1,
           ds_br_op_1, ds_br_offs_1} = ds_to_es_bus_1;
 
@@ -153,8 +128,7 @@ module EXE_stage(
   // 的时钟沿清零，使完成状态先寄存，再送往 ISSUE，切断计数器到
   // InstBuffer 的跨级组合控制链。
   wire lane0_ready = !es_valid_0 || !mul_pending_0;
-  wire lane1_ready = !es_valid_1 || !mul_pending_1;
-  wire es_ready_go = lane0_ready && lane1_ready;
+  wire es_ready_go = lane0_ready;
   wire es_busy     = es_valid_0 || es_valid_1;
 
   assign es_allowin       = !es_busy || (es_ready_go && ms_allowin);
@@ -164,7 +138,6 @@ module EXE_stage(
   wire [31:0] alu_result_0;
   wire [63:0] mul_product_0;
   wire [31:0] alu_result_1;
-  wire [63:0] mul_product_1;
 
   function [31:0] cpucfg_result;
     input [31:0] index;
@@ -185,13 +158,12 @@ module EXE_stage(
   endfunction
 
   wire [31:0] es_mul_result_0 = es_mul_hi_0 ? mul_product_0[63:32] : mul_product_0[31:0];
-  wire [31:0] es_mul_result_1 = es_mul_hi_1 ? mul_product_1[63:32] : mul_product_1[31:0];
   assign csr_raddr = es_csr_num_0;
   assign csr_busy  = es_valid_0 && es_is_csr_0;
   assign cacop_busy = es_valid_0 && es_is_cacop_0;
 
   wire [31:0] es_exec_result_0 = es_is_mul_0 ? es_mul_result_0 : alu_result_0;
-  wire [31:0] es_exec_result_1 = es_is_mul_1 ? es_mul_result_1 : alu_result_1;
+  wire [31:0] es_exec_result_1 = alu_result_1;
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
 
@@ -221,7 +193,9 @@ module EXE_stage(
   wire [31:0] es_real_target_1;
   wire [31:0] es_next_pc_1;
 
-  branch_judge u_branch_judge_1(
+  branch_judge #(
+                 .SIMPLE_ONLY (1)
+               ) u_branch_judge_1(
                  .br_op       (es_br_op_1),
                  .pc          (es_pc_1),
                  .src1        (es_alu_src1_1),
@@ -245,12 +219,11 @@ module EXE_stage(
 
   wire es_fwd_valid_0 = es_result_forwardable_0 &&
        !es_res_from_mem_0 && !mul_pending_0;
-  wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_1;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
                          es_res_from_mem_0, es_dest_0, es_exec_result_0};
-  assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-                         es_res_from_mem_1, es_dest_1, es_exec_result_1};
+  assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1,
+                         es_dest_1, es_exec_result_1};
 
   assign es_to_ms_bus_0 = {es_result_forwardable_0,
                            es_pc_0,
@@ -282,16 +255,8 @@ module EXE_stage(
 
   assign es_to_ms_bus_1 = {es_pc_1,
                            es_exec_result_1,
-                           es_rkd_value_1,
-                           es_res_from_mem_1,
                            es_gr_we_1,
-                           es_mem_we_1,
                            es_dest_1,
-                           es_ld_byte_1,
-                           es_ld_half_1,
-                           es_ld_sign_ext_1,
-                           es_st_byte_1,
-                           es_st_half_1,
                            es_pred_taken_1,
                            es_pred_target_1,
                            es_is_bj_1,
@@ -355,21 +320,11 @@ module EXE_stage(
 
       es_pc_1           <= 32'b0;
       es_gr_we_1        <= 1'b0;
-      es_mem_we_1       <= 1'b0;
-      es_res_from_mem_1 <= 1'b0;
       es_dest_1         <= 5'b0;
       es_alu_op_1       <= 12'b0;
       es_alu_src1_1     <= 32'b0;
       es_alu_src2_1     <= 32'b0;
       es_rkd_value_1    <= 32'b0;
-      es_is_mul_1       <= 1'b0;
-      es_mul_signed_1   <= 1'b0;
-      es_mul_hi_1       <= 1'b0;
-      es_ld_byte_1      <= 1'b0;
-      es_ld_half_1      <= 1'b0;
-      es_ld_sign_ext_1  <= 1'b0;
-      es_st_byte_1      <= 1'b0;
-      es_st_half_1      <= 1'b0;
       es_pred_taken_1   <= 1'b0;
       es_pred_target_1  <= 32'b0;
       es_br_op_1        <= `BR_NONE;
@@ -386,16 +341,10 @@ module EXE_stage(
       es_is_cacop_0     <= 1'b0;
       es_is_csr_0       <= 1'b0;
       es_gr_we_1        <= 1'b0;
-      es_mem_we_1       <= 1'b0;
-      es_res_from_mem_1 <= 1'b0;
-      es_is_mul_1       <= 1'b0;
       es_br_op_1        <= `BR_NONE;
     end
     else if (es_allowin)
     begin
-      // Payload follows es_allowin only.  The issue decision is captured by
-      // es_valid_* and must not become the CE of the wide EX register banks.
-      // Architectural side-effect controls remain zero for an invalid lane.
       es_pc_0           <= ds_pc_0;
       es_alu_op_0       <= ds_alu_op_0;
       es_alu_src1_0     <= ds_alu_src1_0;
@@ -430,18 +379,8 @@ module EXE_stage(
       es_alu_src1_1     <= ds_alu_src1_1;
       es_alu_src2_1     <= ds_alu_src2_1;
       es_rkd_value_1    <= ds_rkd_value_1;
-      es_res_from_mem_1 <= ds_to_es_valid_1 && ds_res_from_mem_1;
       es_gr_we_1        <= ds_to_es_valid_1 && ds_gr_we_1;
-      es_mem_we_1       <= ds_to_es_valid_1 && ds_mem_we_1;
       es_dest_1         <= ds_dest_1;
-      es_is_mul_1       <= ds_to_es_valid_1 && ds_is_mul_1;
-      es_mul_signed_1   <= ds_mul_signed_1;
-      es_mul_hi_1       <= ds_mul_hi_1;
-      es_ld_byte_1      <= ds_ld_byte_1;
-      es_ld_half_1      <= ds_ld_half_1;
-      es_ld_sign_ext_1  <= ds_ld_sign_ext_1;
-      es_st_byte_1      <= ds_st_byte_1;
-      es_st_half_1      <= ds_st_half_1;
       es_pred_taken_1   <= ds_pred_taken_1;
       es_pred_target_1  <= ds_pred_target_1;
       es_br_op_1        <= ds_to_es_valid_1 ? ds_br_op_1 : `BR_NONE;
@@ -473,31 +412,9 @@ module EXE_stage(
     end
   end
 
-  always @(posedge clk)
-  begin
-    if (reset || flush)
-    begin
-      mul_cnt_1     <= 2'd0;
-      mul_pending_1 <= 1'b0;
-    end
-    else if (es_allowin)
-    begin
-      mul_cnt_1     <= 2'd0;
-      mul_pending_1 <= ds_to_es_valid_1 && ds_is_mul_1;
-    end
-    else if (mul_pending_1)
-    begin
-      if (mul_cnt_1 == 2'd2)
-      begin
-        mul_cnt_1     <= 2'd3;
-        mul_pending_1 <= 1'b0;
-      end
-      else
-        mul_cnt_1 <= mul_cnt_1 + 2'd1;
-    end
-  end
-
-  alu u_alu_0(
+  alu #(
+        .HAS_MUL (1)
+      ) u_alu_0(
         .clk        (clk),
         .resetn     (resetn),
         .mul_signed (es_mul_signed_0),
@@ -508,15 +425,17 @@ module EXE_stage(
         .mul_result (mul_product_0)
       );
 
-  alu u_alu_1(
+  alu #(
+        .HAS_MUL (0)
+      ) u_alu_1(
         .clk        (clk),
         .resetn     (resetn),
-        .mul_signed (es_mul_signed_1),
+        .mul_signed (1'b0),
         .alu_op     (es_alu_op_1),
         .alu_src1   (es_alu_src1_1),
         .alu_src2   (es_alu_src2_1),
         .alu_result (alu_result_1),
-        .mul_result (mul_product_1)
+        .mul_result ()
       );
 
 `ifndef SYNTHESIS
@@ -526,10 +445,11 @@ module EXE_stage(
     begin
       if (es_valid_0 && mul_pending_0 && es_fwd_valid_0)
         $fatal(1, "unfinished lane0 multiply became forwardable");
-      if (es_valid_1 && mul_pending_1 && es_fwd_valid_1)
-        $fatal(1, "unfinished lane1 multiply became forwardable");
       if (es_valid_0 && !es_result_forwardable_0 && es_fwd_valid_0)
         $fatal(1, "lane0 special result entered EX forwarding");
+      if (ds_to_es_valid_1 &&
+          ((ds_br_op_1 == `BR_JIRL) || (ds_br_op_1 == `BR_BL)))
+        $fatal(1, "complex branch entered lane1 EX");
     end
   end
 `endif

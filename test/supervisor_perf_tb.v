@@ -1,17 +1,6 @@
 `timescale 1ns / 1ps
 
 // ============================================================================
-// ES_TO_MS_BUS 位提取宏（lane 0 与 lane 1 位置相同）
-// ============================================================================
-`define ES_BUS_PC            293:262
-`define ES_BUS_PRED_TAKEN    184
-`define ES_BUS_PRED_TARGET   183:152
-`define ES_BUS_IS_BJ         151
-`define ES_BUS_REAL_TAKEN    150
-`define ES_BUS_REAL_TARGET   149:118
-`define ES_BUS_REDIRECT_MISS 85
-
-// ============================================================================
 // MS_FWD_BUS 位提取宏
 // ============================================================================
 `define MS_FWD_VALID     40
@@ -130,7 +119,7 @@ module supervisor_perf_tb;
   reg [63:0] ms_unready_issueable_unrelated_cycles;
   reg [63:0] is_pair_blocked_cycles;
   reg [63:0] ex_mul_wait_cycles;
-  reg [63:0] pair_mem_conflict_cycles;
+  reg [63:0] pair_lane1_capability_cycles;
   reg [63:0] pair_raw_conflict_cycles;
   reg [63:0] pair_branch_conflict_cycles;
   reg [63:0] pair_special_conflict_cycles;
@@ -180,21 +169,12 @@ module supervisor_perf_tb;
   // -- 重建的内部信号 --
   wire ms_unready_load_tb;
   wire es_mul_pending_tb;
-  wire [31:0] es_to_ms_bus_0_flat;
-  wire [31:0] es_to_ms_bus_1_flat;
-
-  // lane0 keeps the 295-bit special-instruction payload. lane1 drops that
-  // payload; append 85 zero bits so the shared branch-field indices stay put.
-  wire [319:0] es_bus_0_padded = {25'b0, cpu.es_to_ms_bus_0};
-  wire [319:0] es_bus_1_padded = {26'b0, cpu.es_to_ms_bus_1, 85'b0};
 
   // MS_FWD_BUS_WD = 41
   wire [63:0] ms_fwd_0_padded = {23'b0, cpu.ms_fwd_bus_0};
-  wire [63:0] ms_fwd_1_padded = {23'b0, cpu.ms_fwd_bus_1};
 
   // ES_FWD_BUS_WD = 41
   wire [63:0] es_fwd_0_padded = {23'b0, cpu.es_fwd_bus_0};
-  wire [63:0] es_fwd_1_padded = {23'b0, cpu.es_fwd_bus_1};
 
   mycpu_top cpu(
               .clk(clk), .resetn(resetn),
@@ -248,21 +228,14 @@ module supervisor_perf_tb;
   assign ms_unready_load_tb =
       (ms_fwd_0_padded[`MS_FWD_VALID] &&
        ms_fwd_0_padded[`MS_FWD_GR_WE] &&
-       !ms_fwd_0_padded[`MS_FWD_FWD_VALID]) ||
-      (ms_fwd_1_padded[`MS_FWD_VALID] &&
-       ms_fwd_1_padded[`MS_FWD_GR_WE] &&
-       !ms_fwd_1_padded[`MS_FWD_FWD_VALID]);
+       !ms_fwd_0_padded[`MS_FWD_FWD_VALID]);
 
   // es_mul_pending: EXE 阶段有未完成的乘法
   assign es_mul_pending_tb =
       (es_fwd_0_padded[`ES_FWD_VALID] &&
        es_fwd_0_padded[`ES_FWD_GR_WE] &&
        !es_fwd_0_padded[`ES_FWD_FWD_VALID] &&
-       !es_fwd_0_padded[`ES_FWD_RES_MEM]) ||
-      (es_fwd_1_padded[`ES_FWD_VALID] &&
-       es_fwd_1_padded[`ES_FWD_GR_WE] &&
-       !es_fwd_1_padded[`ES_FWD_FWD_VALID] &&
-       !es_fwd_1_padded[`ES_FWD_RES_MEM]);
+       !es_fwd_0_padded[`ES_FWD_RES_MEM]);
 
   // =========================================================================
   // 主计数器逻辑
@@ -299,25 +272,25 @@ module supervisor_perf_tb;
     // ------ 分支信息 pipeline ------
     // 当 EXE→MEM 握手时捕获分支预测/实际信息
     if (cpu.es_to_ms_valid_0 && cpu.ms_allowin &&
-        es_bus_0_padded[`ES_BUS_IS_BJ])
+        cpu.u_exe.es_is_bj_0)
     begin
       br_info_valid      <= 1'b1;
-      br_info_pc         <= es_bus_0_padded[`ES_BUS_PC];
-      br_info_pred_taken <= es_bus_0_padded[`ES_BUS_PRED_TAKEN];
-      br_info_pred_target<= es_bus_0_padded[`ES_BUS_PRED_TARGET];
-      br_info_real_taken <= es_bus_0_padded[`ES_BUS_REAL_TAKEN];
-      br_info_real_target<= es_bus_0_padded[`ES_BUS_REAL_TARGET];
+      br_info_pc         <= cpu.u_exe.es_pc_0;
+      br_info_pred_taken <= cpu.u_exe.es_pred_taken_0;
+      br_info_pred_target<= cpu.u_exe.es_pred_target_0;
+      br_info_real_taken <= cpu.u_exe.es_real_taken_0;
+      br_info_real_target<= cpu.u_exe.es_real_target_0;
       br_info_is_bj      <= 1'b1;
     end
     else if (cpu.es_to_ms_valid_1 && cpu.ms_allowin &&
-             es_bus_1_padded[`ES_BUS_IS_BJ])
+             cpu.u_exe.es_is_bj_1)
     begin
       br_info_valid      <= 1'b1;
-      br_info_pc         <= es_bus_1_padded[`ES_BUS_PC];
-      br_info_pred_taken <= es_bus_1_padded[`ES_BUS_PRED_TAKEN];
-      br_info_pred_target<= es_bus_1_padded[`ES_BUS_PRED_TARGET];
-      br_info_real_taken <= es_bus_1_padded[`ES_BUS_REAL_TAKEN];
-      br_info_real_target<= es_bus_1_padded[`ES_BUS_REAL_TARGET];
+      br_info_pc         <= cpu.u_exe.es_pc_1;
+      br_info_pred_taken <= cpu.u_exe.es_pred_taken_1;
+      br_info_pred_target<= cpu.u_exe.es_pred_target_1;
+      br_info_real_taken <= cpu.u_exe.es_real_taken_1;
+      br_info_real_target<= cpu.u_exe.es_real_target_1;
       br_info_is_bj      <= 1'b1;
     end
     else
@@ -396,7 +369,7 @@ module supervisor_perf_tb;
           cpu.issue_pop_0 && !cpu.issue_pop_1)
         is_pair_blocked_cycles <= is_pair_blocked_cycles + 1;
 
-      if (cpu.u_exe.mul_pending_0 || cpu.u_exe.mul_pending_1)
+      if (cpu.u_exe.mul_pending_0)
         ex_mul_wait_cycles <= ex_mul_wait_cycles + 1;
 
       // --- pair_blocked 原因细分 ---
@@ -404,8 +377,9 @@ module supervisor_perf_tb;
       if (cpu.ibuf_front_valid_0 && cpu.ibuf_front_valid_1 &&
           cpu.issue_pop_0 && !cpu.issue_pop_1)
       begin
-        if (cpu.u_issue.mem_op_0 && cpu.u_issue.mem_op_1)
-          pair_mem_conflict_cycles <= pair_mem_conflict_cycles + 1;
+        if (!cpu.u_issue.lane1_capable)
+          pair_lane1_capability_cycles <=
+              pair_lane1_capability_cycles + 1;
         else if (cpu.u_issue.raw_0_to_1)
           pair_raw_conflict_cycles <= pair_raw_conflict_cycles + 1;
         else if (cpu.u_issue.is_bj_0 && cpu.u_issue.is_bj_1)
@@ -725,7 +699,7 @@ module supervisor_perf_tb;
       $display("");
       $display("--- Pair-Blocked Breakdown ---");
       print_stall("pair_blocked_total",   is_pair_blocked_cycles);
-      print_stall("  mem_conflict",        pair_mem_conflict_cycles);
+      print_stall("  lane1_capability",    pair_lane1_capability_cycles);
       print_stall("  raw_conflict",        pair_raw_conflict_cycles);
       print_stall("  branch_conflict",     pair_branch_conflict_cycles);
       print_stall("  special_conflict",    pair_special_conflict_cycles);
@@ -782,9 +756,9 @@ module supervisor_perf_tb;
                is_pair_blocked_cycles,
                pct(is_pair_blocked_cycles, benchmark_cycle_count));
       $display("  Breakdown of pair-blocked (why slot1 blocked):");
-      $display("    mem_conflict  (both mem ops)  = %6.2f%% (%0d)",
-               pct(pair_mem_conflict_cycles,  is_pair_blocked_cycles),
-               pair_mem_conflict_cycles);
+      $display("    lane1_capability (not ALU/simple branch) = %6.2f%% (%0d)",
+               pct(pair_lane1_capability_cycles, is_pair_blocked_cycles),
+               pair_lane1_capability_cycles);
       $display("    raw_conflict  (RAW 0->1)      = %6.2f%% (%0d)",
                pct(pair_raw_conflict_cycles,  is_pair_blocked_cycles),
                pair_raw_conflict_cycles);
@@ -946,7 +920,7 @@ module supervisor_perf_tb;
     ms_unready_issueable_unrelated_cycles = 0;
     is_pair_blocked_cycles   = 0;
     ex_mul_wait_cycles       = 0;
-    pair_mem_conflict_cycles   = 0;
+    pair_lane1_capability_cycles = 0;
     pair_raw_conflict_cycles   = 0;
     pair_branch_conflict_cycles = 0;
     pair_special_conflict_cycles = 0;

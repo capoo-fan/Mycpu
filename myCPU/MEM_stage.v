@@ -14,7 +14,7 @@ module MEM_stage(
     output wire [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus_0,
     output wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1,
     output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_0,
-    output wire [`MS_FWD_BUS_WD-1:0]    ms_fwd_bus_1,
+    output wire [`MS_FWD_BUS_1_WD-1:0]  ms_fwd_bus_1,
     output wire                         csr_busy,
     output wire                         cacop_busy,
     output wire                         br_taken,
@@ -53,7 +53,6 @@ module MEM_stage(
   localparam [1:0] WAIT_CACOP = 2'd2;
 
   reg  [ 1:0] ms_wait_kind;
-  (* max_fanout = 32 *) reg ms_mem_lane1;
 
   reg         ms_result_forwardable_0;
   reg  [31:0] ms_pc_0;
@@ -85,16 +84,8 @@ module MEM_stage(
   reg         ms_valid_1;
   reg  [31:0] ms_pc_1;
   reg  [31:0] ms_alu_result_1;
-  reg  [31:0] ms_rkd_value_1;
-  reg         ms_res_from_mem_1;
   reg         ms_gr_we_1;
-  reg         ms_mem_we_1;
   reg  [ 4:0] ms_dest_1;
-  reg         ms_ld_byte_1;
-  reg         ms_ld_half_1;
-  reg         ms_ld_sign_ext_1;
-  reg         ms_st_byte_1;
-  reg         ms_st_half_1;
   reg         ms_pred_taken_1;
   reg  [31:0] ms_pred_target_1;
   reg         ms_is_bj_1;
@@ -144,16 +135,8 @@ module MEM_stage(
 
   wire [31:0] es_pc_1;
   wire [31:0] es_final_result_1;
-  wire [31:0] es_rkd_value_1;
-  wire        es_res_from_mem_1;
   wire        es_gr_we_1;
-  wire        es_mem_we_1;
   wire [ 4:0] es_dest_1;
-  wire        es_ld_byte_1;
-  wire        es_ld_half_1;
-  wire        es_ld_sign_ext_1;
-  wire        es_st_byte_1;
-  wire        es_st_half_1;
   wire        es_pred_taken_1;
   wire [31:0] es_pred_target_1;
   wire        es_is_bj_1;
@@ -162,10 +145,8 @@ module MEM_stage(
   wire [31:0] es_next_pc_1;
   wire        es_redirect_miss_1;
 
-  assign {es_pc_1, es_final_result_1, es_rkd_value_1,
-          es_res_from_mem_1, es_gr_we_1, es_mem_we_1, es_dest_1,
-          es_ld_byte_1, es_ld_half_1, es_ld_sign_ext_1,
-          es_st_byte_1, es_st_half_1,
+  assign {es_pc_1, es_final_result_1,
+          es_gr_we_1, es_dest_1,
           es_pred_taken_1, es_pred_target_1,
           es_is_bj_1, es_real_taken_1, es_real_target_1,
           es_next_pc_1, es_redirect_miss_1} = es_to_ms_bus_1;
@@ -184,15 +165,6 @@ module MEM_stage(
   wire ms_lane1_eff_valid = ms_valid_1;
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
-  wire select_lane1 = ms_mem_lane1;
-
-  wire selected_mem_we         = select_lane1 ? ms_mem_we_1          : ms_mem_we_0;
-  wire [31:0] selected_addr    = select_lane1 ? ms_alu_result_1      : ms_alu_result_0;
-  wire [31:0] selected_rkd     = select_lane1 ? ms_rkd_value_1       : ms_rkd_value_0;
-  wire        selected_ld_byte = select_lane1 ? ms_ld_byte_1         : ms_ld_byte_0;
-  wire        selected_ld_half = select_lane1 ? ms_ld_half_1         : ms_ld_half_0;
-  wire        selected_st_byte = select_lane1 ? ms_st_byte_1         : ms_st_byte_0;
-  wire        selected_st_half = select_lane1 ? ms_st_half_1         : ms_st_half_0;
   wire ms_has_mem_op = (ms_wait_kind == WAIT_DATA);
   wire ms_has_cacop = (ms_wait_kind == WAIT_CACOP);
 
@@ -214,8 +186,8 @@ module MEM_stage(
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
   // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
-  // ms_postable_store 已寄存 selected_mem_we && data_sram_addr_is_sram，
-  // 因此它本身就是提前退休条件。不要再把 ms_mem_we_* 接回
+  // ms_postable_store 已寄存 ms_mem_we_0 && data_sram_addr_is_sram，
+  // 因此它本身就是提前退休条件。不要再把 ms_mem_we_0 接回
   // MEM->EX->ISSUE 的组合反压长路径。ms_data_pending 继续阻止
   // 更年轻的访存，直到该 store 的 data_ok 返回。
   wire posted_store_ready = ms_postable_store;
@@ -261,21 +233,21 @@ module MEM_stage(
   assign bpu_real_taken  = bpu_sel_lane1 ? ms_real_taken_1  : ms_real_taken_0;
   assign bpu_real_target = bpu_sel_lane1 ? ms_real_target_1 : ms_real_target_0;
 
-  wire [31:0] ms_st_data = selected_st_byte ? {4{selected_rkd[7:0]}} :
-       selected_st_half ? {2{selected_rkd[15:0]}} :
-       selected_rkd;
-  wire [ 3:0] ms_st_strb = selected_st_byte ? (4'b0001 << selected_addr[1:0]) :
-       selected_st_half ? (selected_addr[1] ? 4'b1100 : 4'b0011) :
+  wire [31:0] ms_st_data = ms_st_byte_0 ? {4{ms_rkd_value_0[7:0]}} :
+       ms_st_half_0 ? {2{ms_rkd_value_0[15:0]}} :
+       ms_rkd_value_0;
+  wire [ 3:0] ms_st_strb = ms_st_byte_0 ? (4'b0001 << ms_alu_result_0[1:0]) :
+       ms_st_half_0 ? (ms_alu_result_0[1] ? 4'b1100 : 4'b0011) :
        4'b1111;
-  wire [ 1:0] ms_mem_size = (selected_ld_byte || selected_st_byte) ? 2'b00 :
-       (selected_ld_half || selected_st_half) ? 2'b01 :
+  wire [ 1:0] ms_mem_size = (ms_ld_byte_0 || ms_st_byte_0) ? 2'b00 :
+       (ms_ld_half_0 || ms_st_half_0) ? 2'b01 :
        2'b10;
 
   assign data_sram_req   = ms_has_mem_op && !ms_addr_sent && !ms_data_pending;
-  assign data_sram_wr    = selected_mem_we;
+  assign data_sram_wr    = ms_mem_we_0;
   assign data_sram_size  = ms_mem_size;
-  assign data_sram_wstrb = selected_mem_we ? ms_st_strb : 4'b0;
-  assign data_sram_addr  = selected_addr;
+  assign data_sram_wstrb = ms_mem_we_0 ? ms_st_strb : 4'b0;
+  assign data_sram_addr  = ms_alu_result_0;
   assign data_sram_wdata = ms_st_data;
 
   wire [31:0] ms_final_rdata = ms_rdata_buf;
@@ -303,24 +275,18 @@ module MEM_stage(
 
   wire [31:0] ms_load_result_0 = load_result(ms_alu_result_0, ms_final_rdata,
        ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
-  wire [31:0] ms_load_result_1 = load_result(ms_alu_result_1, ms_final_rdata,
-       ms_ld_byte_1, ms_ld_half_1, ms_ld_sign_ext_1);
-
   // 特殊结果只进入 WB；load 只能使用已经寄存的 ms_rdata_buf。这里
   // 不读取 data_sram_rdata/data_sram_data_ok，避免外部 SRAM 返回路径
   // 在同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
   wire ms_fwd_valid_0 = ms_result_forwardable_0 &&
        (!ms_res_from_mem_0 || mem_data_ready);
-  wire ms_fwd_valid_1 = !ms_res_from_mem_1 || mem_data_ready;
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 :
        (ms_result_forwardable_0 ? ms_alu_result_0 : 32'b0);
-  wire [31:0] ms_fwd_data_1 = ms_res_from_mem_1 ?
-       ms_load_result_1 : ms_alu_result_1;
 
   assign ms_fwd_bus_0 = {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
                          ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0};
-  assign ms_fwd_bus_1 = {ms_lane1_eff_valid, ms_gr_we_1, ms_fwd_valid_1,
-                         ms_res_from_mem_1, ms_dest_1, ms_fwd_data_1};
+  assign ms_fwd_bus_1 = {ms_lane1_eff_valid, ms_gr_we_1,
+                         ms_dest_1, ms_alu_result_1};
 
   assign ms_to_ws_bus_0 = {ms_pc_0,
                            ms_alu_result_0,
@@ -337,15 +303,9 @@ module MEM_stage(
                            ms_csr_wvalue_0
                           };
 
-  assign ms_to_ws_bus_1 = {ms_pc_1,
-                           ms_alu_result_1,
-                           ms_res_from_mem_1,
+  assign ms_to_ws_bus_1 = {ms_alu_result_1,
                            ms_gr_we_1,
-                           ms_dest_1,
-                           ms_ld_byte_1,
-                           ms_ld_half_1,
-                           ms_ld_sign_ext_1,
-                           ms_final_rdata
+                           ms_dest_1
                           };
 
   always @(posedge clk)
@@ -382,29 +342,20 @@ module MEM_stage(
     end
   end
 
-  // 将当前 MEM 包需要等待的资源以及访存所在 lane 寄存下来。这样
-  // ms_allowin 只读取本地状态，不再重算 lane1 有效性、分支恢复与访存类型。
+  // lane1 无访存能力，MEM 等待资源只由 lane0 决定。
   always @(posedge clk)
   begin
     if (reset || br_taken || branch_redirect_fire)
-    begin
       ms_wait_kind <= WAIT_NONE;
-      ms_mem_lane1 <= 1'b0;
-    end
     else if (ms_allowin)
     begin
       if (es_to_ms_valid_0 && es_is_cacop_0)
         ms_wait_kind <= WAIT_CACOP;
-      else if ((es_to_ms_valid_0 &&
-                (es_res_from_mem_0 || es_mem_we_0)) ||
-               (es_lane1_eff_valid &&
-                (es_res_from_mem_1 || es_mem_we_1)))
+      else if (es_to_ms_valid_0 &&
+               (es_res_from_mem_0 || es_mem_we_0))
         ms_wait_kind <= WAIT_DATA;
       else
         ms_wait_kind <= WAIT_NONE;
-
-      ms_mem_lane1 <= es_lane1_eff_valid &&
-                   (es_res_from_mem_1 || es_mem_we_1);
     end
   end
 
@@ -435,7 +386,7 @@ module MEM_stage(
     else if (ms_allowin)
       ms_postable_store <= 1'b0;
     else if (got_addr_ok)
-      ms_postable_store <= selected_mem_we && data_sram_addr_is_sram;
+      ms_postable_store <= ms_mem_we_0 && data_sram_addr_is_sram;
   end
 
   always @(posedge clk)
@@ -497,16 +448,8 @@ module MEM_stage(
 
       ms_pc_1           <= 32'b0;
       ms_gr_we_1        <= 1'b0;
-      ms_mem_we_1       <= 1'b0;
-      ms_res_from_mem_1 <= 1'b0;
       ms_dest_1         <= 5'b0;
       ms_alu_result_1   <= 32'b0;
-      ms_rkd_value_1    <= 32'b0;
-      ms_ld_byte_1      <= 1'b0;
-      ms_ld_half_1      <= 1'b0;
-      ms_ld_sign_ext_1  <= 1'b0;
-      ms_st_byte_1      <= 1'b0;
-      ms_st_half_1      <= 1'b0;
       ms_pred_taken_1   <= 1'b0;
       ms_pred_target_1  <= 32'b0;
       ms_is_bj_1        <= 1'b0;
@@ -524,8 +467,6 @@ module MEM_stage(
       ms_redirect_miss_0 <= 1'b0;
       ms_is_cacop_0     <= 1'b0;
       ms_gr_we_1        <= 1'b0;
-      ms_mem_we_1       <= 1'b0;
-      ms_res_from_mem_1 <= 1'b0;
       ms_is_bj_1        <= 1'b0;
       ms_redirect_miss_1 <= 1'b0;
     end
@@ -576,16 +517,8 @@ module MEM_stage(
       begin
         ms_pc_1           <= es_pc_1;
         ms_alu_result_1   <= es_final_result_1;
-        ms_rkd_value_1    <= es_rkd_value_1;
-        ms_res_from_mem_1 <= es_res_from_mem_1;
         ms_gr_we_1        <= es_gr_we_1;
-        ms_mem_we_1       <= es_mem_we_1;
         ms_dest_1         <= es_dest_1;
-        ms_ld_byte_1      <= es_ld_byte_1;
-        ms_ld_half_1      <= es_ld_half_1;
-        ms_ld_sign_ext_1  <= es_ld_sign_ext_1;
-        ms_st_byte_1      <= es_st_byte_1;
-        ms_st_half_1      <= es_st_half_1;
         ms_pred_taken_1   <= es_pred_taken_1;
         ms_pred_target_1  <= es_pred_target_1;
         ms_is_bj_1        <= es_is_bj_1;
@@ -597,8 +530,6 @@ module MEM_stage(
       else
       begin
         ms_gr_we_1        <= 1'b0;
-        ms_mem_we_1       <= 1'b0;
-        ms_res_from_mem_1 <= 1'b0;
         ms_is_bj_1        <= 1'b0;
         ms_redirect_miss_1 <= 1'b0;
       end
@@ -614,8 +545,6 @@ module MEM_stage(
         $fatal(1, "lane0 special result entered MEM forwarding");
       if (ms_res_from_mem_0 && ms_fwd_valid_0 && !ms_rdata_buf_valid)
         $fatal(1, "lane0 load forwarded an unregistered SRAM response");
-      if (ms_res_from_mem_1 && ms_fwd_valid_1 && !ms_rdata_buf_valid)
-        $fatal(1, "lane1 load forwarded an unregistered SRAM response");
     end
   end
 `endif

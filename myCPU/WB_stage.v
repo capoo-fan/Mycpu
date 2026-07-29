@@ -40,13 +40,8 @@ module WB_stage(
 
   reg         ws_valid_1;
   reg  [31:0] ws_alu_result_1;
-  reg  [31:0] ws_mem_result_1;
-  reg         ws_res_from_mem_1;
   reg         ws_gr_we_1;
   reg  [ 4:0] ws_dest_1;
-  reg         ws_ld_byte_1;
-  reg         ws_ld_half_1;
-  reg         ws_ld_sign_ext_1;
 
   localparam [2:0] CSR_IDLE       = 3'd0;
   localparam [2:0] CSR_APPLY      = 3'd1;
@@ -78,19 +73,11 @@ module WB_stage(
           ms_mem_rdata_0, ms_is_csr_0, ms_csr_num_0,
           ms_csr_wmask_0, ms_csr_wvalue_0} = ms_to_ws_bus_0;
 
-  wire [31:0] unused_ms_pc_1;
   wire [31:0] ms_alu_result_1;
-  wire        ms_res_from_mem_1;
   wire        ms_gr_we_1;
   wire [ 4:0] ms_dest_1;
-  wire        ms_ld_byte_1;
-  wire        ms_ld_half_1;
-  wire        ms_ld_sign_ext_1;
-  wire [31:0] ms_mem_rdata_1;
 
-  assign {unused_ms_pc_1, ms_alu_result_1, ms_res_from_mem_1, ms_gr_we_1, ms_dest_1,
-          ms_ld_byte_1, ms_ld_half_1, ms_ld_sign_ext_1,
-          ms_mem_rdata_1} = ms_to_ws_bus_1;
+  assign {ms_alu_result_1, ms_gr_we_1, ms_dest_1} = ms_to_ws_bus_1;
 
   // 加载数据的函数
   function [31:0] load_result;
@@ -115,11 +102,8 @@ module WB_stage(
 
   wire [31:0] ws_load_result_0 = load_result(ws_alu_result_0, ws_mem_result_0,
        ws_ld_byte_0, ws_ld_half_0, ws_ld_sign_ext_0);
-  wire [31:0] ws_load_result_1 = load_result(ws_alu_result_1, ws_mem_result_1,
-       ws_ld_byte_1, ws_ld_half_1, ws_ld_sign_ext_1);
-
   wire [31:0] final_result_0 = ws_res_from_mem_0 ? ws_load_result_0 : ws_alu_result_0;
-  wire [31:0] final_result_1 = ws_res_from_mem_1 ? ws_load_result_1 : ws_alu_result_1;
+  wire [31:0] final_result_1 = ws_alu_result_1;
 
   assign ws_allowin = 1'b1;
 
@@ -213,13 +197,8 @@ module WB_stage(
       ws_csr_wvalue_0   <= 32'b0;
 
       ws_gr_we_1        <= 1'b0;
-      ws_res_from_mem_1 <= 1'b0;
       ws_dest_1         <= 5'b0;
       ws_alu_result_1   <= 32'b0;
-      ws_mem_result_1   <= 32'b0;
-      ws_ld_byte_1      <= 1'b0;
-      ws_ld_half_1      <= 1'b0;
-      ws_ld_sign_ext_1  <= 1'b0;
     end
     else if (ws_allowin)
     begin
@@ -249,19 +228,11 @@ module WB_stage(
       if (ms_to_ws_valid_1)
       begin
         ws_alu_result_1   <= ms_alu_result_1;
-        ws_mem_result_1   <= ms_mem_rdata_1;
-        ws_res_from_mem_1 <= ms_res_from_mem_1;
         ws_gr_we_1        <= ms_gr_we_1;
         ws_dest_1         <= ms_dest_1;
-        ws_ld_byte_1      <= ms_ld_byte_1;
-        ws_ld_half_1      <= ms_ld_half_1;
-        ws_ld_sign_ext_1  <= ms_ld_sign_ext_1;
       end
       else
-      begin
         ws_gr_we_1        <= 1'b0;
-        ws_res_from_mem_1 <= 1'b0;
-      end
     end
   end
 
