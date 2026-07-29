@@ -48,13 +48,13 @@ module inst_buffer(
   reg [44:0] front_bus_0_g2;
   reg [44:0] front_bus_0_g3;
   reg [44:0] front_bus_0_g4;
-  reg [42:0] front_bus_0_g5;
+  reg [40:0] front_bus_0_g5;
   reg [44:0] front_bus_1_g0;
   reg [44:0] front_bus_1_g1;
   reg [44:0] front_bus_1_g2;
   reg [44:0] front_bus_1_g3;
   reg [44:0] front_bus_1_g4;
-  reg [42:0] front_bus_1_g5;
+  reg [40:0] front_bus_1_g5;
 
   (* keep = "true", equivalent_register_removal = "no" *)
   reg [4:0] front_raddr1_0_hot_r;
@@ -83,8 +83,8 @@ module inst_buffer(
   assign front_raddr1_1_hot = front_raddr1_1_hot_r;
   assign front_raddr2_1_hot = front_raddr2_1_hot_r;
 
-  localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 58;
-  localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 53;
+  localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 56;
+  localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 51;
 
   // next=>front_vaild_*_r
   reg                           next_front_valid_0;
@@ -165,7 +165,7 @@ module inst_buffer(
   reg [44:0] next_front_bus_1_g2;
   reg [44:0] next_front_bus_1_g3;
   reg [44:0] next_front_bus_1_g4;
-  reg [42:0] next_front_bus_1_g5;
+  reg [40:0] next_front_bus_1_g5;
 
   always @(*)
   begin
@@ -261,18 +261,18 @@ module inst_buffer(
   begin
     next_front_bus_1_g5 = front_bus_1_g5;
     if (pop_1)
-      next_front_bus_1_g5 = fifo_front_1[267:225];
+      next_front_bus_1_g5 = fifo_front_1[265:225];
     else if (pop_0)
     begin
       if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g5 = fifo_front_0[267:225];
+        next_front_bus_1_g5 = fifo_front_0[265:225];
       else if (!front_valid_1_r)
-        next_front_bus_1_g5 = fifo_front_1[267:225];
+        next_front_bus_1_g5 = fifo_front_1[265:225];
     end
     else if (!front_valid_0_r)
-      next_front_bus_1_g5 = fifo_front_1[267:225];
+      next_front_bus_1_g5 = fifo_front_1[265:225];
     else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g5 = fifo_front_0[267:225];
+      next_front_bus_1_g5 = fifo_front_0[265:225];
   end
 
 
@@ -383,7 +383,7 @@ module inst_buffer(
       if (front0_we_g4)
         front_bus_0_g4 <= next_front_bus_0[224:180];
       if (front0_we_g5)
-        front_bus_0_g5 <= next_front_bus_0[267:225];
+        front_bus_0_g5 <= next_front_bus_0[265:225];
       if (front1_we_g0)
         front_bus_1_g0 <= next_front_bus_1_g0;
       if (front1_we_g1)

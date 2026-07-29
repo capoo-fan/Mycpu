@@ -67,8 +67,6 @@ module ISSUE_stage(
   wire        gr_we_0;
   wire        mem_we_0;
   wire        is_mul_0;
-  wire        mul_signed_0;
-  wire        mul_hi_0;
   wire        ld_byte_0;
   wire        ld_half_0;
   wire        ld_sign_ext_0;
@@ -96,7 +94,7 @@ module ISSUE_stage(
   assign {alu_op_0, imm_0, br_offs_0, jirl_offs_0,
           rf_raddr1_0, rf_raddr2_0, dest_0,
           src1_is_pc_0, src2_is_imm_0, res_from_mem_0, gr_we_0, mem_we_0,
-          is_mul_0, mul_signed_0, mul_hi_0,
+          is_mul_0,
           ld_byte_0, ld_half_0, ld_sign_ext_0, st_byte_0, st_half_0,
           need_rj_0, need_rkd_0, is_bj_0,
           inst_beq_0, inst_bne_0, inst_blt_0, inst_bge_0, inst_bltu_0, inst_bgeu_0,
@@ -117,8 +115,6 @@ module ISSUE_stage(
   wire        gr_we_1;
   wire        mem_we_1;
   wire        is_mul_1;
-  wire        mul_signed_1;
-  wire        mul_hi_1;
   wire        ld_byte_1;
   wire        ld_half_1;
   wire        ld_sign_ext_1;
@@ -143,7 +139,7 @@ module ISSUE_stage(
   assign {alu_op_1, imm_1, br_offs_1, jirl_offs_1,
           rf_raddr1_1, rf_raddr2_1, dest_1,
           src1_is_pc_1, src2_is_imm_1, res_from_mem_1, gr_we_1, mem_we_1,
-          is_mul_1, mul_signed_1, mul_hi_1,
+          is_mul_1,
           ld_byte_1, ld_half_1, ld_sign_ext_1, st_byte_1, st_half_1,
           need_rj_1, need_rkd_1, is_bj_1,
           inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1, inst_bltu_1, inst_bgeu_1,
@@ -572,8 +568,6 @@ module ISSUE_stage(
                            mem_we_0,
                            dest_0,
                            is_mul_0,
-                           mul_signed_0,
-                           mul_hi_0,
                            ld_byte_0,
                            ld_half_0,
                            ld_sign_ext_0,

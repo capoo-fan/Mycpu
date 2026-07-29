@@ -22,8 +22,8 @@ module inst_buffer_timing_tb;
   wire [4:0] front_raddr1_1_hot;
   wire [4:0] front_raddr2_1_hot;
 
-  localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 58;
-  localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 53;
+  localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 56;
+  localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 51;
 
   inst_buffer dut(
     .clk(clk), .resetn(resetn), .flush(flush),

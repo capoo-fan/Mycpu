@@ -15,9 +15,9 @@ module load_store_late_forward_tb;
        {32'h1c00_0000, inst_0, 1'b0, 32'b0};
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0 = {dec_0, fs_0};
   wire [4:0] front_raddr1_0_hot =
-       front_bus_0[`FS_TO_DS_BUS_WD + 58 +: 5];
+       front_bus_0[`FS_TO_DS_BUS_WD + 56 +: 5];
   wire [4:0] front_raddr2_0_hot =
-       front_bus_0[`FS_TO_DS_BUS_WD + 53 +: 5];
+       front_bus_0[`FS_TO_DS_BUS_WD + 51 +: 5];
 
   wire pop_0;
   wire pop_1;

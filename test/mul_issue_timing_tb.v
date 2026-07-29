@@ -18,13 +18,13 @@ module mul_issue_timing_tb;
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0 = {dec_0, fs_0};
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1 = {dec_1, fs_1};
   wire [4:0] front_raddr1_0_hot =
-       front_bus_0[`FS_TO_DS_BUS_WD + 58 +: 5];
+       front_bus_0[`FS_TO_DS_BUS_WD + 56 +: 5];
   wire [4:0] front_raddr2_0_hot =
-       front_bus_0[`FS_TO_DS_BUS_WD + 53 +: 5];
+       front_bus_0[`FS_TO_DS_BUS_WD + 51 +: 5];
   wire [4:0] front_raddr1_1_hot =
-       front_bus_1[`FS_TO_DS_BUS_WD + 58 +: 5];
+       front_bus_1[`FS_TO_DS_BUS_WD + 56 +: 5];
   wire [4:0] front_raddr2_1_hot =
-       front_bus_1[`FS_TO_DS_BUS_WD + 53 +: 5];
+       front_bus_1[`FS_TO_DS_BUS_WD + 51 +: 5];
 
   wire pop_0;
   wire pop_1;
@@ -46,6 +46,24 @@ module mul_issue_timing_tb;
     input [4:0] rk;
     begin
       make_mul = 32'h001c_0000 | {17'b0, rk, rj, rd};
+    end
+  endfunction
+
+  function [31:0] make_mulh;
+    input [4:0] rd;
+    input [4:0] rj;
+    input [4:0] rk;
+    begin
+      make_mulh = 32'h001c_8000 | {17'b0, rk, rj, rd};
+    end
+  endfunction
+
+  function [31:0] make_mulhu;
+    input [4:0] rd;
+    input [4:0] rj;
+    input [4:0] rk;
+    begin
+      make_mulhu = 32'h001d_0000 | {17'b0, rk, rj, rd};
     end
   endfunction
 
@@ -156,6 +174,20 @@ module mul_issue_timing_tb;
     inst_0 = 32'b0;
     inst_1 = 32'b0;
 
+    // Only mul.w remains in the supported ISA. A former mulh.w encoding must
+    // decode as unknown and must not request either multiply or writeback.
+    reset_dut();
+    inst_0 = make_mulh(5'd2, 5'd7, 5'd8);
+    #1;
+    if (dec0.inst_known !== 1'b0 || dec0.is_mul !== 1'b0 ||
+        dec0.gr_we !== 1'b0)
+      fail("mulh.w remained in the supported multiply decode");
+    inst_0 = make_mulhu(5'd2, 5'd7, 5'd8);
+    #1;
+    if (dec0.inst_known !== 1'b0 || dec0.is_mul !== 1'b0 ||
+        dec0.gr_we !== 1'b0)
+      fail("mulh.wu remained in the supported multiply decode");
+
     // A same-packet RAW dependency issues lane0 only.  Lane1 payload may be
     // sampled, but its valid and every architectural side-effect control must
     // remain clear.
@@ -194,18 +226,24 @@ module mul_issue_timing_tb;
       fail("EX payload changed while es_allowin was low");
 
     // Lane0 multiply followed immediately by a RAW consumer. The consumer
-    // must issue in the same cycle that the three-cycle multiply becomes ready.
+    // must issue when the three-cycle multiplier result becomes ready. Since
+    // the IP samples ISSUE operands on the EX-entry edge, EX waits two more
+    // edges rather than adding an input-register cycle.
     reset_dut();
-    inst_0 = make_mul(5'd2, 5'd0, 5'd0);
+    u_issue.u_regfile.rf[7] = 32'hffff_fffe;
+    u_issue.u_regfile.rf[8] = 32'h0000_0003;
+    inst_0 = make_mul(5'd2, 5'd7, 5'd8);
     front_valid_0 = 1'b1;
     expect_pop(1'b1, 1'b0, "lane0 multiply did not issue");
     @(posedge clk);
     @(negedge clk);
     inst_0 = make_addi(5'd4, 5'd2);
     expect_pop(1'b0, 1'b0, "lane0 RAW consumer issued immediately");
-    expect_blocked_cycles(2);
+    expect_blocked_cycles(1);
     @(posedge clk);
     #1;
+    if (u_exe.es_mul_result_0 !== 32'hffff_fffa)
+      fail("mul.w result did not use ISSUE operands on the launch edge");
     if (!es_fwd_bus_0[38] || !pop_0 || pop_1)
       fail("lane0 RAW consumer did not issue on multiply completion");
 
@@ -235,7 +273,7 @@ module mul_issue_timing_tb;
     inst_0 = make_addi(5'd4, 5'd2);
     inst_1 = make_addi(5'd5, 5'd3);
     ms_allowin = 1'b0;
-    expect_blocked_cycles(2);
+    expect_blocked_cycles(1);
     @(posedge clk);
     #1;
     if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)

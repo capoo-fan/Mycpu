@@ -22,13 +22,13 @@ module issue_special_tb;
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0 = {dec_0, fs_0};
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1 = {dec_1, fs_1};
   wire [4:0] front_raddr1_0_hot =
-       front_bus_0[`FS_TO_DS_BUS_WD + 58 +: 5];
+       front_bus_0[`FS_TO_DS_BUS_WD + 56 +: 5];
   wire [4:0] front_raddr2_0_hot =
-       front_bus_0[`FS_TO_DS_BUS_WD + 53 +: 5];
+       front_bus_0[`FS_TO_DS_BUS_WD + 51 +: 5];
   wire [4:0] front_raddr1_1_hot =
-       front_bus_1[`FS_TO_DS_BUS_WD + 58 +: 5];
+       front_bus_1[`FS_TO_DS_BUS_WD + 56 +: 5];
   wire [4:0] front_raddr2_1_hot =
-       front_bus_1[`FS_TO_DS_BUS_WD + 53 +: 5];
+       front_bus_1[`FS_TO_DS_BUS_WD + 51 +: 5];
   wire pop_0;
   wire pop_1;
   wire issue_0;

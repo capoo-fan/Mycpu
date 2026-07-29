@@ -36,7 +36,7 @@ module inst_decoder(
   wire inst_blt, inst_bge, inst_bltu, inst_bgeu;
   wire inst_ld_b, inst_ld_h, inst_ld_bu, inst_ld_hu;
   wire inst_st_b, inst_st_h;
-  wire inst_mul_w, inst_mulh_w, inst_mulh_wu;
+  wire inst_mul_w;
   wire inst_cpucfg, inst_cacop;
   wire inst_csrwr, inst_csrxchg;
 
@@ -71,8 +71,6 @@ module inst_decoder(
   assign inst_sra_w     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h10];
   assign inst_pcaddu12i = op_31_26_d[6'h07] & ~inst[25];
   assign inst_mul_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h18];
-  assign inst_mulh_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h19];
-  assign inst_mulh_wu = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h1a];
   assign inst_blt  = op_31_26_d[6'h18];
   assign inst_bge  = op_31_26_d[6'h19];
   assign inst_bltu = op_31_26_d[6'h1a];
@@ -101,12 +99,10 @@ module inst_decoder(
        inst_blt | inst_bge | inst_bltu | inst_bgeu |
        inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
        inst_st_b | inst_st_h |
-       inst_mul_w | inst_mulh_w | inst_mulh_wu |
+       inst_mul_w |
        inst_cpucfg | inst_cacop | inst_csrwr | inst_csrxchg;
 
-  wire is_mul      = inst_mul_w | inst_mulh_w | inst_mulh_wu;
-  wire mul_signed  = inst_mul_w | inst_mulh_w;
-  wire mul_hi      = inst_mulh_w | inst_mulh_wu;
+  wire is_mul      = inst_mul_w;
   wire ld_byte     = inst_ld_b | inst_ld_bu;
   wire ld_half     = inst_ld_h | inst_ld_hu;
   wire ld_sign_ext = inst_ld_b | inst_ld_h;
@@ -175,7 +171,7 @@ module inst_decoder(
        inst_add_w | inst_sub_w | inst_slt | inst_sltu |
        inst_nor | inst_and | inst_or | inst_xor |
        inst_sll_w | inst_srl_w | inst_sra_w |
-       inst_mul_w | inst_mulh_w | inst_mulh_wu | is_csr;
+       inst_mul_w | is_csr;
 
   wire ds_is_bj = inst_beq || inst_bne || inst_blt || inst_bge ||
        inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
@@ -184,7 +180,7 @@ module inst_decoder(
     alu_op, imm, br_offs, jirl_offs,
     rf_raddr1, rf_raddr2, dest,
     src1_is_pc, src2_is_imm, res_from_mem, gr_we, mem_we,
-    is_mul, mul_signed, mul_hi,
+    is_mul,
     ld_byte, ld_half, ld_sign_ext, st_byte, st_half,
     ds_need_rj, ds_need_rkd, ds_is_bj,
     inst_beq, inst_bne, inst_blt, inst_bge, inst_bltu, inst_bgeu,

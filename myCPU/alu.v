@@ -3,12 +3,13 @@ module alu #(
   )(
     input  wire        clk,
     input  wire        resetn,
-    input  wire        mul_signed,
     input  wire [11:0] alu_op,
     input  wire [31:0] alu_src1,
     input  wire [31:0] alu_src2,
+    input  wire [31:0] mul_src1,
+    input  wire [31:0] mul_src2,
     output wire [31:0] alu_result,
-    output wire [63:0] mul_result
+    output wire [31:0] mul_result
   );
 
   wire op_add;
@@ -97,8 +98,8 @@ module alu #(
     begin: gen_multiplier
       mult_gen_0 u_mult_gen_0 (
                    .CLK (clk     ),
-                   .A   (alu_src1),
-                   .B   (alu_src2),
+                   .A   (mul_src1),
+                   .B   (mul_src2),
                    .P   (mul_ss_result)
                  );
     end
@@ -109,7 +110,7 @@ module alu #(
   endgenerate
 
 
-  assign mul_result = mul_ss_result;
+  assign mul_result = mul_ss_result[31:0];
 
   // final result mux
   assign alu_result = ({32{op_add|op_sub}} & add_sub_result)

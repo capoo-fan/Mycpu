@@ -38,8 +38,6 @@ module EXE_stage(
   reg         es_mem_we_0;
   reg  [ 4:0] es_dest_0;
   reg         es_is_mul_0;
-  reg         es_mul_signed_0;
-  reg         es_mul_hi_0;
   reg  [ 1:0] mul_cnt_0;
   reg         mul_pending_0;
   reg         es_ld_byte_0;
@@ -84,8 +82,6 @@ module EXE_stage(
   wire        ds_mem_we_0;
   wire [ 4:0] ds_dest_0;
   wire        ds_is_mul_0;
-  wire        ds_mul_signed_0;
-  wire        ds_mul_hi_0;
   wire        ds_ld_byte_0;
   wire        ds_ld_half_0;
   wire        ds_ld_sign_ext_0;
@@ -105,7 +101,7 @@ module EXE_stage(
   assign {ds_store_data_late_0, ds_store_data_src_0,
           ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
           ds_res_from_mem_0, ds_gr_we_0, ds_mem_we_0, ds_dest_0,
-          ds_is_mul_0, ds_mul_signed_0, ds_mul_hi_0,
+          ds_is_mul_0,
           ds_ld_byte_0, ds_ld_half_0, ds_ld_sign_ext_0,
           ds_st_byte_0, ds_st_half_0,
           ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0,
@@ -129,9 +125,9 @@ module EXE_stage(
           ds_pred_taken_1, ds_pred_target_1,
           ds_br_op_1, ds_br_offs_1} = ds_to_es_bus_1;
 
-  // 乘法 IP 的结果在进入 EX 后第三拍可用。mul_pending 在倒数一拍
-  // 的时钟沿清零，使完成状态先寄存，再送往 ISSUE，切断计数器到
-  // InstBuffer 的跨级组合控制链。
+  // 三拍乘法 IP 在指令进入 EX 的时钟沿直接采样 ISSUE 已完成前递的
+  // 操作数，结果在 EX 内再等待两拍可用。mul_pending 在结果有效的
+  // 时钟沿清零，使完成状态先寄存，再送往 ISSUE。
   wire lane0_ready = !es_valid_0 || !mul_pending_0;
   wire es_ready_go = lane0_ready;
   wire es_busy     = es_valid_0 || es_valid_1;
@@ -141,7 +137,7 @@ module EXE_stage(
   assign es_to_ms_valid_1 = es_valid_1 && es_ready_go;
 
   wire [31:0] alu_result_0;
-  wire [63:0] mul_product_0;
+  wire [31:0] mul_product_0;
   wire [31:0] alu_result_1;
 
   function [31:0] cpucfg_result;
@@ -162,7 +158,7 @@ module EXE_stage(
     end
   endfunction
 
-  wire [31:0] es_mul_result_0 = es_mul_hi_0 ? mul_product_0[63:32] : mul_product_0[31:0];
+  wire [31:0] es_mul_result_0 = mul_product_0;
   assign csr_raddr = es_csr_num_0;
   assign csr_busy  = es_valid_0 && es_is_csr_0;
   assign cacop_busy = es_valid_0 && es_is_cacop_0;
@@ -308,8 +304,6 @@ module EXE_stage(
       es_store_data_late_0 <= 1'b0;
       es_store_data_src_0  <= 5'b0;
       es_is_mul_0       <= 1'b0;
-      es_mul_signed_0   <= 1'b0;
-      es_mul_hi_0       <= 1'b0;
       es_ld_byte_0      <= 1'b0;
       es_ld_half_0      <= 1'b0;
       es_ld_sign_ext_0  <= 1'b0;
@@ -369,8 +363,6 @@ module EXE_stage(
       es_mem_we_0       <= ds_to_es_valid_0 && ds_mem_we_0;
       es_dest_0         <= ds_dest_0;
       es_is_mul_0       <= ds_to_es_valid_0 && ds_is_mul_0;
-      es_mul_signed_0   <= ds_mul_signed_0;
-      es_mul_hi_0       <= ds_mul_hi_0;
       es_ld_byte_0      <= ds_ld_byte_0;
       es_ld_half_0      <= ds_ld_half_0;
       es_ld_sign_ext_0  <= ds_ld_sign_ext_0;
@@ -416,9 +408,9 @@ module EXE_stage(
     end
     else if (mul_pending_0)
     begin
-      if (mul_cnt_0 == 2'd2)
+      if (mul_cnt_0 == 2'd1)
       begin
-        mul_cnt_0     <= 2'd3;
+        mul_cnt_0     <= 2'd2;
         mul_pending_0 <= 1'b0;
       end
       else
@@ -426,15 +418,24 @@ module EXE_stage(
     end
   end
 
+  // 乘法器输入与普通 ALU 输入分开：发射当拍提前启动乘法器，同时
+  // 保证当前正在离开 EX 的普通 ALU 指令仍使用其 EX 寄存器操作数。
+  wire mul_launch_0 = ds_to_es_valid_0 && ds_is_mul_0;
+  wire [31:0] mul_src1_0 =
+       mul_launch_0 ? ds_alu_src1_0 : es_alu_src1_0;
+  wire [31:0] mul_src2_0 =
+       mul_launch_0 ? ds_alu_src2_0 : es_alu_src2_0;
+
   alu #(
         .HAS_MUL (1)
       ) u_alu_0(
         .clk        (clk),
         .resetn     (resetn),
-        .mul_signed (es_mul_signed_0),
         .alu_op     (es_alu_op_0),
         .alu_src1   (es_alu_src1_0),
         .alu_src2   (es_alu_src2_0),
+        .mul_src1   (mul_src1_0),
+        .mul_src2   (mul_src2_0),
         .alu_result (alu_result_0),
         .mul_result (mul_product_0)
       );
@@ -444,10 +445,11 @@ module EXE_stage(
       ) u_alu_1(
         .clk        (clk),
         .resetn     (resetn),
-        .mul_signed (1'b0),
         .alu_op     (es_alu_op_1),
         .alu_src1   (es_alu_src1_1),
         .alu_src2   (es_alu_src2_1),
+        .mul_src1   (32'b0),
+        .mul_src2   (32'b0),
         .alu_result (alu_result_1),
         .mul_result ()
       );
