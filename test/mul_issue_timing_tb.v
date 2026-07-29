@@ -250,8 +250,8 @@ module mul_issue_timing_tb;
     if (!es_fwd_bus_0[38] || !pop_0 || pop_1)
       fail("lane0 RAW consumer did not issue on multiply completion");
 
-    // A multiply in slot1 is not lane1-capable and remains queued while the
-    // independent lane0 ALU instruction issues.
+    // A multiply in slot1 cannot pair with an ALU and remains queued while
+    // the independent lane0 ALU instruction issues.
     reset_dut();
     inst_0 = make_addi(5'd10, 5'd0);
     inst_1 = make_mul(5'd5, 5'd0, 5'd0);
@@ -261,16 +261,19 @@ module mul_issue_timing_tb;
     @(posedge clk);
     #1;
     if (u_exe.es_valid_1 || es_to_ms_valid_1)
-      fail("forbidden lane1 multiply entered EX");
+      fail("unpaired lane1 multiply entered EX");
 
-    // Lane0 multiply may still pair with a lane1 ALU. The whole packet waits
-    // for the single multiplier, then both results are forwardable together.
+    // A lane0 multiply may pair with an independent lane1 ALU. The ordinary
+    // ALU result remains in the packet until the multiply finishes two edges
+    // later, and both results then become forwardable together.
     reset_dut();
-    inst_0 = make_mul(5'd2, 5'd0, 5'd0);
+    u_issue.u_regfile.rf[7] = 32'hffff_fffe;
+    u_issue.u_regfile.rf[8] = 32'h0000_0003;
+    inst_0 = make_mul(5'd2, 5'd7, 5'd8);
     inst_1 = make_addi(5'd3, 5'd0);
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
-    expect_pop(1'b1, 1'b1, "lane0 multiply plus lane1 ALU did not issue");
+    expect_pop(1'b1, 1'b1, "MUL+ALU pair did not issue together");
     @(posedge clk);
     @(negedge clk);
     inst_0 = make_addi(5'd4, 5'd2);
@@ -279,12 +282,52 @@ module mul_issue_timing_tb;
     expect_blocked_cycles(1);
     @(posedge clk);
     #1;
+    if (u_exe.es_mul_result_0 !== 32'hffff_fffa ||
+        u_exe.es_exec_result_1 !== 32'h0000_0001)
+      fail("MUL+ALU packet results were not aligned");
+    if (u_exe.mul_pending_0)
+      fail("MUL+ALU packet did not complete after the existing two-edge wait");
     if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
-      fail("asymmetric packet completion under MEM backpressure is incorrect");
+      fail("MUL+ALU completion under MEM backpressure is incorrect");
     @(negedge clk);
     ms_allowin = 1'b1;
     expect_pop(1'b1, 1'b1,
-               "MEM release did not enable asymmetric dependent pair");
+               "MEM release did not enable MUL+ALU consumers");
+
+    // Two independent multiplies start together, share the existing two-edge
+    // packet wait, and become forwardable together. MEM backpressure after
+    // completion must hold both results without changing their alignment.
+    reset_dut();
+    u_issue.u_regfile.rf[7] = 32'hffff_fffe;
+    u_issue.u_regfile.rf[8] = 32'h0000_0003;
+    u_issue.u_regfile.rf[9] = 32'h0000_0007;
+    u_issue.u_regfile.rf[10] = 32'hffff_fffc;
+    inst_0 = make_mul(5'd2, 5'd7, 5'd8);
+    inst_1 = make_mul(5'd3, 5'd9, 5'd10);
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
+    expect_pop(1'b1, 1'b1, "MUL+MUL pair did not issue together");
+    if (!u_exe.mul_launch_0 || !u_exe.mul_launch_1)
+      fail("paired multipliers did not start on the same issue edge");
+    @(posedge clk);
+    @(negedge clk);
+    inst_0 = make_addi(5'd4, 5'd2);
+    inst_1 = make_addi(5'd5, 5'd3);
+    ms_allowin = 1'b0;
+    expect_blocked_cycles(1);
+    @(posedge clk);
+    #1;
+    if (u_exe.es_mul_result_0 !== 32'hffff_fffa ||
+        u_exe.mul_product_1 !== 32'hffff_ffe4)
+      fail("paired multiply results were not aligned");
+    if (u_exe.mul_pending_0)
+      fail("paired multiplies did not complete together");
+    if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
+      fail("paired multiply completion under MEM backpressure is incorrect");
+    @(negedge clk);
+    ms_allowin = 1'b1;
+    expect_pop(1'b1, 1'b1,
+               "MEM release did not enable paired-multiply consumers");
 
     // Flush has priority over a pending multiply and removes its hazard state.
     reset_dut();

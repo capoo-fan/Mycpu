@@ -101,6 +101,14 @@ module supervisor_perf_tb;
   // -- 基础计数器 --
   reg [63:0] commit_count;
   reg [63:0] dual_issue_cycle_count;
+  reg [63:0] issue_zero_cycle_count;
+  reg [63:0] issue_single_cycle_count;
+  reg [63:0] issue_dual_cycle_count;
+  reg [63:0] issue_load_count;
+  reg [63:0] issue_store_count;
+  reg [63:0] issue_mul_count;
+  reg [63:0] issue_branch_count;
+  reg [63:0] issue_other_count;
 
   // -- Frontend 停顿 --
   reg [63:0] fe_icache_miss_cycles;
@@ -119,7 +127,16 @@ module supervisor_perf_tb;
   reg [63:0] ms_unready_issueable_unrelated_cycles;
   reg [63:0] is_pair_blocked_cycles;
   reg [63:0] ex_mul_wait_cycles;
+  reg [63:0] backend_mem_only_cycles;
+  reg [63:0] backend_mul_only_cycles;
+  reg [63:0] backend_mem_mul_overlap_cycles;
+  reg [63:0] backend_other_cycles;
   reg [63:0] pair_lane1_capability_cycles;
+  reg [63:0] pair_cap_load_cycles;
+  reg [63:0] pair_cap_store_cycles;
+  reg [63:0] pair_cap_mul_cycles;
+  reg [63:0] pair_cap_complex_branch_cycles;
+  reg [63:0] pair_cap_other_cycles;
   reg [63:0] pair_raw_conflict_cycles;
   reg [63:0] pair_branch_conflict_cycles;
   reg [63:0] pair_special_conflict_cycles;
@@ -334,6 +351,40 @@ module supervisor_perf_tb;
       // -- 双发射 --
       if (cpu.ms_to_ws_valid_0 && cpu.ms_to_ws_valid_1)
         dual_issue_cycle_count <= dual_issue_cycle_count + 1;
+
+      // 发射利用率和动态指令类别。只在 testbench 观察 ISSUE 接口，
+      // 避免把 MEM/WB 停留拍重复算作动态指令。
+      if (!cpu.ds_to_es_valid_0)
+        issue_zero_cycle_count <= issue_zero_cycle_count + 1;
+      else if (cpu.ds_to_es_valid_1)
+        issue_dual_cycle_count <= issue_dual_cycle_count + 1;
+      else
+        issue_single_cycle_count <= issue_single_cycle_count + 1;
+
+      issue_load_count <= issue_load_count +
+          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.res_from_mem_0} +
+          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.res_from_mem_1};
+      issue_store_count <= issue_store_count +
+          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.mem_we_0} +
+          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.mem_we_1};
+      issue_mul_count <= issue_mul_count +
+          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.is_mul_0} +
+          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.is_mul_1};
+      issue_branch_count <= issue_branch_count +
+          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.is_bj_0} +
+          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.is_bj_1};
+      issue_other_count <= issue_other_count +
+          {63'b0, cpu.ds_to_es_valid_0 &&
+                   !cpu.u_issue.res_from_mem_0 &&
+                   !cpu.u_issue.mem_we_0 &&
+                   !cpu.u_issue.is_mul_0 &&
+                   !cpu.u_issue.is_bj_0} +
+          {63'b0, cpu.ds_to_es_valid_1 &&
+                   !cpu.u_issue.res_from_mem_1 &&
+                   !cpu.u_issue.mem_we_1 &&
+                   !cpu.u_issue.is_mul_1 &&
+                   !cpu.u_issue.is_bj_1};
+
       if (cpu.load_wakeup_valid)
         load_wakeup_event_count <= load_wakeup_event_count + 1;
       if (cpu.load_wakeup_valid && cpu.ds_to_es_valid_0 &&
@@ -369,6 +420,22 @@ module supervisor_perf_tb;
       // issue_backend_full: EXE/MEM/WB 反压
       if (!cpu.es_allowin)
         is_backend_full_cycles <= is_backend_full_cycles + 1;
+
+      // backend_full 的互斥根因。MEM 阻塞与乘法等待可能同时存在，
+      // 单列 overlap，四项之和应等于“头部有效且 backend 阻塞”的周期。
+      if (cpu.ibuf_front_valid_0 && !cpu.issue_pop_0 &&
+          !cpu.es_allowin)
+      begin
+        if (!cpu.ms_allowin && cpu.u_exe.mul_pending_0)
+          backend_mem_mul_overlap_cycles <=
+              backend_mem_mul_overlap_cycles + 1;
+        else if (!cpu.ms_allowin)
+          backend_mem_only_cycles <= backend_mem_only_cycles + 1;
+        else if (cpu.u_exe.mul_pending_0)
+          backend_mul_only_cycles <= backend_mul_only_cycles + 1;
+        else
+          backend_other_cycles <= backend_other_cycles + 1;
+      end
 
       // issue_raw_load: 头部 slot0 确实依赖 MEM 未就绪结果。
       if (cpu.ibuf_front_valid_0 &&
@@ -465,8 +532,21 @@ module supervisor_perf_tb;
           cpu.issue_pop_0 && !cpu.issue_pop_1)
       begin
         if (!cpu.u_issue.lane1_capable)
+        begin
           pair_lane1_capability_cycles <=
               pair_lane1_capability_cycles + 1;
+          if (cpu.u_issue.res_from_mem_1)
+            pair_cap_load_cycles <= pair_cap_load_cycles + 1;
+          else if (cpu.u_issue.mem_we_1)
+            pair_cap_store_cycles <= pair_cap_store_cycles + 1;
+          else if (cpu.u_issue.is_mul_1)
+            pair_cap_mul_cycles <= pair_cap_mul_cycles + 1;
+          else if (cpu.u_issue.is_bj_1)
+            pair_cap_complex_branch_cycles <=
+                pair_cap_complex_branch_cycles + 1;
+          else
+            pair_cap_other_cycles <= pair_cap_other_cycles + 1;
+        end
         else if (cpu.u_issue.raw_0_to_1)
           pair_raw_conflict_cycles <= pair_raw_conflict_cycles + 1;
         else if (cpu.u_issue.is_bj_0 && cpu.u_issue.is_bj_1)
@@ -793,6 +873,12 @@ module supervisor_perf_tb;
       $display("  Dual-issue cycle ratio      = %.2f%% (%0d/%0d)",
                pct(dual_issue_cycle_count, benchmark_cycle_count),
                dual_issue_cycle_count, benchmark_cycle_count);
+      $display("  ISSUE zero/single/dual      = %0d / %0d / %0d",
+               issue_zero_cycle_count, issue_single_cycle_count,
+               issue_dual_cycle_count);
+      $display("  Dynamic mix L/S/MUL/BR/other= %0d / %0d / %0d / %0d / %0d",
+               issue_load_count, issue_store_count, issue_mul_count,
+               issue_branch_count, issue_other_count);
       $display("");
 
       // -- Frontend --
@@ -817,9 +903,22 @@ module supervisor_perf_tb;
       print_stall("issue_special_block",  issue_special_block_cycles);
       print_stall("ex_mul_wait",          ex_mul_wait_cycles);
       $display("");
+      $display("--- Backend-Blocked Exclusive Breakdown ---");
+      print_stall("backend_mem_only",      backend_mem_only_cycles);
+      print_stall("backend_mul_only",      backend_mul_only_cycles);
+      print_stall("backend_mem_mul_overlap",
+                  backend_mem_mul_overlap_cycles);
+      print_stall("backend_other",         backend_other_cycles);
+      $display("");
       $display("--- Pair-Blocked Breakdown ---");
       print_stall("pair_blocked_total",   is_pair_blocked_cycles);
       print_stall("  lane1_capability",    pair_lane1_capability_cycles);
+      print_stall("    cap_load",           pair_cap_load_cycles);
+      print_stall("    cap_store",          pair_cap_store_cycles);
+      print_stall("    cap_mul",            pair_cap_mul_cycles);
+      print_stall("    cap_complex_branch",
+                  pair_cap_complex_branch_cycles);
+      print_stall("    cap_other",          pair_cap_other_cycles);
       print_stall("  raw_conflict",        pair_raw_conflict_cycles);
       print_stall("  branch_conflict",     pair_branch_conflict_cycles);
       print_stall("  special_conflict",    pair_special_conflict_cycles);
@@ -1073,6 +1172,14 @@ module supervisor_perf_tb;
     benchmark_cycle_count     = 0;
     commit_count             = 0;
     dual_issue_cycle_count = 0;
+    issue_zero_cycle_count   = 0;
+    issue_single_cycle_count = 0;
+    issue_dual_cycle_count   = 0;
+    issue_load_count         = 0;
+    issue_store_count        = 0;
+    issue_mul_count          = 0;
+    issue_branch_count       = 0;
+    issue_other_count        = 0;
     fe_icache_miss_cycles    = 0;
     fe_icache_refill_cycles  = 0;
     fe_ibuf_empty_cycles     = 0;
@@ -1087,7 +1194,16 @@ module supervisor_perf_tb;
     ms_unready_issueable_unrelated_cycles = 0;
     is_pair_blocked_cycles   = 0;
     ex_mul_wait_cycles       = 0;
+    backend_mem_only_cycles  = 0;
+    backend_mul_only_cycles  = 0;
+    backend_mem_mul_overlap_cycles = 0;
+    backend_other_cycles     = 0;
     pair_lane1_capability_cycles = 0;
+    pair_cap_load_cycles       = 0;
+    pair_cap_store_cycles      = 0;
+    pair_cap_mul_cycles        = 0;
+    pair_cap_complex_branch_cycles = 0;
+    pair_cap_other_cycles      = 0;
     pair_raw_conflict_cycles   = 0;
     pair_branch_conflict_cycles = 0;
     pair_special_conflict_cycles = 0;

@@ -447,7 +447,13 @@ module ISSUE_stage(
   wire lane1_regular_alu = gr_we_1 && !is_bj_1 &&
        !mem_op_1 && !is_mul_1 && !special_1;
   wire lane1_simple_branch = is_bj_1 && !inst_jirl_1 && !inst_bl_1;
-  wire lane1_capable = lane1_regular_alu || lane1_simple_branch;
+  // lane1 乘法只允许 MUL+MUL；lane0 乘法还可带一条普通 lane1 ALU。
+  // 两种乘法包的等待与完成都由 lane0 的整包控制统一管理。
+  wire mul_pair = is_mul_0 && is_mul_1;
+  wire lane1_capable =
+       lane1_regular_alu ||
+       (!is_mul_0 && lane1_simple_branch) ||
+       mul_pair;
 
   wire issue_window_open = es_allowin;
 
@@ -523,9 +529,11 @@ module ISSUE_stage(
               if (ds_to_es_valid_1 && !lane1_capable)
                 $fatal(1, "unsupported instruction issued on lane1");
               if (ds_to_es_valid_1 &&
-                  (mem_op_1 || is_mul_1 || special_1 ||
+                  (mem_op_1 || special_1 ||
                    inst_jirl_1 || inst_bl_1))
                 $fatal(1, "lane1 issued a forbidden side-effect class");
+              if (ds_to_es_valid_1 && is_mul_1 && !is_mul_0)
+                $fatal(1, "lane1 multiply issued without lane0 multiply");
               if (blocking_ms_stall_0_for_consume &&
                   (ds_to_es_valid_0 || pop_0))
                 $fatal(1, "unfinished MEM producer allowed dependent lane0");
@@ -623,6 +631,7 @@ module ISSUE_stage(
                            ds_rkd_value_1,
                            gr_we_1,
                            dest_1,
+                           is_mul_1,
                            ds_pred_taken_1,
                            ds_pred_target_1,
                            ds_br_op_1,

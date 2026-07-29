@@ -92,7 +92,7 @@ module alu #(
 
   assign sr_result   = sr64_result[31:0];
 
-  // lane0 综合时使用 Xilinx 乘法 IP；非对称 lane1 不生成乘法器。
+  // 两个 lane 使用同构的三拍 Xilinx 乘法 IP；是否实例化由 EX 参数决定。
   generate
     if (HAS_MUL)
     begin: gen_multiplier
