@@ -515,15 +515,25 @@ module supervisor_perf_tb;
         pc_ex_mul_wait[cpu.u_exe.es_pc_0[9:2]] <=
             pc_ex_mul_wait[cpu.u_exe.es_pc_0[9:2]] + 1;
 
-      if (cpu.u_mem.ms_valid_0 && !cpu.ms_allowin &&
-          ((cpu.u_mem.ms_pc_0 & 32'hffff_fc00) == 32'h1c00_2000))
+      if ((cpu.u_mem.ms_valid_0 || cpu.u_mem.ms_valid_1) &&
+          !cpu.ms_allowin &&
+          (((cpu.u_mem.select_lane1 ? cpu.u_mem.ms_pc_1 :
+              cpu.u_mem.ms_pc_0) & 32'hffff_fc00) == 32'h1c00_2000))
       begin
-        if (cpu.u_mem.ms_res_from_mem_0)
-          pc_mem_load_wait[cpu.u_mem.ms_pc_0[9:2]] <=
-              pc_mem_load_wait[cpu.u_mem.ms_pc_0[9:2]] + 1;
-        else if (cpu.u_mem.ms_mem_we_0)
-          pc_mem_store_wait[cpu.u_mem.ms_pc_0[9:2]] <=
-              pc_mem_store_wait[cpu.u_mem.ms_pc_0[9:2]] + 1;
+        if (cpu.u_mem.selected_res_from_mem)
+          pc_mem_load_wait[(cpu.u_mem.select_lane1 ?
+                            cpu.u_mem.ms_pc_1[9:2] :
+                            cpu.u_mem.ms_pc_0[9:2])] <=
+              pc_mem_load_wait[(cpu.u_mem.select_lane1 ?
+                                cpu.u_mem.ms_pc_1[9:2] :
+                                cpu.u_mem.ms_pc_0[9:2])] + 1;
+        else if (cpu.u_mem.selected_mem_we)
+          pc_mem_store_wait[(cpu.u_mem.select_lane1 ?
+                             cpu.u_mem.ms_pc_1[9:2] :
+                             cpu.u_mem.ms_pc_0[9:2])] <=
+              pc_mem_store_wait[(cpu.u_mem.select_lane1 ?
+                                 cpu.u_mem.ms_pc_1[9:2] :
+                                 cpu.u_mem.ms_pc_0[9:2])] + 1;
       end
 
       // --- pair_blocked 原因细分 ---

@@ -65,9 +65,16 @@ module EXE_stage(
   reg  [31:0] es_alu_src1_1;
   reg  [31:0] es_alu_src2_1;
   reg  [31:0] es_rkd_value_1;
+  reg         es_res_from_mem_1;
   reg         es_gr_we_1;
+  reg         es_mem_we_1;
   reg  [ 4:0] es_dest_1;
   reg         es_is_mul_1;
+  reg         es_ld_byte_1;
+  reg         es_ld_half_1;
+  reg         es_ld_sign_ext_1;
+  reg         es_st_byte_1;
+  reg         es_st_half_1;
   reg         es_pred_taken_1;
   reg  [31:0] es_pred_target_1;
   reg  [ 3:0] es_br_op_1;
@@ -127,16 +134,26 @@ module EXE_stage(
   wire [31:0] ds_alu_src1_1;
   wire [31:0] ds_alu_src2_1;
   wire [31:0] ds_rkd_value_1;
+  wire        ds_res_from_mem_1;
   wire        ds_gr_we_1;
+  wire        ds_mem_we_1;
   wire [ 4:0] ds_dest_1;
   wire        ds_is_mul_1;
+  wire        ds_ld_byte_1;
+  wire        ds_ld_half_1;
+  wire        ds_ld_sign_ext_1;
+  wire        ds_st_byte_1;
+  wire        ds_st_half_1;
   wire        ds_pred_taken_1;
   wire [31:0] ds_pred_target_1;
   wire [ 3:0] ds_br_op_1;
   wire [31:0] ds_br_offs_1;
 
   assign {ds_pc_1, ds_alu_op_1, ds_alu_src1_1, ds_alu_src2_1, ds_rkd_value_1,
-          ds_gr_we_1, ds_dest_1, ds_is_mul_1,
+          ds_res_from_mem_1, ds_gr_we_1, ds_mem_we_1,
+          ds_dest_1, ds_is_mul_1,
+          ds_ld_byte_1, ds_ld_half_1, ds_ld_sign_ext_1,
+          ds_st_byte_1, ds_st_half_1,
           ds_pred_taken_1, ds_pred_target_1,
           ds_br_op_1, ds_br_offs_1} = ds_to_es_bus_1;
 
@@ -237,10 +254,11 @@ module EXE_stage(
 
   wire es_fwd_valid_0 = es_result_forwardable_0 &&
        !es_res_from_mem_0 && !mul_pending_0;
+  wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_0;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
                          es_res_from_mem_0, es_dest_0, es_exec_result_0};
-  assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1,
+  assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1, es_fwd_valid_1,
                          es_dest_1, es_exec_result_1};
 
   assign es_to_ms_bus_0 = {es_store_data_late_0,
@@ -275,8 +293,16 @@ module EXE_stage(
 
   assign es_to_ms_bus_1 = {es_pc_1,
                            es_exec_result_1,
+                           es_rkd_value_1,
+                           es_res_from_mem_1,
                            es_gr_we_1,
+                           es_mem_we_1,
                            es_dest_1,
+                           es_ld_byte_1,
+                           es_ld_half_1,
+                           es_ld_sign_ext_1,
+                           es_st_byte_1,
+                           es_st_half_1,
                            es_pred_taken_1,
                            es_pred_target_1,
                            es_is_bj_1,
@@ -340,12 +366,19 @@ module EXE_stage(
 
       es_pc_1           <= 32'b0;
       es_gr_we_1        <= 1'b0;
+      es_mem_we_1       <= 1'b0;
+      es_res_from_mem_1 <= 1'b0;
       es_dest_1         <= 5'b0;
       es_is_mul_1       <= 1'b0;
       es_alu_op_1       <= 12'b0;
       es_alu_src1_1     <= 32'b0;
       es_alu_src2_1     <= 32'b0;
       es_rkd_value_1    <= 32'b0;
+      es_ld_byte_1      <= 1'b0;
+      es_ld_half_1      <= 1'b0;
+      es_ld_sign_ext_1  <= 1'b0;
+      es_st_byte_1      <= 1'b0;
+      es_st_half_1      <= 1'b0;
       es_pred_taken_1   <= 1'b0;
       es_pred_target_1  <= 32'b0;
       es_br_op_1        <= `BR_NONE;
@@ -364,6 +397,8 @@ module EXE_stage(
       es_is_cacop_0     <= 1'b0;
       es_is_csr_0       <= 1'b0;
       es_gr_we_1        <= 1'b0;
+      es_mem_we_1       <= 1'b0;
+      es_res_from_mem_1 <= 1'b0;
       es_is_mul_1       <= 1'b0;
       es_br_op_1        <= `BR_NONE;
     end
@@ -404,9 +439,16 @@ module EXE_stage(
       es_alu_src1_1     <= ds_alu_src1_1;
       es_alu_src2_1     <= ds_alu_src2_1;
       es_rkd_value_1    <= ds_rkd_value_1;
+      es_res_from_mem_1 <= ds_to_es_valid_1 && ds_res_from_mem_1;
       es_gr_we_1        <= ds_to_es_valid_1 && ds_gr_we_1;
+      es_mem_we_1       <= ds_to_es_valid_1 && ds_mem_we_1;
       es_dest_1         <= ds_dest_1;
       es_is_mul_1       <= ds_to_es_valid_1 && ds_is_mul_1;
+      es_ld_byte_1      <= ds_ld_byte_1;
+      es_ld_half_1      <= ds_ld_half_1;
+      es_ld_sign_ext_1  <= ds_ld_sign_ext_1;
+      es_st_byte_1      <= ds_st_byte_1;
+      es_st_half_1      <= ds_st_half_1;
       es_pred_taken_1   <= ds_pred_taken_1;
       es_pred_target_1  <= ds_pred_target_1;
       es_br_op_1        <= ds_to_es_valid_1 ? ds_br_op_1 : `BR_NONE;
@@ -497,6 +539,8 @@ module EXE_stage(
         $fatal(1, "lane1 multiply launched without lane0 multiply");
       if (es_valid_1 && es_is_mul_1 && !es_is_mul_0)
         $fatal(1, "lane1 multiply lost packet pairing in EX");
+      if (es_valid_1 && es_res_from_mem_1 && es_fwd_valid_1)
+        $fatal(1, "lane1 load became forwardable in EX");
       if (ds_to_es_valid_1 &&
           ((ds_br_op_1 == `BR_JIRL) || (ds_br_op_1 == `BR_BL)))
         $fatal(1, "complex branch entered lane1 EX");

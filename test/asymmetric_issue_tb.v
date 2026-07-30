@@ -87,7 +87,7 @@ module asymmetric_issue_tb;
     if (!push_ready)
       fail("InstBuffer not ready after reset");
 
-    // slot0 is an ADDI.W; slot1 is an LD.W, which is forbidden on lane1.
+    // lane1 load is now a normal dual-issue candidate.
     push_bus_0 = {32'h1c00_0000, 32'h0280_0402, 1'b0, 32'b0};
     push_bus_1 = {32'h1c00_0004, 32'h2880_0005, 1'b0, 32'b0};
     push_valid_0 = 1'b1;
@@ -103,16 +103,44 @@ module asymmetric_issue_tb;
         front_pc_0 !== 32'h1c00_0000 ||
         front_pc_1 !== 32'h1c00_0004)
       fail("two-entry issue window was not filled in program order");
-    if (!pop_0 || pop_1 || !ds_to_es_valid_0 || ds_to_es_valid_1)
-      fail("forbidden slot1 load did not reduce issue to lane0");
+    if (!pop_0 || !pop_1 || !ds_to_es_valid_0 || !ds_to_es_valid_1)
+      fail("lane1 load did not issue with lane0 ALU");
 
     @(posedge clk);
     #1;
-    if (!front_valid_0 || front_valid_1 ||
-        front_pc_0 !== 32'h1c00_0004)
-      fail("forbidden slot1 instruction was not promoted to lane0");
+    if (front_valid_0 || front_valid_1)
+      fail("dual-issued lane1 load remained in the issue buffer");
+
+    // lane1 store is also legal when its address/data are ready.
+    @(negedge clk);
+    push_bus_0 = {32'h1c00_0008, 32'h0280_0802, 1'b0, 32'b0};
+    push_bus_1 = {32'h1c00_000c, 32'h2980_00ac, 1'b0, 32'b0};
+    push_valid_0 = 1'b1;
+    push_valid_1 = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    push_valid_0 = 1'b0;
+    push_valid_1 = 1'b0;
+    @(posedge clk);
+    #1;
+    if (!pop_0 || !pop_1 || !ds_to_es_valid_0 || !ds_to_es_valid_1)
+      fail("lane1 store did not issue with lane0 ALU");
+
+    // Same-packet lane0 load -> lane1 store-data RAW must remain serialized.
+    @(posedge clk);
+    @(negedge clk);
+    push_bus_0 = {32'h1c00_0010, 32'h2880_008c, 1'b0, 32'b0};
+    push_bus_1 = {32'h1c00_0014, 32'h2980_00ac, 1'b0, 32'b0};
+    push_valid_0 = 1'b1;
+    push_valid_1 = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    push_valid_0 = 1'b0;
+    push_valid_1 = 1'b0;
+    @(posedge clk);
+    #1;
     if (!pop_0 || pop_1 || !ds_to_es_valid_0 || ds_to_es_valid_1)
-      fail("promoted load did not issue through full-capability lane0");
+      fail("lane0 load -> lane1 store RAW issued in one packet");
 
     $display("PASS asymmetric_issue_tb");
     $finish;

@@ -135,9 +135,35 @@ module mem_timing_cut_tb;
     input redirect_miss;
     begin
       make_packet_1 = {
-        pc, result, gr_we, dest,
+        pc, result, 32'b0,
+        1'b0, gr_we, 1'b0, dest,
+        1'b0, 1'b0, 1'b0, 1'b0, 1'b0,
         1'b0, 32'b0,
         is_bj, real_taken, real_target, next_pc, redirect_miss
+      };
+    end
+  endfunction
+
+  function [`ES_TO_MS_BUS_1_WD-1:0] make_mem_packet_1;
+    input [31:0] pc;
+    input [31:0] addr;
+    input [31:0] rkd;
+    input res_from_mem;
+    input gr_we;
+    input mem_we;
+    input [4:0] dest;
+    input ld_byte;
+    input ld_half;
+    input ld_sign_ext;
+    input st_byte;
+    input st_half;
+    begin
+      make_mem_packet_1 = {
+        pc, addr, rkd,
+        res_from_mem, gr_we, mem_we, dest,
+        ld_byte, ld_half, ld_sign_ext, st_byte, st_half,
+        1'b0, 32'b0,
+        1'b0, 1'b0, 32'b0, pc + 32'd4, 1'b0
       };
     end
   endfunction
@@ -449,6 +475,183 @@ module mem_timing_cut_tb;
     accept_memory_address();
     complete_memory_response(32'b0);
     ws_to_rf_bus = {`WS_TO_RF_BUS_WD{1'b0}};
+
+    // A lane1-only byte load reuses the single memory port and returns its
+    // already-extended value through the existing 32-bit lane1 WB payload.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0050, 32'h1234_5678, 32'b0,
+                        1'b0, 1'b1, 1'b0, 5'd14,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_0054,
+                        1'b0, 1'b0, 5'b0),
+      1'b1, make_mem_packet_1(32'h1c00_0054, 32'h1c40_0603, 32'b0,
+                              1'b1, 1'b1, 1'b0, 5'd15,
+                              1'b1, 1'b0, 1'b1, 1'b0, 1'b0));
+    if (!data_req || data_wr || data_size !== 2'b00 ||
+        data_addr !== 32'h1c40_0603 || ms_allowin)
+      fail("lane1 byte load did not select the shared memory port");
+    @(negedge clk);
+    data_addr_ok = 1'b1;
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_addr_ok = 1'b0;
+    data_rdata = 32'h80aa_bbcc;
+    data_data_ok = 1'b1;
+    #1;
+    if (!ms_allowin || !ms_to_ws_valid_0 || !ms_to_ws_valid_1 ||
+        ms_to_ws_bus_1[37:6] !== 32'hffff_ff80)
+      fail("lane1 signed byte load result did not reach WB");
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_data_ok = 1'b0;
+
+    // Dual memory packets retire lane0 first, then reuse the same request
+    // state for lane1. The second request must not overlap the first response.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0058, 32'h1c40_0700, 32'b0,
+                        1'b1, 1'b1, 1'b0, 5'd16,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_005c,
+                        1'b0, 1'b0, 5'b0),
+      1'b1, make_mem_packet_1(32'h1c00_005c, 32'h1c40_0802,
+                              32'h0000_a55a,
+                              1'b0, 1'b0, 1'b1, 5'b0,
+                              1'b0, 1'b0, 1'b0, 1'b0, 1'b1));
+    if (!data_req || data_wr || data_addr !== 32'h1c40_0700)
+      fail("dual load/store packet did not issue lane0 first");
+    accept_memory_address();
+    @(negedge clk);
+    data_rdata = 32'h1357_9bdf;
+    data_data_ok = 1'b1;
+    #1;
+    if (ms_allowin || !ms_to_ws_valid_0 || ms_to_ws_valid_1)
+      fail("dual memory packet did not retire only lane0 first");
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_data_ok = 1'b0;
+    if (!data_req || !data_wr || data_addr !== 32'h1c40_0802 ||
+        data_size !== 2'b01 || data_wstrb !== 4'b1100 ||
+        data_wdata !== 32'ha55a_a55a)
+      fail("lane1 halfword store did not follow lane0 load");
+    accept_memory_address();
+    if (!ms_allowin || ms_to_ws_valid_0 || !ms_to_ws_valid_1)
+      fail("final lane1 posted store did not retire the packet");
+    @(posedge clk);
+    #1;
+    complete_memory_response(32'b0);
+
+    // A posted lane0 store may retire early, but lane1 load cannot issue until
+    // the store's data_ok has released the single outstanding transaction.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0060, 32'h1c40_0900, 32'hcafe_babe,
+                        1'b0, 1'b0, 1'b1, 5'b0,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_0064,
+                        1'b0, 1'b0, 5'b0),
+      1'b1, make_mem_packet_1(32'h1c00_0064, 32'h1c40_0a00, 32'b0,
+                              1'b1, 1'b1, 1'b0, 5'd17,
+                              1'b0, 1'b0, 1'b0, 1'b0, 1'b0));
+    if (!data_req || !data_wr || data_addr !== 32'h1c40_0900)
+      fail("dual store/load packet did not issue lane0 store first");
+    accept_memory_address();
+    if (!ms_to_ws_valid_0 || ms_to_ws_valid_1 || ms_allowin)
+      fail("lane0 posted store phase retirement was incorrect");
+    @(posedge clk);
+    #1;
+    if (data_req)
+      fail("lane1 load overlapped pending lane0 posted store");
+    complete_memory_response(32'b0);
+    if (!data_req || data_wr || data_addr !== 32'h1c40_0a00)
+      fail("lane1 load did not start after lane0 store data_ok");
+    @(negedge clk);
+    data_addr_ok = 1'b1;
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_addr_ok = 1'b0;
+    data_rdata = 32'h2468_ace0;
+    data_data_ok = 1'b1;
+    #1;
+    if (!ms_allowin || ms_to_ws_valid_0 || !ms_to_ws_valid_1 ||
+        ms_to_ws_bus_1[37:6] !== 32'h2468_ace0 || load_wakeup_valid)
+      fail("final lane1 load did not retire without lane0 wakeup");
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_data_ok = 1'b0;
+
+    // Load/load uses the same two phases and returns each result on its
+    // architectural writeback lane.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0068, 32'h1c40_0b00, 32'b0,
+                        1'b1, 1'b1, 1'b0, 5'd18,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_006c,
+                        1'b0, 1'b0, 5'b0),
+      1'b1, make_mem_packet_1(32'h1c00_006c, 32'h1c40_0c00, 32'b0,
+                              1'b1, 1'b1, 1'b0, 5'd19,
+                              1'b0, 1'b0, 1'b0, 1'b0, 1'b0));
+    if (!data_req || data_wr || data_addr !== 32'h1c40_0b00)
+      fail("dual load/load packet did not issue lane0 first");
+    accept_memory_address();
+    @(negedge clk);
+    data_rdata = 32'h1111_2222;
+    data_data_ok = 1'b1;
+    #1;
+    if (!ms_to_ws_valid_0 || ms_to_ws_valid_1 || ms_allowin)
+      fail("dual load/load packet did not retire lane0 alone");
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_data_ok = 1'b0;
+    if (!data_req || data_wr || data_addr !== 32'h1c40_0c00)
+      fail("dual load/load packet did not issue lane1 second");
+    @(negedge clk);
+    data_addr_ok = 1'b1;
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_addr_ok = 1'b0;
+    data_rdata = 32'h3333_4444;
+    data_data_ok = 1'b1;
+    #1;
+    if (ms_to_ws_valid_0 || !ms_to_ws_valid_1 || !ms_allowin ||
+        ms_to_ws_bus_1[37:6] !== 32'h3333_4444)
+      fail("dual load/load packet did not retire lane1 result");
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    data_data_ok = 1'b0;
+
+    // Store/store also waits for lane0 data_ok before exposing lane1's address.
+    submit_pair(
+      1'b1, make_packet(32'h1c00_0070, 32'h1c40_0d00, 32'h5555_aaaa,
+                        1'b0, 1'b0, 1'b1, 5'b0,
+                        1'b0, 1'b0, 32'b0, 32'h1c00_0074,
+                        1'b0, 1'b0, 5'b0),
+      1'b1, make_mem_packet_1(32'h1c00_0074, 32'h1c40_0e01,
+                              32'h0000_00c3,
+                              1'b0, 1'b0, 1'b1, 5'b0,
+                              1'b0, 1'b0, 1'b0, 1'b1, 1'b0));
+    if (!data_req || !data_wr || data_addr !== 32'h1c40_0d00)
+      fail("dual store/store packet did not issue lane0 first");
+    accept_memory_address();
+    if (!ms_to_ws_valid_0 || ms_to_ws_valid_1 || ms_allowin)
+      fail("dual store/store lane0 posted retirement was incorrect");
+    @(posedge clk);
+    #1;
+    if (data_req)
+      fail("lane1 store overlapped pending lane0 store");
+    complete_memory_response(32'b0);
+    if (!data_req || !data_wr || data_addr !== 32'h1c40_0e01 ||
+        data_size !== 2'b00 || data_wstrb !== 4'b0010 ||
+        data_wdata !== 32'hc3c3_c3c3)
+      fail("dual store/store packet did not issue lane1 byte store");
+    accept_memory_address();
+    if (ms_to_ws_valid_0 || !ms_to_ws_valid_1 || !ms_allowin)
+      fail("dual store/store packet did not retire lane1 last");
+    @(posedge clk);
+    #1;
+    complete_memory_response(32'b0);
 
     // A lane1 branch follows the same one-cycle redirect contract and trains
     // using lane1 PC while both instructions still retire on the detect cycle.

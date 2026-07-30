@@ -159,12 +159,13 @@ module ISSUE_stage(
 
   wire        es_valid_1;
   wire        es_gr_we_1;
+  wire        es_fwd_valid_1;
   wire [ 4:0] es_dest_1;
   wire [31:0] es_fwd_data_1;
 
   assign {es_valid_0, es_gr_we_0, es_fwd_valid_0,
           es_res_from_mem_0, es_dest_0, es_fwd_data_0} = es_fwd_bus_0;
-  assign {es_valid_1, es_gr_we_1,
+  assign {es_valid_1, es_gr_we_1, es_fwd_valid_1,
           es_dest_1, es_fwd_data_1} = es_fwd_bus_1;
 
   wire        ms_valid_0;
@@ -176,12 +177,13 @@ module ISSUE_stage(
 
   wire        ms_valid_1;
   wire        ms_gr_we_1;
+  wire        ms_fwd_valid_1;
   wire [ 4:0] ms_dest_1;
   wire [31:0] ms_fwd_data_1;
 
   assign {ms_valid_0, ms_gr_we_0, ms_fwd_valid_0,
           ms_res_from_mem_0, ms_dest_0, ms_fwd_data_0} = ms_fwd_bus_0;
-  assign {ms_valid_1, ms_gr_we_1,
+  assign {ms_valid_1, ms_gr_we_1, ms_fwd_valid_1,
           ms_dest_1, ms_fwd_data_1} = ms_fwd_bus_1;
 
   (* keep = "true", equivalent_register_removal = "no" *)
@@ -277,20 +279,23 @@ module ISSUE_stage(
   wire rj0_hit_ms0  = src0_rj_valid  && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == rf_raddr1_0);
   wire rj0_hit_ms1  = src0_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr1_0);
 
-  wire rj0_wait_ms =
-       (rj0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0);
+  wire rj0_wait_es1 = rj0_hit_es1 && !es_fwd_valid_1;
+  wire rj0_wait_ms1 = rj0_hit_ms1 && !ms_fwd_valid_1;
+  wire rj0_wait_ms0 =
+       rj0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0;
   wire rj0_wait = src0_rj_valid &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_0)) ||
-        rj0_wait_ms);
+       (rj0_wait_es1 ||
+        (ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_0)) ||
+        rj0_wait_ms1 || rj0_wait_ms0);
 
   // 若有更年轻的 EX 或同包 lane1 生产者，仍按原年龄优先级取值，
   // 不允许较老的 Load 响应覆盖它。
   wire rj0_use_load_wakeup = load_wakeup_usable_0 && rj0_hit_ms0 &&
        !rj0_hit_es1 && !rj0_hit_es0 && !rj0_hit_ms1;
 
-  wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1,
+  wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1 && es_fwd_valid_1,
                                         rj0_hit_es0 && es_fwd_valid_0,
-                                        rj0_hit_ms1,
+                                        rj0_hit_ms1 && ms_fwd_valid_1,
                                         rj0_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rj_value_0 = select_fwd_data(rj0_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -307,17 +312,20 @@ module ISSUE_stage(
   // 若生产者是 lane0 load，则携带源寄存器 tag 提前进入 EX。
   wire rkd0_wait_ex =
        ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_0);
-  wire rkd0_wait_ms =
-       (rkd0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0);
+  wire rkd0_wait_es1 = rkd0_hit_es1 && !es_fwd_valid_1;
+  wire rkd0_wait_ms1 = rkd0_hit_ms1 && !ms_fwd_valid_1;
+  wire rkd0_wait_ms0 =
+       rkd0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0;
   wire rkd0_wait = src0_rkd_valid &&
-       (rkd0_wait_ex || rkd0_wait_ms);
+       (rkd0_wait_es1 || rkd0_wait_ex ||
+        rkd0_wait_ms1 || rkd0_wait_ms0);
 
   wire rkd0_use_load_wakeup = load_wakeup_usable_0 && rkd0_hit_ms0 &&
        !rkd0_hit_es1 && !rkd0_hit_es0 && !rkd0_hit_ms1;
 
-  wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1,
+  wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
                                          rkd0_hit_es0 && es_fwd_valid_0,
-                                         rkd0_hit_ms1,
+                                         rkd0_hit_ms1 && ms_fwd_valid_1,
                                          rkd0_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rkd_value_0 = select_fwd_data(rkd0_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -331,14 +339,16 @@ module ISSUE_stage(
   wire rj1_hit_ms0  = src1_rj_valid  && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == rf_raddr1_1);
   wire rj1_hit_ms1  = src1_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr1_1);
 
-  wire rj1_wait_ms =
-       (rj1_hit_ms0 && !ms_fwd_valid_0);
+  wire rj1_wait_es1 = rj1_hit_es1 && !es_fwd_valid_1;
+  wire rj1_wait_ms1 = rj1_hit_ms1 && !ms_fwd_valid_1;
+  wire rj1_wait_ms0 = rj1_hit_ms0 && !ms_fwd_valid_0;
   wire rj1_wait = src1_rj_valid &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_1)) ||
-        rj1_wait_ms);
-  wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1,
+       (rj1_wait_es1 ||
+        (ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr1_1)) ||
+        rj1_wait_ms1 || rj1_wait_ms0);
+  wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1 && es_fwd_valid_1,
                                         rj1_hit_es0 && es_fwd_valid_0,
-                                        rj1_hit_ms1,
+                                        rj1_hit_ms1 && ms_fwd_valid_1,
                                         rj1_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rj_value_1 = select_fwd_data(rj1_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -349,15 +359,17 @@ module ISSUE_stage(
   wire rkd1_hit_es1 = src1_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == rf_raddr2_1);
   wire rkd1_hit_ms0 = src1_rkd_valid && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == rf_raddr2_1);
   wire rkd1_hit_ms1 = src1_rkd_valid && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == rf_raddr2_1);
-  wire rkd1_wait_ms =
-       (rkd1_hit_ms0 && !ms_fwd_valid_0);
+  wire rkd1_wait_es1 = rkd1_hit_es1 && !es_fwd_valid_1;
+  wire rkd1_wait_ms1 = rkd1_hit_ms1 && !ms_fwd_valid_1;
+  wire rkd1_wait_ms0 = rkd1_hit_ms0 && !ms_fwd_valid_0;
   wire rkd1_wait = src1_rkd_valid &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_1)) ||
-        rkd1_wait_ms);
+       (rkd1_wait_es1 ||
+        (ex_wait_valid_0 && (ex_wait_dest_0 == rf_raddr2_1)) ||
+        rkd1_wait_ms1 || rkd1_wait_ms0);
 
-  wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1,
+  wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
                                          rkd1_hit_es0 && es_fwd_valid_0,
-                                         rkd1_hit_ms1,
+                                         rkd1_hit_ms1 && ms_fwd_valid_1,
                                          rkd1_hit_ms0 && ms_fwd_valid_0);
   wire [31:0] rkd_value_1 = select_fwd_data(rkd1_fwd_sel,
        es_fwd_data_1, es_fwd_data_0,
@@ -369,6 +381,7 @@ module ISSUE_stage(
   // 对 CSR/CPUCFG/CACOP 等低频未就绪结果仍保持原有阻塞。
   wire store_data_late_0 =
        mem_we_0 && rkd0_wait &&
+       !rkd0_wait_es1 && !rkd0_wait_ms1 &&
        (rkd0_wait_ex ? es_res_from_mem_0 : ms_res_from_mem_0);
   wire stall_0 = rj0_wait || (rkd0_wait && !store_data_late_0);
   wire stall_1 = rj1_wait || rkd1_wait;
@@ -389,37 +402,76 @@ module ISSUE_stage(
   // MEM 中未就绪的 load/低频结果只阻塞真正命中目的寄存器的源。
   // 使用 InstBuffer 的 hot 源寄存器字段保持 pop 控制路径窄，不再用
   // 任意一个未完成 load 全局关闭整个发射窗口。
-  wire rj0_wait_ms_for_consume = src0_rj_valid_for_consume &&
-       (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr1_0_hot)) && !ms_fwd_valid_0 &&
-          !load_wakeup_usable_0));
-  wire rkd0_wait_ms_for_consume = src0_rkd_valid_for_consume &&
-       (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr2_0_hot)) && !ms_fwd_valid_0 &&
-          !load_wakeup_usable_0));
-  wire rj1_wait_ms_for_consume = src1_rj_valid_for_consume &&
-       (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr1_1_hot)) && !ms_fwd_valid_0));
-  wire rkd1_wait_ms_for_consume = src1_rkd_valid_for_consume &&
-       (((ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-          (ms_dest_0 == front_raddr2_1_hot)) && !ms_fwd_valid_0));
+  wire rj0_wait_es1_for_consume = src0_rj_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+       (es_dest_1 != 5'b0) && (es_dest_1 == front_raddr1_0_hot);
+  wire rkd0_wait_es1_for_consume = src0_rkd_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+       (es_dest_1 != 5'b0) && (es_dest_1 == front_raddr2_0_hot);
+  wire rj1_wait_es1_for_consume = src1_rj_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+       (es_dest_1 != 5'b0) && (es_dest_1 == front_raddr1_1_hot);
+  wire rkd1_wait_es1_for_consume = src1_rkd_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
+       (es_dest_1 != 5'b0) && (es_dest_1 == front_raddr2_1_hot);
+
+  wire rj0_wait_ms0_for_consume = src0_rj_valid_for_consume &&
+       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+       (ms_dest_0 != 5'b0) && (ms_dest_0 == front_raddr1_0_hot) &&
+       !load_wakeup_usable_0;
+  wire rj0_wait_ms1_for_consume = src0_rj_valid_for_consume &&
+       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+       (ms_dest_1 != 5'b0) && (ms_dest_1 == front_raddr1_0_hot);
+  wire rkd0_wait_ms0_for_consume = src0_rkd_valid_for_consume &&
+       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+       (ms_dest_0 != 5'b0) && (ms_dest_0 == front_raddr2_0_hot) &&
+       !load_wakeup_usable_0;
+  wire rkd0_wait_ms1_for_consume = src0_rkd_valid_for_consume &&
+       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+       (ms_dest_1 != 5'b0) && (ms_dest_1 == front_raddr2_0_hot);
+  wire rj1_wait_ms0_for_consume = src1_rj_valid_for_consume &&
+       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+       (ms_dest_0 != 5'b0) && (ms_dest_0 == front_raddr1_1_hot);
+  wire rj1_wait_ms1_for_consume = src1_rj_valid_for_consume &&
+       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+       (ms_dest_1 != 5'b0) && (ms_dest_1 == front_raddr1_1_hot);
+  wire rkd1_wait_ms0_for_consume = src1_rkd_valid_for_consume &&
+       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
+       (ms_dest_0 != 5'b0) && (ms_dest_0 == front_raddr2_1_hot);
+  wire rkd1_wait_ms1_for_consume = src1_rkd_valid_for_consume &&
+       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
+       (ms_dest_1 != 5'b0) && (ms_dest_1 == front_raddr2_1_hot);
+
+  wire rj0_wait_ms_for_consume =
+       rj0_wait_ms1_for_consume || rj0_wait_ms0_for_consume;
+  wire rkd0_wait_ms_for_consume =
+       rkd0_wait_ms1_for_consume || rkd0_wait_ms0_for_consume;
+  wire rj1_wait_ms_for_consume =
+       rj1_wait_ms1_for_consume || rj1_wait_ms0_for_consume;
+  wire rkd1_wait_ms_for_consume =
+       rkd1_wait_ms1_for_consume || rkd1_wait_ms0_for_consume;
 
   wire rj0_wait_for_consume = src0_rj_valid_for_consume &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_0_hot)) ||
+       (rj0_wait_es1_for_consume ||
+        (ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_0_hot)) ||
         rj0_wait_ms_for_consume);
   wire rkd0_wait_ex_for_consume = src0_rkd_valid_for_consume &&
        ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_0_hot);
   wire rkd0_wait_for_consume = src0_rkd_valid_for_consume &&
-       (rkd0_wait_ex_for_consume || rkd0_wait_ms_for_consume);
+       (rkd0_wait_es1_for_consume || rkd0_wait_ex_for_consume ||
+        rkd0_wait_ms_for_consume);
   wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_1_hot)) ||
+       (rj1_wait_es1_for_consume ||
+        (ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr1_1_hot)) ||
         rj1_wait_ms_for_consume);
   wire rkd1_wait_for_consume = src1_rkd_valid_for_consume &&
-       ((ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_1_hot)) ||
+       (rkd1_wait_es1_for_consume ||
+        (ex_wait_valid_0 && (ex_wait_dest_0 == front_raddr2_1_hot)) ||
         rkd1_wait_ms_for_consume);
 
   wire store_data_late_0_for_consume =
        mem_we_0 && rkd0_wait_for_consume &&
+       !rkd0_wait_es1_for_consume && !rkd0_wait_ms1_for_consume &&
        (rkd0_wait_ex_for_consume ?
         es_res_from_mem_0 : ms_res_from_mem_0);
   (* keep = "true" *) wire stall_0_for_consume =
@@ -451,6 +503,7 @@ module ISSUE_stage(
   // 两种乘法包的等待与完成都由 lane0 的整包控制统一管理。
   wire mul_pair = is_mul_0 && is_mul_1;
   wire lane1_capable =
+       mem_op_1 ||
        lane1_regular_alu ||
        (!is_mul_0 && lane1_simple_branch) ||
        mul_pair;
@@ -529,8 +582,7 @@ module ISSUE_stage(
               if (ds_to_es_valid_1 && !lane1_capable)
                 $fatal(1, "unsupported instruction issued on lane1");
               if (ds_to_es_valid_1 &&
-                  (mem_op_1 || special_1 ||
-                   inst_jirl_1 || inst_bl_1))
+                  (special_1 || inst_jirl_1 || inst_bl_1))
                 $fatal(1, "lane1 issued a forbidden side-effect class");
               if (ds_to_es_valid_1 && is_mul_1 && !is_mul_0)
                 $fatal(1, "lane1 multiply issued without lane0 multiply");
@@ -629,9 +681,16 @@ module ISSUE_stage(
                            ds_alu_src1_1,
                            ds_alu_src2_1,
                            ds_rkd_value_1,
+                           res_from_mem_1,
                            gr_we_1,
+                           mem_we_1,
                            dest_1,
                            is_mul_1,
+                           ld_byte_1,
+                           ld_half_1,
+                           ld_sign_ext_1,
+                           st_byte_1,
+                           st_half_1,
                            ds_pred_taken_1,
                            ds_pred_target_1,
                            ds_br_op_1,

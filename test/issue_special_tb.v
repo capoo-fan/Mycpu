@@ -169,12 +169,12 @@ module issue_special_tb;
           dut.ex_wait_dest_0 = producer_dest;
         end
         1: begin
-          es_fwd_bus_1 = {1'b1, 1'b1,
+          es_fwd_bus_1 = {1'b1, 1'b1, producer_ready,
                           producer_dest, 32'h2000_0000};
         end
         2: ms_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b1,
                             producer_dest, 32'h3000_0000};
-        3: ms_fwd_bus_1 = {1'b1, 1'b1,
+        3: ms_fwd_bus_1 = {1'b1, 1'b1, producer_ready,
                             producer_dest, 32'h4000_0000};
         default: $fatal(1, "invalid producer slot");
       endcase
@@ -229,15 +229,15 @@ module issue_special_tb;
       check_local_wait(1'b0, 5'd0,
                        "ordinary ALU clears wait mirror");
 
-      // Lane1 has no load/store datapath. The younger load remains queued and
-      // will be promoted to lane0 by the real InstBuffer.
+      // A lane1 load issues normally, but does not occupy lane0's local
+      // non-forwardable-result mirror.
       front_valid_1 = 1'b1;
       inst_0 = make_addi(5'd10, 5'd0);
       inst_1 = make_ld_w(5'd13, 5'd4);
-      check_issue(1'b1, 1'b0, "lane1 load remains in IBuffer");
+      check_issue(1'b1, 1'b1, "lane1 load issues with lane0 ALU");
       tick();
       check_local_wait(1'b0, 5'd0,
-                       "forbidden lane1 load creates no wait entry");
+                       "lane1 load does not enter lane0 wait mirror");
 
       // A pipeline flush has priority over the EX advance/capture path.
       br_taken = 1'b1;
@@ -463,12 +463,12 @@ module issue_special_tb;
     set_producer(0, 1'b0, 5'd12);
     check_issue(1'b0, 1'b0, "Load to ALU still inserts the normal interlock");
 
-    // A lane1 Store is capability-blocked and still permits lane0 to issue.
+    // A lane1 Store is supported, but its data must be ready in ISSUE.
     front_valid_1 = 1'b1;
     inst_0 = make_addi(5'd10, 5'd0);
     inst_1 = make_st_w(5'd12, 5'd5);
     set_producer(0, 1'b0, 5'd12);
-    check_issue(1'b1, 1'b0, "lane1 Store remains in IBuffer");
+    check_issue(1'b1, 1'b0, "lane1 Store waits for older load data");
 
     // Store/multiply ordering needs no special bypass rule after the Store is
     // interlocked in ISSUE; normal lane ordering determines what can issue.
@@ -480,12 +480,17 @@ module issue_special_tb;
     inst_1 = make_st_w(5'd12, 5'd5);
     check_issue(1'b1, 1'b0, "lane0 multiply issues while lane1 Store waits");
 
-    // The adjacent load/store pair remains single-issued because lane1 has no
-    // memory datapath (and this example also has a same-packet RAW dependency).
+    // Same-packet load->store data RAW remains single-issued.
     inst_0 = make_ld_w(5'd12, 5'd4);
     inst_1 = make_st_w(5'd12, 5'd5);
     clear_producers();
     check_issue(1'b1, 1'b0, "adjacent load and Store do not issue in one packet");
+
+    // Independent lane0/lane1 memory operations issue together and are
+    // serialized later by MEM.
+    inst_0 = make_ld_w(5'd12, 5'd4);
+    inst_1 = make_st_w(5'd13, 5'd5);
+    check_issue(1'b1, 1'b1, "independent dual memory packet issues together");
 
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
