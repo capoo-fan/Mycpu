@@ -363,20 +363,20 @@ module mul_issue_timing_tb;
   end
 endmodule
 
-// Three-cycle behavioral model matching the synthesis multiplier latency.
+// Three-cycle unsigned low-32 model matching the synthesis multiplier.
 module mult_gen_0(
     input  wire        CLK,
     input  wire [31:0] A,
     input  wire [31:0] B,
-    output wire [63:0] P
+    output wire [31:0] P
   );
-  reg [63:0] pipe_0;
-  reg [63:0] pipe_1;
-  reg [63:0] pipe_2;
+  reg [31:0] pipe_0;
+  reg [31:0] pipe_1;
+  reg [31:0] pipe_2;
 
   always @(posedge CLK)
   begin
-    pipe_0 <= $signed(A) * $signed(B);
+    pipe_0 <= A * B;
     pipe_1 <= pipe_0;
     pipe_2 <= pipe_1;
   end

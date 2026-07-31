@@ -353,7 +353,7 @@ module mult_gen_0(
   input  wire        CLK,
   input  wire [31:0] A,
   input  wire [31:0] B,
-  output wire [63:0] P
+  output wire [31:0] P
 );
-  assign P = 64'b0;
+  assign P = 32'b0;
 endmodule

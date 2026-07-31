@@ -51,7 +51,7 @@ module alu #(
   wire [63:0] sr64_result;
   wire [31:0] sr_result;
 
-  wire [63:0] mul_ss_result;
+  wire [31:0] mul_low_result;
 
 
   wire        do_sub;
@@ -83,7 +83,8 @@ module alu #(
 
   assign sr_result   = sr64_result[31:0];
 
-  // 两个 lane 使用同构的三拍 Xilinx 乘法 IP；是否实例化由 EX 参数决定。
+  // 两个 lane 使用同构的三拍 Xilinx 乘法 IP。MUL.W 只保留乘积低
+  // 32 位，因此 IP 配置为 32x32 无符号乘法；是否实例化由 EX 参数决定。
   generate
     if (HAS_MUL)
     begin: gen_multiplier
@@ -91,17 +92,17 @@ module alu #(
                    .CLK (clk     ),
                    .A   (mul_src1),
                    .B   (mul_src2),
-                   .P   (mul_ss_result)
+                   .P   (mul_low_result)
                  );
     end
     else
     begin: gen_no_multiplier
-      assign mul_ss_result = 64'b0;
+      assign mul_low_result = 32'b0;
     end
   endgenerate
 
 
-  assign mul_result = mul_ss_result[31:0];
+  assign mul_result = mul_low_result;
 
   // final result mux
   assign alu_result = ({32{op_add|op_sub}} & add_sub_result)
