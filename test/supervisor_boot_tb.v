@@ -130,9 +130,9 @@ module supervisor_boot_tb;
       $display("FAIL: global timeout pc=%h tx_count=%0d", cpu.pc_out, tx_count);
       $display("  data req=%b wr=%b addr=%h addr_ok=%b data_ok=%b",
                data_req, data_wr, data_addr, data_addr_ok, data_data_ok);
-      $display("  MEM wait=%0d addr_sent=%b pending=%b rvalid=%b",
-               cpu.u_mem.ms_wait_kind, cpu.u_mem.ms_addr_sent,
-               cpu.u_mem.ms_data_pending, cpu.u_mem.ms_rdata_buf_valid);
+      $display("  MEM wait=%0d pending=%b rvalid=%b",
+               cpu.u_mem.ms_wait_kind, cpu.u_mem.ms_data_pending,
+               cpu.u_mem.ms_rdata_buf_valid);
       $display("  UART pending=%b resp=%b tx_start=%b",
                bridge.uart_req_pending, bridge.uart_resp_valid,
                uart_tx_start);

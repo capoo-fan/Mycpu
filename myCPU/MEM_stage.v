@@ -227,8 +227,8 @@ module MEM_stage(
   wire dual_mem_phase_0 = lane0_mem_op && lane1_mem_op;
 
   // 处理 SRAM 的握手
-  reg  ms_addr_sent;
   reg  ms_data_pending;
+  reg  ms_response_waiting;
   reg  ms_addr_is_sram_q;
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
@@ -237,16 +237,13 @@ module MEM_stage(
   reg  [31:0] branch_target_q;
 
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
-  wire ms_data_ok  = ms_addr_sent && data_sram_data_ok;
+  wire ms_data_ok  = ms_response_waiting && data_sram_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
 
   wire packet_valid = ms_valid_0 || ms_valid_1;
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
   // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
-  // 地址握手时已寄存 SRAM 属性；store 用它作为提前退休条件，
-  // Load 唤醒也复用同一个 bit，避免返回拍再次经过宽地址译码。
-  // ms_data_pending 继续阻止更年轻的访存，直到 data_ok 返回。
   wire posted_store_ready = selected_mem_we && ms_addr_is_sram_q;
   wire selected_mem_ready =
        selected_res_from_mem ? (mem_data_ready || ms_data_ok) :
@@ -309,8 +306,11 @@ module MEM_stage(
        (selected_ld_half || selected_st_half) ? 2'b01 :
        2'b10;
 
-  assign data_sram_req   = ms_has_mem_op && !ms_addr_sent &&
-       !ms_data_pending &&
+  // 非 SRAM store 的返回先进入 rdata_buf，再在下一拍退休；该拍仍需
+  // 阻止原指令重复发地址。Load 在 data_ok 拍直接退休，posted SRAM
+  // store 则不会置 rdata_buf_valid。
+  assign data_sram_req   = ms_has_mem_op && !ms_data_pending &&
+       !ms_rdata_buf_valid &&
        (!selected_mem_we || selected_store_data_ready);
   assign data_sram_wr    = selected_mem_we;
   assign data_sram_size  = ms_mem_size;
@@ -513,17 +513,6 @@ module MEM_stage(
 
   always @(posedge clk)
   begin
-    if (reset)
-      ms_addr_sent <= 1'b0;
-    else if (ms_allowin || advance_to_lane1 ||
-             br_taken || branch_redirect_fire)
-      ms_addr_sent <= 1'b0;
-    else if (got_addr_ok)
-      ms_addr_sent <= 1'b1;
-  end
-
-  always @(posedge clk)
-  begin
     if (reset || br_taken || branch_redirect_fire)
       ms_addr_is_sram_q <= 1'b0;
     else if (ms_allowin || advance_to_lane1)
@@ -540,6 +529,17 @@ module MEM_stage(
       ms_data_pending <= 1'b1;
     else if (ms_data_pending && data_sram_data_ok)
       ms_data_pending <= 1'b0;
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset || br_taken || branch_redirect_fire)
+      ms_response_waiting <= 1'b0;
+    else if (got_addr_ok)
+      ms_response_waiting <= !selected_mem_we ||
+                             !data_sram_addr_is_sram;
+    else if (ms_data_pending && data_sram_data_ok)
+      ms_response_waiting <= 1'b0;
   end
 
   always @(posedge clk)
