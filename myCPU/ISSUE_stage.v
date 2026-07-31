@@ -399,111 +399,18 @@ module ISSUE_stage(
        ((src1_rj_valid  && (dest_0 == src_raddr1_1)) ||
         (src1_rkd_valid && (dest_0 == src_raddr2_1)));  // 两条指令相互依赖
 
-  wire src0_rj_valid_for_consume  = src0_rj_valid;
-  wire src0_rkd_valid_for_consume = src0_rkd_valid;
-  wire src1_rj_valid_for_consume  = src1_rj_valid;
-  wire src1_rkd_valid_for_consume = src1_rkd_valid;
-
-  // MEM 中未就绪的 load/低频结果只阻塞真正命中目的寄存器的源。
-  // 使用 InstBuffer 的 hot 源寄存器字段保持 pop 控制路径窄，不再用
-  // 任意一个未完成 load 全局关闭整个发射窗口。
-  wire rj0_wait_es1_for_consume = src0_rj_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr1_0);
-  wire rkd0_wait_es1_for_consume = src0_rkd_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_0);
-  wire rj1_wait_es1_for_consume = src1_rj_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr1_1);
-  wire rkd1_wait_es1_for_consume = src1_rkd_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_1);
-
-  wire rj0_wait_ms0_for_consume = src0_rj_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr1_0) &&
-       !load_wakeup_usable_0;
-  wire rj0_wait_ms1_for_consume = src0_rj_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_0);
-  wire rkd0_wait_ms0_for_consume = src0_rkd_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_0) &&
-       !load_wakeup_usable_0;
-  wire rkd0_wait_ms1_for_consume = src0_rkd_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_0);
-  wire rj1_wait_ms0_for_consume = src1_rj_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr1_1);
-  wire rj1_wait_ms1_for_consume = src1_rj_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_1);
-  wire rkd1_wait_ms0_for_consume = src1_rkd_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_1);
-  wire rkd1_wait_ms1_for_consume = src1_rkd_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_1);
-
-  wire rj0_wait_ms_for_consume =
-       rj0_wait_ms1_for_consume || rj0_wait_ms0_for_consume;
-  wire rkd0_wait_ms_for_consume =
-       rkd0_wait_ms1_for_consume || rkd0_wait_ms0_for_consume;
-  wire rj1_wait_ms_for_consume =
-       rj1_wait_ms1_for_consume || rj1_wait_ms0_for_consume;
-  wire rkd1_wait_ms_for_consume =
-       rkd1_wait_ms1_for_consume || rkd1_wait_ms0_for_consume;
-
-  wire rj0_wait_ex_for_consume = src0_rj_valid_for_consume &&
-       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_0);
-  wire rj0_wait_for_consume =
-       rj0_wait_es1_for_consume || rj0_wait_ex_for_consume ||
-       rj0_wait_ms0_for_consume || rj0_wait_ms1_for_consume;
-  wire rkd0_wait_ex_for_consume = src0_rkd_valid_for_consume &&
-       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_0);
-  wire rkd0_wait_for_consume =
-       rkd0_wait_es1_for_consume || rkd0_wait_ex_for_consume ||
-       rkd0_wait_ms0_for_consume || rkd0_wait_ms1_for_consume;
-  wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
-       (rj1_wait_es1_for_consume ||
-        (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1)) ||
-        rj1_wait_ms_for_consume);
-  wire rkd1_wait_for_consume = src1_rkd_valid_for_consume &&
-       (rkd1_wait_es1_for_consume ||
-        (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1)) ||
-        rkd1_wait_ms_for_consume);
-
-  wire rkd0_hard_wait_for_consume =
-       rkd0_wait_es1_for_consume || rkd0_wait_ms1_for_consume;
-  wire rkd0_late_wait_for_consume =
-       rkd0_wait_ex_for_consume || rkd0_wait_ms0_for_consume;
-  wire rkd0_late_ok_for_consume =
-       mem_we_0 &&
-       (rkd0_wait_ex_for_consume ?
-        es_res_from_mem_0 : ms_res_from_mem_0);
-  wire store_data_late_0_for_consume =
-       !rkd0_hard_wait_for_consume &&
-       rkd0_late_wait_for_consume && rkd0_late_ok_for_consume;
-  (* keep = "true" *) wire stall_0_for_consume =
-       rj0_wait_for_consume ||
-       rkd0_hard_wait_for_consume ||
-       (rkd0_late_wait_for_consume && !rkd0_late_ok_for_consume);
-  (* keep = "true" *) wire stall_1_for_consume =
-  rj1_wait_for_consume || rkd1_wait_for_consume;
+  // pop 与 EX 发射使用同一个 hot 源地址副本，因此共享上面的
+  // RAW 命中和等待逻辑。保留 *_for_consume 观测名称供断言/性能计数
+  // 使用，但不再复制比较器与归并锥。
+  wire stall_0_for_consume = stall_0;
+  wire stall_1_for_consume = stall_1;
   wire ms_stall_0_for_consume =
-       rj0_wait_ms_for_consume || rkd0_wait_ms_for_consume;
+       rj0_wait_ms1 || rj0_wait_ms0 || rkd0_wait_ms1 || rkd0_wait_ms0;
   wire blocking_ms_stall_0_for_consume =
-       rj0_wait_ms_for_consume ||
-       (rkd0_wait_ms_for_consume && !store_data_late_0_for_consume);
+       rj0_wait_ms1 || rj0_wait_ms0 ||
+       ((rkd0_wait_ms1 || rkd0_wait_ms0) && !store_data_late_0);
   wire ms_stall_1_for_consume =
-       rj1_wait_ms_for_consume || rkd1_wait_ms_for_consume;
-  wire raw_0_to_1_for_consume = gr_we_0 && (dest_0 != 5'b0) &&
-       ((src1_rj_valid_for_consume &&
-         (dest_0 == src_raddr1_1)) ||
-        (src1_rkd_valid_for_consume &&
-         (dest_0 == src_raddr2_1)));
+       rj1_wait_ms1 || rj1_wait_ms0 || rkd1_wait_ms1 || rkd1_wait_ms0;
 
   wire mem_op_0 = res_from_mem_0 || mem_we_0;
   wire mem_op_1 = res_from_mem_1 || mem_we_1;
@@ -523,29 +430,16 @@ module ISSUE_stage(
 
   wire issue_window_open = es_allowin;
 
-  (* keep = "true", max_fanout = 16 *) wire issue0_fire_for_ex =
-  issue_window_open && !br_taken && front_valid_0 && !stall_0 && !special_block;
-  (* keep = "true", max_fanout = 16 *) wire issue1_fire_for_ex =
-  issue_window_open && !br_taken &&
-                    front_valid_0 && !stall_0 && !special_block &&
-                    front_valid_1 && !stall_1 && !raw_0_to_1 &&
-                    lane1_capable && !(is_bj_0 && is_bj_1) &&
-                    !special_0;
-  (* max_fanout = 16 *) wire issue0_fire_for_consume =
-  issue_window_open && !br_taken &&
-                    front_valid_0 && !stall_0_for_consume && !special_block;
-  (* max_fanout = 16 *) wire issue1_fire_for_consume =
-  issue_window_open && !br_taken &&
-                    front_valid_0 && !stall_0_for_consume && !special_block &&
-                    front_valid_1 && !stall_1_for_consume &&
-                    !raw_0_to_1_for_consume &&
-                    lane1_capable && !(is_bj_0 && is_bj_1) &&
-                    !special_0;
+  wire issue0_fire = issue_window_open && !br_taken &&
+       front_valid_0 && !stall_0 && !special_block;
+  wire issue1_fire = issue0_fire && front_valid_1 && !stall_1 &&
+       !raw_0_to_1 && lane1_capable && !(is_bj_0 && is_bj_1) &&
+       !special_0;
 
-  assign ds_to_es_valid_0 = issue0_fire_for_ex;
-  assign ds_to_es_valid_1 = issue1_fire_for_ex;
-  assign pop_0            = issue0_fire_for_consume;
-  assign pop_1            = issue1_fire_for_consume;
+  assign ds_to_es_valid_0 = issue0_fire;
+  assign ds_to_es_valid_1 = issue1_fire;
+  assign pop_0            = issue0_fire;
+  assign pop_1            = issue1_fire;
   // CPUCFG 只需单发，但不改变机器状态，不占用全局特殊指令
   // scoreboard。CSR/CACOP 则一直阻止年轻指令直到它们的 flush。
   assign special_fire = ds_to_es_valid_0 && (is_csr_0 || is_cacop_0);
