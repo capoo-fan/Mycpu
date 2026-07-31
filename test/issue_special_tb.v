@@ -163,14 +163,13 @@ module issue_special_tb;
       case (producer_slot)
         0: begin
           es_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b0,
-                          producer_dest, 32'h1000_0000};
+                          producer_dest};
           dut.ex_wait_valid_0 = !producer_ready &&
                                 (producer_dest != 5'b0);
           dut.ex_wait_dest_0 = producer_dest;
         end
         1: begin
-          es_fwd_bus_1 = {1'b1, 1'b1,
-                          producer_dest, 32'h2000_0000};
+          es_fwd_bus_1 = {1'b1, 1'b1, 1'b1, producer_dest};
         end
         2: ms_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b1,
                             producer_dest, 32'h3000_0000};
@@ -208,7 +207,7 @@ module issue_special_tb;
       check_local_wait(1'b1, 5'd12,
                        "lane0 load mirror capture");
       es_fwd_bus_0 = {1'b1, 1'b1, 1'b0, 1'b1,
-                      5'd12, 32'h1111_1111};
+                      5'd12};
       inst_0 = make_addi(5'd10, 5'd12);
       check_issue(1'b0, 1'b0,
                   "captured lane0 load blocks dependent consumer");

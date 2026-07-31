@@ -247,7 +247,7 @@ module mul_issue_timing_tb;
     #1;
     if (u_exe.es_mul_result_0 !== 32'hffff_fffa)
       fail("mul.w result did not use ISSUE operands on the launch edge");
-    if (!es_fwd_bus_0[38] || !pop_0 || pop_1)
+    if (!es_fwd_bus_0[6] || !pop_0 || pop_1)
       fail("lane0 RAW consumer did not issue on multiply completion");
 
     // A multiply in slot1 cannot pair with an ALU and remains queued while
@@ -287,7 +287,7 @@ module mul_issue_timing_tb;
       fail("MUL+ALU packet results were not aligned");
     if (u_exe.mul_pending_0)
       fail("MUL+ALU packet did not complete after the existing two-edge wait");
-    if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
+    if (!es_fwd_bus_0[6] || !es_fwd_bus_1[5] || pop_0 || pop_1)
       fail("MUL+ALU completion under MEM backpressure is incorrect");
     @(negedge clk);
     ms_allowin = 1'b1;
@@ -325,7 +325,7 @@ module mul_issue_timing_tb;
       fail("paired multiply results were not aligned");
     if (u_exe.mul_pending_0)
       fail("paired multiplies did not complete together");
-    if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
+    if (!es_fwd_bus_0[6] || !es_fwd_bus_1[5] || pop_0 || pop_1)
       fail("paired multiply completion under MEM backpressure is incorrect");
     @(posedge clk);
     #1;
@@ -333,7 +333,7 @@ module mul_issue_timing_tb;
         u_exe.es_exec_result_1 !== 32'hffff_ffe4)
       fail("paired multiply results changed during extended MEM backpressure");
     if (!u_exe.mul_result_hold_valid ||
-        !es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
+        !es_fwd_bus_0[6] || !es_fwd_bus_1[5] || pop_0 || pop_1)
       fail("multiply result hold failed under extended backpressure");
     @(negedge clk);
     ms_allowin = 1'b1;
@@ -352,7 +352,7 @@ module mul_issue_timing_tb;
     expect_pop(1'b0, 1'b0, "flush did not block ISSUE");
     @(posedge clk);
     #1;
-    if (u_exe.mul_pending_0 !== 1'b0 || es_fwd_bus_0[40] !== 1'b0)
+    if (u_exe.mul_pending_0 !== 1'b0 || es_fwd_bus_0[8] !== 1'b0)
       fail("flush did not clear multiply pending state");
     @(negedge clk);
     flush = 1'b0;

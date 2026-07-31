@@ -12,10 +12,10 @@
 // ============================================================================
 // ES_FWD_BUS 位提取宏
 // ============================================================================
-`define ES_FWD_VALID     40
-`define ES_FWD_GR_WE     39
-`define ES_FWD_FWD_VALID 38
-`define ES_FWD_RES_MEM   37
+`define ES_FWD_VALID     8
+`define ES_FWD_GR_WE     7
+`define ES_FWD_FWD_VALID 6
+`define ES_FWD_RES_MEM   5
 
 // ============================================================================
 // BPU 分支历史表大小（用于 per-PC 统计）
@@ -212,8 +212,8 @@ module supervisor_perf_tb;
   // MS_FWD_BUS_WD = 41
   wire [63:0] ms_fwd_0_padded = {23'b0, cpu.ms_fwd_bus_0};
 
-  // ES_FWD_BUS_WD = 41
-  wire [63:0] es_fwd_0_padded = {23'b0, cpu.es_fwd_bus_0};
+  // ES_FWD_BUS_WD = 9
+  wire [63:0] es_fwd_0_padded = {55'b0, cpu.es_fwd_bus_0};
   wire bpu_exact_entry_hit_tb = cpu.u_bpu.read_valid_s1 &&
        (cpu.u_bpu.read_tag_s1 == cpu.u_bpu.update_tag_s1);
   wire bpu_exact_counter_taken_tb =

@@ -110,6 +110,8 @@ module EXE_stage(
   wire        ds_is_csr_0;
   wire        ds_is_csrxchg_0;
   wire [13:0] ds_csr_num_0;
+  wire [ 1:0] ds_rj_ex_fwd_sel_0;
+  wire [ 1:0] ds_rkd_ex_fwd_sel_0;
   wire        ds_load_wakeup_rj_0;
   wire        ds_load_wakeup_rkd_0;
 
@@ -122,15 +124,54 @@ module EXE_stage(
           ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0,
           ds_is_cpucfg_0, ds_is_cacop_0, ds_cacop_code_0,
           ds_is_csr_0, ds_is_csrxchg_0, ds_csr_num_0,
+          ds_rj_ex_fwd_sel_0,
+          ds_rkd_ex_fwd_sel_0,
           ds_load_wakeup_rj_0,
           ds_load_wakeup_rkd_0} = ds_to_es_bus_0;
 
-  // 返回数据不穿过 ISSUE 的宽前递 mux，只在 EX 输入边沿做两个
-  // 2:1 选择。当前开放类别不会把 rj/rkd 用作分支或 store 数据。
+  // EX result data stays local to this stage.  ISSUE only returns one select
+  // code per architectural source after register comparison and age priority.
+  wire [31:0] es_exec_result_0;
+  wire [31:0] es_exec_result_1;
+
+  function [31:0] select_ex_fwd_data;
+    input [ 1:0] sel;
+    input [31:0] base_data;
+    input [31:0] es0_data;
+    input [31:0] es1_data;
+    begin
+      select_ex_fwd_data = (sel == 2'b01) ? es0_data :
+                           (sel == 2'b10) ? es1_data : base_data;
+    end
+  endfunction
+
+  wire        ds_rkd_is_rj_0 = (ds_br_op_0 == `BR_JIRL);
+  wire [ 1:0] ds_alu_src1_ex_fwd_sel_0 =
+       ds_rkd_is_rj_0 ? 2'b00 : ds_rj_ex_fwd_sel_0;
+  wire [31:0] ds_rj_ex_data_0 = select_ex_fwd_data(
+       ds_alu_src1_ex_fwd_sel_0, ds_alu_src1_0,
+       es_exec_result_0, es_exec_result_1);
+  wire [ 1:0] ds_alu_src2_ex_fwd_sel_0 =
+       ds_mem_we_0 ? 2'b00 : ds_rkd_ex_fwd_sel_0;
+  wire [31:0] ds_rkd_alu_ex_data_0 = select_ex_fwd_data(
+       ds_alu_src2_ex_fwd_sel_0, ds_alu_src2_0,
+       es_exec_result_0, es_exec_result_1);
+  wire [ 1:0] ds_rkd_value_ex_fwd_sel_0 =
+       ds_rkd_is_rj_0 ? ds_rj_ex_fwd_sel_0 : ds_rkd_ex_fwd_sel_0;
+  wire [31:0] ds_rkd_value_ex_data_0 = select_ex_fwd_data(
+       ds_rkd_value_ex_fwd_sel_0, ds_rkd_value_0,
+       es_exec_result_0, es_exec_result_1);
+
   wire [31:0] ds_alu_src1_final =
+       (ds_alu_src1_ex_fwd_sel_0 != 2'b00) ? ds_rj_ex_data_0 :
        ds_load_wakeup_rj_0 ? load_wakeup_data : ds_alu_src1_0;
   wire [31:0] ds_alu_src2_final =
+       (ds_alu_src2_ex_fwd_sel_0 != 2'b00) ? ds_rkd_alu_ex_data_0 :
        ds_load_wakeup_rkd_0 ? load_wakeup_data : ds_alu_src2_0;
+  wire [31:0] ds_rkd_value_final_0 =
+       (ds_rkd_value_ex_fwd_sel_0 != 2'b00) ? ds_rkd_value_ex_data_0 :
+       (ds_rkd_is_rj_0 ? ds_load_wakeup_rj_0 : ds_load_wakeup_rkd_0) ?
+       load_wakeup_data : ds_rkd_value_0;
 
   wire [31:0] ds_pc_1;
   wire [11:0] ds_alu_op_1;
@@ -151,6 +192,8 @@ module EXE_stage(
   wire [31:0] ds_pred_target_1;
   wire [ 3:0] ds_br_op_1;
   wire [31:0] ds_br_offs_1;
+  wire [ 1:0] ds_rj_ex_fwd_sel_1;
+  wire [ 1:0] ds_rkd_ex_fwd_sel_1;
 
   assign {ds_pc_1, ds_alu_op_1, ds_alu_src1_1, ds_alu_src2_1, ds_rkd_value_1,
           ds_res_from_mem_1, ds_gr_we_1, ds_mem_we_1,
@@ -158,7 +201,21 @@ module EXE_stage(
           ds_ld_byte_1, ds_ld_half_1, ds_ld_sign_ext_1,
           ds_st_byte_1, ds_st_half_1,
           ds_pred_taken_1, ds_pred_target_1,
-          ds_br_op_1, ds_br_offs_1} = ds_to_es_bus_1;
+          ds_br_op_1, ds_br_offs_1,
+          ds_rj_ex_fwd_sel_1,
+          ds_rkd_ex_fwd_sel_1} = ds_to_es_bus_1;
+
+  wire [31:0] ds_alu_src1_final_1 = select_ex_fwd_data(
+       ds_rj_ex_fwd_sel_1, ds_alu_src1_1,
+       es_exec_result_0, es_exec_result_1);
+  wire [ 1:0] ds_alu_src2_ex_fwd_sel_1 =
+       ds_mem_we_1 ? 2'b00 : ds_rkd_ex_fwd_sel_1;
+  wire [31:0] ds_alu_src2_final_1 = select_ex_fwd_data(
+       ds_alu_src2_ex_fwd_sel_1, ds_alu_src2_1,
+       es_exec_result_0, es_exec_result_1);
+  wire [31:0] ds_rkd_value_final_1 = select_ex_fwd_data(
+       ds_rkd_ex_fwd_sel_1, ds_rkd_value_1,
+       es_exec_result_0, es_exec_result_1);
 
   // 两个三拍乘法 IP 在指令进入 EX 的同一边沿采样 ISSUE 操作数。
   // 唯一的 mul_pending_0 作为整包等待状态，结果在 EX 再等两拍可用；
@@ -200,8 +257,8 @@ module EXE_stage(
   assign csr_busy  = es_valid_0 && es_is_csr_0;
   assign cacop_busy = es_valid_0 && es_is_cacop_0;
 
-  wire [31:0] es_exec_result_0 = es_is_mul_0 ? es_mul_result_0 : alu_result_0;
-  wire [31:0] es_exec_result_1 =
+  assign es_exec_result_0 = es_is_mul_0 ? es_mul_result_0 : alu_result_0;
+  assign es_exec_result_1 =
        es_is_mul_1 ?
        (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
        alu_result_1;
@@ -263,9 +320,9 @@ module EXE_stage(
   wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_0;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
-                         es_res_from_mem_0, es_dest_0, es_exec_result_0};
+                         es_res_from_mem_0, es_dest_0};
   assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-                         es_dest_1, es_exec_result_1};
+                         es_dest_1};
 
   assign es_to_ms_bus_0 = {es_store_data_late_0,
                            es_store_data_src_0,
@@ -414,7 +471,7 @@ module EXE_stage(
       es_alu_op_0       <= ds_alu_op_0;
       es_alu_src1_0     <= ds_alu_src1_final;
       es_alu_src2_0     <= ds_alu_src2_final;
-      es_rkd_value_0    <= ds_rkd_value_0;
+      es_rkd_value_0    <= ds_rkd_value_final_0;
       es_store_data_late_0 <=
           ds_to_es_valid_0 && ds_store_data_late_0;
       es_store_data_src_0  <= ds_store_data_src_0;
@@ -437,14 +494,14 @@ module EXE_stage(
       es_cacop_code_0   <= ds_cacop_code_0;
       es_is_csr_0       <= ds_to_es_valid_0 && ds_is_csr_0;
       es_csr_num_0      <= ds_csr_num_0;
-      es_csr_wmask_0    <= ds_is_csrxchg_0 ? ds_alu_src1_0 : 32'hffff_ffff;
-      es_csr_wvalue_0   <= ds_rkd_value_0;
+      es_csr_wmask_0    <= ds_is_csrxchg_0 ? ds_alu_src1_final : 32'hffff_ffff;
+      es_csr_wvalue_0   <= ds_rkd_value_final_0;
 
       es_pc_1           <= ds_pc_1;
       es_alu_op_1       <= ds_alu_op_1;
-      es_alu_src1_1     <= ds_alu_src1_1;
-      es_alu_src2_1     <= ds_alu_src2_1;
-      es_rkd_value_1    <= ds_rkd_value_1;
+      es_alu_src1_1     <= ds_alu_src1_final_1;
+      es_alu_src2_1     <= ds_alu_src2_final_1;
+      es_rkd_value_1    <= ds_rkd_value_final_1;
       es_res_from_mem_1 <= ds_to_es_valid_1 && ds_res_from_mem_1;
       es_gr_we_1        <= ds_to_es_valid_1 && ds_gr_we_1;
       es_mem_we_1       <= ds_to_es_valid_1 && ds_mem_we_1;
@@ -512,8 +569,8 @@ module EXE_stage(
   // 控制结果是否有效，不在数据入口增加 valid MUX。
   wire [31:0] mul_src1_0 = ds_alu_src1_final;
   wire [31:0] mul_src2_0 = ds_alu_src2_final;
-  wire [31:0] mul_src1_1 = ds_alu_src1_1;
-  wire [31:0] mul_src2_1 = ds_alu_src2_1;
+  wire [31:0] mul_src1_1 = ds_alu_src1_final_1;
+  wire [31:0] mul_src2_1 = ds_alu_src2_final_1;
 
   alu #(
         .HAS_MUL (1)
@@ -552,6 +609,14 @@ module EXE_stage(
           (ds_load_wakeup_rj_0 || ds_load_wakeup_rkd_0) &&
           !load_wakeup_valid)
         $fatal(1, "EX captured load wakeup data without a valid response");
+      if (ds_to_es_valid_0 &&
+          ((ds_rj_ex_fwd_sel_0 == 2'b11) ||
+           (ds_rkd_ex_fwd_sel_0 == 2'b11)))
+        $fatal(1, "lane0 received an invalid EX forwarding select");
+      if (ds_to_es_valid_1 &&
+          ((ds_rj_ex_fwd_sel_1 == 2'b11) ||
+           (ds_rkd_ex_fwd_sel_1 == 2'b11)))
+        $fatal(1, "lane1 received an invalid EX forwarding select");
       if (es_valid_0 && mul_pending_0 && es_fwd_valid_0)
         $fatal(1, "unfinished lane0 multiply became forwardable");
       if (es_valid_0 && !es_result_forwardable_0 && es_fwd_valid_0)

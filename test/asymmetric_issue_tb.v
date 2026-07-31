@@ -29,10 +29,10 @@ module asymmetric_issue_tb;
   wire [4:0]  phys0_dest;
   wire [4:0]  phys1_dest;
 
-  assign phys0_res_from_mem = ds_to_es_bus_0[107];
-  assign phys0_mem_we       = ds_to_es_bus_0[105];
-  assign phys0_dest         = ds_to_es_bus_0[104:100];
-  assign phys1_dest         = ds_to_es_bus_1[74:70];
+  assign phys0_res_from_mem = ds_to_es_bus_0[111];
+  assign phys0_mem_we       = ds_to_es_bus_0[109];
+  assign phys0_dest         = ds_to_es_bus_0[108:104];
+  assign phys1_dest         = ds_to_es_bus_1[78:74];
 
   wire [31:0] front_pc_0 =
        front_bus_0[`FS_TO_DS_BUS_WD-1 -: 32];

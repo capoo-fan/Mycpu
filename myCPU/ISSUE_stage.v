@@ -161,18 +161,16 @@ module ISSUE_stage(
   wire        es_fwd_valid_0;
   wire        es_res_from_mem_0;
   wire [ 4:0] es_dest_0;
-  wire [31:0] es_fwd_data_0;
 
   wire        es_valid_1;
   wire        es_gr_we_1;
   wire        es_fwd_valid_1;
   wire [ 4:0] es_dest_1;
-  wire [31:0] es_fwd_data_1;
 
   assign {es_valid_0, es_gr_we_0, es_fwd_valid_0,
-          es_res_from_mem_0, es_dest_0, es_fwd_data_0} = es_fwd_bus_0;
+          es_res_from_mem_0, es_dest_0} = es_fwd_bus_0;
   assign {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-          es_dest_1, es_fwd_data_1} = es_fwd_bus_1;
+          es_dest_1} = es_fwd_bus_1;
 
   wire        ms_valid_0;
   wire        ms_gr_we_0;
@@ -247,33 +245,36 @@ module ISSUE_stage(
   wire load_wakeup_usable_0 =
        load_wakeup_valid && load_wakeup_consumer_0;
 
-  function [4:0] make_fwd_sel;
-    input hit_es1_ready;
-    input hit_es0_ready;
+  function [2:0] make_base_fwd_sel;
     input hit_ms1_ready;
     input hit_ms0_ready;
     begin
-      make_fwd_sel[4] = hit_es1_ready;
-      make_fwd_sel[3] = !hit_es1_ready && hit_es0_ready;
-      make_fwd_sel[2] = !(hit_es1_ready || hit_es0_ready) && hit_ms1_ready;
-      make_fwd_sel[1] = !(hit_es1_ready || hit_es0_ready || hit_ms1_ready) && hit_ms0_ready;
-      make_fwd_sel[0] = !(hit_es1_ready || hit_es0_ready || hit_ms1_ready || hit_ms0_ready);
+      make_base_fwd_sel[2] = hit_ms1_ready;
+      make_base_fwd_sel[1] = !hit_ms1_ready && hit_ms0_ready;
+      make_base_fwd_sel[0] = !(hit_ms1_ready || hit_ms0_ready);
     end
   endfunction
 
-  function [31:0] select_fwd_data;
-    input [4:0]  sel;
-    input [31:0] es1_data;
-    input [31:0] es0_data;
+  function [31:0] select_base_fwd_data;
+    input [2:0]  sel;
     input [31:0] ms1_data;
     input [31:0] ms0_data;
     input [31:0] rf_data;
     begin
-      select_fwd_data = ({32{sel[4]}} & es1_data) |
-                      ({32{sel[3]}} & es0_data) |
-                      ({32{sel[2]}} & ms1_data) |
-                      ({32{sel[1]}} & ms0_data) |
-                      ({32{sel[0]}} & rf_data);
+      select_base_fwd_data = ({32{sel[2]}} & ms1_data) |
+                             ({32{sel[1]}} & ms0_data) |
+                             ({32{sel[0]}} & rf_data);
+    end
+  endfunction
+
+  // EX age priority is lane1 (younger) over lane0.  Only this compact select
+  // code crosses ISSUE; the corresponding 32-bit result remains local to EX.
+  function [1:0] make_ex_fwd_sel;
+    input hit_es1_ready;
+    input hit_es0_ready;
+    begin
+      make_ex_fwd_sel = hit_es1_ready ? 2'b10 :
+                        hit_es0_ready ? 2'b01 : 2'b00;
     end
   endfunction
 
@@ -299,12 +300,13 @@ module ISSUE_stage(
   wire rj0_use_load_wakeup = load_wakeup_usable_0 && rj0_hit_ms0 &&
        !rj0_hit_es1 && !rj0_hit_es0 && !rj0_hit_ms1;
 
-  wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1 && es_fwd_valid_1,
-                                        rj0_hit_es0 && es_fwd_valid_0,
-                                        rj0_hit_ms1 && ms_fwd_valid_1,
-                                        rj0_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rj_value_0 = select_fwd_data(rj0_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
+  wire [1:0] rj0_ex_fwd_sel = make_ex_fwd_sel(
+       rj0_hit_es1 && es_fwd_valid_1,
+       rj0_hit_es0 && es_fwd_valid_0);
+  wire [2:0] rj0_base_fwd_sel = make_base_fwd_sel(
+       rj0_hit_ms1 && ms_fwd_valid_1,
+       rj0_hit_ms0 && ms_fwd_valid_0);
+  wire [31:0] rj_value_0 = select_base_fwd_data(rj0_base_fwd_sel,
        ms_fwd_data_1, ms_fwd_data_0,
        rf_rdata1_0);
 
@@ -328,12 +330,13 @@ module ISSUE_stage(
   wire rkd0_use_load_wakeup = load_wakeup_usable_0 && rkd0_hit_ms0 &&
        !rkd0_hit_es1 && !rkd0_hit_es0 && !rkd0_hit_ms1;
 
-  wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
-                                         rkd0_hit_es0 && es_fwd_valid_0,
-                                         rkd0_hit_ms1 && ms_fwd_valid_1,
-                                         rkd0_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rkd_value_0 = select_fwd_data(rkd0_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
+  wire [1:0] rkd0_ex_fwd_sel = make_ex_fwd_sel(
+       rkd0_hit_es1 && es_fwd_valid_1,
+       rkd0_hit_es0 && es_fwd_valid_0);
+  wire [2:0] rkd0_base_fwd_sel = make_base_fwd_sel(
+       rkd0_hit_ms1 && ms_fwd_valid_1,
+       rkd0_hit_ms0 && ms_fwd_valid_0);
+  wire [31:0] rkd_value_0 = select_base_fwd_data(rkd0_base_fwd_sel,
        ms_fwd_data_1, ms_fwd_data_0,
        rf_rdata2_0);
 
@@ -351,12 +354,13 @@ module ISSUE_stage(
        (rj1_wait_es1 ||
         (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1)) ||
         rj1_wait_ms1 || rj1_wait_ms0);
-  wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1 && es_fwd_valid_1,
-                                        rj1_hit_es0 && es_fwd_valid_0,
-                                        rj1_hit_ms1 && ms_fwd_valid_1,
-                                        rj1_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rj_value_1 = select_fwd_data(rj1_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
+  wire [1:0] rj1_ex_fwd_sel = make_ex_fwd_sel(
+       rj1_hit_es1 && es_fwd_valid_1,
+       rj1_hit_es0 && es_fwd_valid_0);
+  wire [2:0] rj1_base_fwd_sel = make_base_fwd_sel(
+       rj1_hit_ms1 && ms_fwd_valid_1,
+       rj1_hit_ms0 && ms_fwd_valid_0);
+  wire [31:0] rj_value_1 = select_base_fwd_data(rj1_base_fwd_sel,
        ms_fwd_data_1, ms_fwd_data_0,
        rf_rdata1_1);
 
@@ -372,12 +376,13 @@ module ISSUE_stage(
         (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1)) ||
         rkd1_wait_ms1 || rkd1_wait_ms0);
 
-  wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
-                                         rkd1_hit_es0 && es_fwd_valid_0,
-                                         rkd1_hit_ms1 && ms_fwd_valid_1,
-                                         rkd1_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rkd_value_1 = select_fwd_data(rkd1_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
+  wire [1:0] rkd1_ex_fwd_sel = make_ex_fwd_sel(
+       rkd1_hit_es1 && es_fwd_valid_1,
+       rkd1_hit_es0 && es_fwd_valid_0);
+  wire [2:0] rkd1_base_fwd_sel = make_base_fwd_sel(
+       rkd1_hit_ms1 && ms_fwd_valid_1,
+       rkd1_hit_ms0 && ms_fwd_valid_0);
+  wire [31:0] rkd_value_1 = select_base_fwd_data(rkd1_base_fwd_sel,
        ms_fwd_data_1, ms_fwd_data_0,
        rf_rdata2_1);
 
@@ -579,6 +584,8 @@ module ISSUE_stage(
                            is_csr_0,
                            is_csrxchg_0,
                            csr_num_0,
+                           rj0_ex_fwd_sel,
+                           rkd0_ex_fwd_sel,
                            rj0_use_load_wakeup,
                            rkd0_use_load_wakeup
                           };
@@ -601,7 +608,9 @@ module ISSUE_stage(
                            ds_pred_taken_1,
                            ds_pred_target_1,
                            ds_br_op_1,
-                           ds_br_offs_1
+                           ds_br_offs_1,
+                           rj1_ex_fwd_sel,
+                           rkd1_ex_fwd_sel
                           };
 
 endmodule

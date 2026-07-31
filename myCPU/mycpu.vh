@@ -9,8 +9,8 @@
 
 `define IBUF_ENTRY_BUS_WD (`FS_TO_DS_BUS_WD + `DS_DEC_BUS_WD)
 
-`define DS_TO_ES_BUS_WD 254
-`define DS_TO_ES_BUS_1_WD 223
+`define DS_TO_ES_BUS_WD 258
+`define DS_TO_ES_BUS_1_WD 227
 
 `define ES_TO_MS_BUS_WD 301
 `define ES_TO_MS_BUS_1_WD 209
@@ -20,8 +20,8 @@
 
 `define WS_TO_RF_BUS_WD 76
 
-`define ES_FWD_BUS_WD   41
-`define ES_FWD_BUS_1_WD 40
+`define ES_FWD_BUS_WD   9
+`define ES_FWD_BUS_1_WD 8
 
 `define MS_FWD_BUS_WD   41
 `define MS_FWD_BUS_1_WD 40
