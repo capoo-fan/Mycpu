@@ -42,6 +42,9 @@ module EXE_stage(
   reg         es_is_mul_0;
   reg  [ 1:0] mul_cnt_0;
   reg         mul_pending_0;
+  reg  [31:0] mul_result_hold_0;
+  reg  [31:0] mul_result_hold_1;
+  reg         mul_result_hold_valid;
   reg         es_ld_byte_0;
   reg         es_ld_half_0;
   reg         es_ld_sign_ext_0;
@@ -191,14 +194,17 @@ module EXE_stage(
     end
   endfunction
 
-  wire [31:0] es_mul_result_0 = mul_product_0;
+  wire [31:0] es_mul_result_0 =
+       mul_result_hold_valid ? mul_result_hold_0 : mul_product_0;
   assign csr_raddr = es_csr_num_0;
   assign csr_busy  = es_valid_0 && es_is_csr_0;
   assign cacop_busy = es_valid_0 && es_is_cacop_0;
 
   wire [31:0] es_exec_result_0 = es_is_mul_0 ? es_mul_result_0 : alu_result_0;
   wire [31:0] es_exec_result_1 =
-       es_is_mul_1 ? mul_product_1 : alu_result_1;
+       es_is_mul_1 ?
+       (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
+       alu_result_1;
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
 
@@ -480,18 +486,34 @@ module EXE_stage(
     end
   end
 
-  // 两路乘法器输入与普通 ALU 输入分开：MUL+MUL 发射当拍同时启动，
-  // 并保证当前正在离开 EX 的普通 ALU 包仍使用其 EX 寄存器操作数。
-  wire mul_launch_0 = ds_to_es_valid_0 && ds_is_mul_0;
-  wire mul_launch_1 = ds_to_es_valid_1 && ds_is_mul_1;
-  wire [31:0] mul_src1_0 =
-       mul_launch_0 ? ds_alu_src1_final : es_alu_src1_0;
-  wire [31:0] mul_src2_0 =
-       mul_launch_0 ? ds_alu_src2_final : es_alu_src2_0;
-  wire [31:0] mul_src1_1 =
-       mul_launch_1 ? ds_alu_src1_1 : es_alu_src1_1;
-  wire [31:0] mul_src2_1 =
-       mul_launch_1 ? ds_alu_src2_1 : es_alu_src2_1;
+  // DSP 流水线在乘法完成后仍会继续采样 ISSUE 操作数。若 MEM 继续
+  // 反压，则在完成后的第一个边沿锁存当前乘积，保证滞留 EX 的结果稳定。
+  // 该保持逻辑位于 DSP 输出侧，不把 valid/allowin 重新引入 DSP 输入路径。
+  always @(posedge clk)
+  begin
+    if (reset || flush)
+    begin
+      mul_result_hold_0     <= 32'b0;
+      mul_result_hold_1     <= 32'b0;
+      mul_result_hold_valid <= 1'b0;
+    end
+    else if (es_allowin)
+      mul_result_hold_valid <= 1'b0;
+    else if (!mul_result_hold_valid && es_valid_0 &&
+             es_is_mul_0 && !mul_pending_0)
+    begin
+      mul_result_hold_0     <= mul_product_0;
+      mul_result_hold_1     <= mul_product_1;
+      mul_result_hold_valid <= 1'b1;
+    end
+  end
+
+  // 乘法器始终观察 ISSUE 当前操作数。只有 mul_pending / es_is_mul
+  // 控制结果是否有效，不在数据入口增加 valid MUX。
+  wire [31:0] mul_src1_0 = ds_alu_src1_final;
+  wire [31:0] mul_src2_0 = ds_alu_src2_final;
+  wire [31:0] mul_src1_1 = ds_alu_src1_1;
+  wire [31:0] mul_src2_1 = ds_alu_src2_1;
 
   alu #(
         .HAS_MUL (1)

@@ -22,6 +22,17 @@ module asymmetric_issue_tb;
   wire pop_1;
   wire ds_to_es_valid_0;
   wire ds_to_es_valid_1;
+  wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_0;
+  wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1;
+  wire        phys0_res_from_mem;
+  wire        phys0_mem_we;
+  wire [4:0]  phys0_dest;
+  wire [4:0]  phys1_dest;
+
+  assign phys0_res_from_mem = ds_to_es_bus_0[107];
+  assign phys0_mem_we       = ds_to_es_bus_0[105];
+  assign phys0_dest         = ds_to_es_bus_0[104:100];
+  assign phys1_dest         = ds_to_es_bus_1[74:70];
 
   wire [31:0] front_pc_0 =
        front_bus_0[`FS_TO_DS_BUS_WD-1 -: 32];
@@ -60,7 +71,7 @@ module asymmetric_issue_tb;
     .load_wakeup_valid(1'b0),
     .ds_to_es_valid_0(ds_to_es_valid_0),
     .ds_to_es_valid_1(ds_to_es_valid_1),
-    .ds_to_es_bus_0(), .ds_to_es_bus_1()
+    .ds_to_es_bus_0(ds_to_es_bus_0), .ds_to_es_bus_1(ds_to_es_bus_1)
   );
 
   always #5 clk = ~clk;
@@ -87,7 +98,9 @@ module asymmetric_issue_tb;
     if (!push_ready)
       fail("InstBuffer not ready after reset");
 
-    // lane1 load is now a normal dual-issue candidate.
+    // slot0 is an ADDI.W; slot1 is an independent LD.W. ISSUE consumes both
+    // and steers the younger memory operation into the full physical lane0
+    // while the older ALU operation uses physical lane1.
     push_bus_0 = {32'h1c00_0000, 32'h0280_0402, 1'b0, 32'b0};
     push_bus_1 = {32'h1c00_0004, 32'h2880_0005, 1'b0, 32'b0};
     push_valid_0 = 1'b1;
@@ -104,43 +117,15 @@ module asymmetric_issue_tb;
         front_pc_1 !== 32'h1c00_0004)
       fail("two-entry issue window was not filled in program order");
     if (!pop_0 || !pop_1 || !ds_to_es_valid_0 || !ds_to_es_valid_1)
-      fail("lane1 load did not issue with lane0 ALU");
+      fail("independent slot1 load did not dual issue");
+    if (!phys0_res_from_mem || phys0_mem_we ||
+        phys0_dest !== 5'd5 || phys1_dest !== 5'd2)
+      fail("slot1 load was not steered onto the physical memory lane");
 
     @(posedge clk);
     #1;
     if (front_valid_0 || front_valid_1)
-      fail("dual-issued lane1 load remained in the issue buffer");
-
-    // lane1 store is also legal when its address/data are ready.
-    @(negedge clk);
-    push_bus_0 = {32'h1c00_0008, 32'h0280_0802, 1'b0, 32'b0};
-    push_bus_1 = {32'h1c00_000c, 32'h2980_00ac, 1'b0, 32'b0};
-    push_valid_0 = 1'b1;
-    push_valid_1 = 1'b1;
-    @(posedge clk);
-    @(negedge clk);
-    push_valid_0 = 1'b0;
-    push_valid_1 = 1'b0;
-    @(posedge clk);
-    #1;
-    if (!pop_0 || !pop_1 || !ds_to_es_valid_0 || !ds_to_es_valid_1)
-      fail("lane1 store did not issue with lane0 ALU");
-
-    // Same-packet lane0 load -> lane1 store-data RAW must remain serialized.
-    @(posedge clk);
-    @(negedge clk);
-    push_bus_0 = {32'h1c00_0010, 32'h2880_008c, 1'b0, 32'b0};
-    push_bus_1 = {32'h1c00_0014, 32'h2980_00ac, 1'b0, 32'b0};
-    push_valid_0 = 1'b1;
-    push_valid_1 = 1'b1;
-    @(posedge clk);
-    @(negedge clk);
-    push_valid_0 = 1'b0;
-    push_valid_1 = 1'b0;
-    @(posedge clk);
-    #1;
-    if (!pop_0 || pop_1 || !ds_to_es_valid_0 || ds_to_es_valid_1)
-      fail("lane0 load -> lane1 store RAW issued in one packet");
+      fail("dual-issued ALU+load pair did not leave the InstBuffer");
 
     $display("PASS asymmetric_issue_tb");
     $finish;

@@ -307,8 +307,11 @@ module mul_issue_timing_tb;
     front_valid_0 = 1'b1;
     front_valid_1 = 1'b1;
     expect_pop(1'b1, 1'b1, "MUL+MUL pair did not issue together");
-    if (!u_exe.mul_launch_0 || !u_exe.mul_launch_1)
-      fail("paired multipliers did not start on the same issue edge");
+    if (u_exe.mul_src1_0 !== 32'hffff_fffe ||
+        u_exe.mul_src2_0 !== 32'h0000_0003 ||
+        u_exe.mul_src1_1 !== 32'h0000_0007 ||
+        u_exe.mul_src2_1 !== 32'hffff_fffc)
+      fail("paired multiplier inputs did not observe current ISSUE operands");
     @(posedge clk);
     @(negedge clk);
     inst_0 = make_addi(5'd4, 5'd2);
@@ -324,6 +327,14 @@ module mul_issue_timing_tb;
       fail("paired multiplies did not complete together");
     if (!es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
       fail("paired multiply completion under MEM backpressure is incorrect");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_mul_result_0 !== 32'hffff_fffa ||
+        u_exe.es_exec_result_1 !== 32'hffff_ffe4)
+      fail("paired multiply results changed during extended MEM backpressure");
+    if (!u_exe.mul_result_hold_valid ||
+        !es_fwd_bus_0[38] || !es_fwd_bus_1[38] || pop_0 || pop_1)
+      fail("multiply result hold failed under extended backpressure");
     @(negedge clk);
     ms_allowin = 1'b1;
     expect_pop(1'b1, 1'b1,
