@@ -54,28 +54,19 @@ module alu #(
   wire [63:0] mul_ss_result;
 
 
-  wire [31:0] adder_a;
-  wire [31:0] adder_b;
-  wire        adder_cin;
-  wire [31:0] adder_result;
-  wire        adder_cout;
+  wire        do_sub;
+  wire [31:0] addsub_b;
+  wire        signed_less;
+  wire        unsigned_less;
 
-  assign adder_a   = alu_src1;
-  assign adder_b   = (op_sub | op_slt | op_sltu) ? ~alu_src2 : alu_src2; //减法判断对比
-  assign adder_cin = (op_sub | op_slt | op_sltu) ? 1'b1      : 1'b0;
-  assign {adder_cout, adder_result} = adder_a + adder_b + adder_cin;
+  assign do_sub         = op_sub;
+  assign addsub_b       = do_sub ? ~alu_src2 : alu_src2;
+  assign add_sub_result = alu_src1 + addsub_b + do_sub;
 
-  // ADD, SUB result
-  assign add_sub_result = adder_result;
-
-  // SLT result
-  assign slt_result[31:1] = 31'b0;   //rj < rk 1
-  assign slt_result[0]    = (alu_src1[31] & ~alu_src2[31])
-         | ((alu_src1[31] ~^ alu_src2[31]) & adder_result[31]);
-
-
-  assign sltu_result[31:1] = 31'b0;
-  assign sltu_result[0]    = ~adder_cout; //无符号数比较，借位为1则说明被减数小于减数
+  assign signed_less    = $signed(alu_src1) < $signed(alu_src2);
+  assign unsigned_less  = alu_src1 < alu_src2;
+  assign slt_result     = {31'b0, signed_less};
+  assign sltu_result    = {31'b0, unsigned_less};
 
 
   assign and_result = alu_src1 & alu_src2;
