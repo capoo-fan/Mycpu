@@ -215,6 +215,8 @@ module mem_timing_cut_tb;
       #1;
       if (ms_fwd_bus_0[37] && ms_fwd_bus_0[38])
         fail("external SRAM response forwarded before the register boundary");
+      if (ms_fwd_bus_0[31:0] !== dut.ms_rdata_buf)
+        fail("SRAM response still drives generic MEM forwarding data");
       if (!ms_allowin || !ms_to_ws_valid_0)
         fail("load did not take the data_ok-to-WB completion path");
       if (ms_to_ws_bus_0[110:79] !== response)

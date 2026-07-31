@@ -346,11 +346,11 @@ module MEM_stage(
   endfunction
 
   // 两路访存严格串行，因此只保留一套对齐/符号扩展逻辑。
-  wire [31:0] selected_load_result = load_result(
+  wire [31:0] selected_load_result_resp = load_result(
        selected_addr, ms_final_rdata,
        selected_ld_byte, selected_ld_half, selected_ld_sign_ext);
-  wire [31:0] ms_load_result_0 = selected_load_result;
-  wire [31:0] ms_load_result_1 = selected_load_result;
+  wire [31:0] ms_load_result_0 = selected_load_result_resp;
+  wire [31:0] ms_load_result_1 = selected_load_result_resp;
 
   // 受控 Load 返回拍唤醒：只对片上 SRAM 的普通 lane0 Load 产生一次
   // 瞬时事件。ISSUE 复用普通 MEM 前递中的目的 tag 做精确 RAW
@@ -366,7 +366,10 @@ module MEM_stage(
   // 同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
   wire ms_fwd_valid_0 = ms_result_forwardable_0 &&
        (!ms_res_from_mem_0 || mem_data_ready);
-  wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0 :
+  wire [31:0] ms_load_result_0_fwd = load_result(
+       ms_alu_result_0, ms_rdata_buf,
+       ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
+  wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0_fwd :
        (ms_result_forwardable_0 ? ms_alu_result_0 : 32'b0);
 
   // 晚到 store data 只进入 MEM 本地寄存器，不参与 ISSUE 前递或
