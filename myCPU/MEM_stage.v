@@ -264,17 +264,18 @@ module MEM_stage(
          !cacop_req_sent;
   assign icacop_req_code  = ms_cacop_code_0;
   assign icacop_req_addr  = ms_alu_result_0;
-  assign cacop_flush      = ms_fire && ms_has_cacop;
+  // CACOP retire 使用独立控制锥，避免把 SRAM data_ok 经由普通 MEM
+  // phase_ready_go 组合路径带到全局 pipeline_flush。
+  wire cacop_retire_fire = packet_valid && ms_has_cacop &&
+       cacop_ready_go && ws_allowin;
+  assign cacop_flush      = cacop_retire_fire;
   assign cacop_flush_target = ms_pc_0 + 32'd4;
 
   assign ms_to_ws_valid_0 = ms_valid_0 && phase_ready_go;
   assign ms_to_ws_valid_1 = ms_lane1_eff_valid &&
        phase_ready_go && !dual_mem_phase_0;
 
-  // 分支预测与重定向。仅在整个双 lane 包真正 fire 时锁存误预测，
-  // 检测拍同时完成分支写回和 BPU 训练。全局 flush 延后一拍由本地
-  // 寄存器发出，切断 ms_ready_go/ms_allowin 到 ISSUE/InstBuffer 的
-  // 组合路径。
+  
   wire branch_redirect_detect = ms_redirect_0_raw || ms_redirect_1_raw;
   wire branch_redirect_fire = ms_fire && branch_redirect_detect;
   wire [31:0] branch_redirect_target =
