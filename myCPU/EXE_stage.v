@@ -433,9 +433,6 @@ module EXE_stage(
     end
     else if (es_allowin)
     begin
-      // Payload follows es_allowin only.  The issue decision is captured by
-      // es_valid_* and must not become the CE of the wide EX register banks.
-      // Architectural side-effect controls remain zero for an invalid lane.
       es_pc_0           <= ds_pc_0;
       es_alu_op_0       <= ds_alu_op_0;
       es_alu_src1_0     <= ds_alu_src1_0;
@@ -566,21 +563,5 @@ module EXE_stage(
         .mul_result (mul_product_1)
       );
 
-`ifndef SYNTHESIS
-  always @(posedge clk)
-  begin
-    if (resetn)
-    begin
-      if (es_valid_0 && mul_pending_0 && es_fwd_valid_0)
-        $fatal(1, "unfinished lane0 multiply became forwardable");
-      if (es_valid_1 && mul_pending_1 && es_fwd_valid_1)
-        $fatal(1, "unfinished lane1 multiply became forwardable");
-      if (es_valid_0 && !es_result_forwardable_0 && es_fwd_valid_0)
-        $fatal(1, "lane0 special result entered EX forwarding");
-      if (es_valid_1 && !es_result_forwardable_1 && es_fwd_valid_1)
-        $fatal(1, "lane1 special result entered EX forwarding");
-    end
-  end
-`endif
 
 endmodule

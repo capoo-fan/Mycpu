@@ -1,7 +1,7 @@
 `ifndef MYCPU_H
 `define MYCPU_H
 
-        // 级间总线宽度定义
+// 级间总线宽度定义
 
 `define FS_TO_DS_BUS_WD 97
 

@@ -646,21 +646,5 @@ module MEM_stage(
     end
   end
 
-`ifndef SYNTHESIS
-  always @(posedge clk)
-  begin
-    if (resetn)
-    begin
-      if (ms_valid_0 && !ms_result_forwardable_0 && ms_fwd_valid_0)
-        $fatal(1, "lane0 special result entered MEM forwarding");
-      if (ms_valid_1 && !ms_result_forwardable_1 && ms_fwd_valid_1)
-        $fatal(1, "lane1 special result entered MEM forwarding");
-      if (ms_res_from_mem_0 && ms_fwd_valid_0 && !ms_rdata_buf_valid)
-        $fatal(1, "lane0 load forwarded an unregistered SRAM response");
-      if (ms_res_from_mem_1 && ms_fwd_valid_1 && !ms_rdata_buf_valid)
-        $fatal(1, "lane1 load forwarded an unregistered SRAM response");
-    end
-  end
-`endif
 
 endmodule

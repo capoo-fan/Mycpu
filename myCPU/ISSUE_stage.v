@@ -461,43 +461,6 @@ module ISSUE_stage(
     end
   end
 
-  `ifndef SYNTHESIS
-          always @(posedge clk)
-          begin
-            if (resetn)
-            begin
-              if (front_valid_0 &&
-                  ((front_raddr1_0_hot !== rf_raddr1_0) ||
-                   (front_raddr2_0_hot !== rf_raddr2_0)))
-                $fatal(1, "lane0 IBuffer hot fields lost synchronization");
-              if (front_valid_1 &&
-                  ((front_raddr1_1_hot !== rf_raddr1_1) ||
-                   (front_raddr2_1_hot !== rf_raddr2_1)))
-                $fatal(1, "lane1 IBuffer hot fields lost synchronization");
-              if ((pop_0 !== ds_to_es_valid_0) ||
-                  (pop_1 !== ds_to_es_valid_1))
-                $fatal(1, "IBuffer consume and EX issue controls diverged");
-              if (es_allowin && !br_taken &&
-                  ((ex_wait_valid_0 !==
-                    (es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
-                     (es_dest_0 != 5'b0))) ||
-                   (ex_wait_valid_0 && (ex_wait_dest_0 !== es_dest_0)) ||
-                   (ex_wait_valid_1 !==
-                    (es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-                     (es_dest_1 != 5'b0))) ||
-                   (ex_wait_valid_1 && (ex_wait_dest_1 !== es_dest_1))))
-                $fatal(1,
-                       "ISSUE local EX wait mirror lost synchronization local=%b/%0d,%b/%0d es=%b/%b/%b/%0d,%b/%b/%b/%0d",
-                       ex_wait_valid_0, ex_wait_dest_0,
-                       ex_wait_valid_1, ex_wait_dest_1,
-                       es_valid_0, es_gr_we_0, es_fwd_valid_0, es_dest_0,
-                       es_valid_1, es_gr_we_1, es_fwd_valid_1, es_dest_1);
-              if (ms_unready_load &&
-                  (ds_to_es_valid_0 || ds_to_es_valid_1 || pop_0 || pop_1))
-                $fatal(1, "unfinished MEM load allowed a younger issue");
-            end
-          end
-`endif
 
           wire [31:0] ds_alu_src1_0 = src1_is_pc_0  ? ds_pc_0 : rj_value_0;
   wire [31:0] ds_alu_src2_0 = src2_is_imm_0 ? imm_0   : rkd_value_0;

@@ -34,9 +34,6 @@ module BPU (
     end
   endfunction
 
-  // 将相邻热点循环在 PC 高位上的差异折叠进 2-bit 行索引。
-  // 表容量和命中比较路径保持不变，但可避免 MATRIX 中 0x...2074
-  // 与 0x...20d4 长期争用同一 bank/row。
   function [BPU_ROW_W-1:0] btb_row;
     input [31:0] pc;
     begin
