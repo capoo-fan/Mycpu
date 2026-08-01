@@ -100,7 +100,8 @@ module supervisor_perf_tb;
 
   // -- 基础计数器 --
   reg [63:0] commit_count;
-  reg [63:0] dual_issue_cycle_count;
+  reg [63:0] dual_commit_cycle_count;
+  reg [63:0] single_commit_cycle_count;
   reg [63:0] issue_zero_cycle_count;
   reg [63:0] issue_single_cycle_count;
   reg [63:0] issue_dual_cycle_count;
@@ -116,6 +117,20 @@ module supervisor_perf_tb;
   reg [63:0] fe_ibuf_empty_cycles;
   reg [63:0] fe_ibuf_full_cycles;
   reg [63:0] fe_redirect_flush_cycles;
+  reg [63:0] fe_redirect_recovery_cycles;
+  reg [63:0] fe_icache_maint_cycles;
+
+  // -- 零发射周期互斥主因 --
+  reg [63:0] stall_redirect_cycles;
+  reg [63:0] stall_frontend_empty_cycles;
+  reg [63:0] stall_backend_mem_cycles;
+  reg [63:0] stall_backend_mul_cycles;
+  reg [63:0] stall_backend_mem_mul_cycles;
+  reg [63:0] stall_backend_other_cycles;
+  reg [63:0] stall_raw_mem_cycles;
+  reg [63:0] stall_raw_ex_cycles;
+  reg [63:0] stall_special_cycles;
+  reg [63:0] stall_other_cycles;
 
   // -- Issue 停顿 --
   reg [63:0] is_no_inst_cycles;
@@ -149,6 +164,12 @@ module supervisor_perf_tb;
   reg [63:0] mem_load_data_wait_cycles;
   reg [63:0] mem_store_addr_wait_cycles;
   reg [63:0] mem_store_data_wait_cycles;
+  reg [63:0] mem_pipe_load_wait_cycles;
+  reg [63:0] mem_pipe_store_wait_cycles;
+  reg [63:0] mem_pipe_dual_serialize_cycles;
+  reg [63:0] mem_pipe_cacop_wait_cycles;
+  reg [63:0] mem_pipe_other_wait_cycles;
+  reg [63:0] mem_pipe_blocked_cycles;
   // 仅 testbench 统计，不进入 CPU 综合。
   reg [63:0] load_wakeup_event_count;
   reg [63:0] load_wakeup_issue_count;
@@ -195,6 +216,7 @@ module supervisor_perf_tb;
 
   // -- ICache refill 状态跟踪 --
   reg        icache_refill_active;
+  reg        redirect_recovery_active;
 
   // -- 分支信息 pipeline 延迟（ES→MEM 延迟 1 周期） --
   reg        br_info_valid;
@@ -348,9 +370,11 @@ module supervisor_perf_tb;
       commit_count <= commit_count + {62'b0, cpu.ms_to_ws_valid_0}
                    + {62'b0, cpu.ms_to_ws_valid_1};
 
-      // -- 双发射 --
+      // -- 提交宽度 --
       if (cpu.ms_to_ws_valid_0 && cpu.ms_to_ws_valid_1)
-        dual_issue_cycle_count <= dual_issue_cycle_count + 1;
+        dual_commit_cycle_count <= dual_commit_cycle_count + 1;
+      else if (cpu.ms_to_ws_valid_0 || cpu.ms_to_ws_valid_1)
+        single_commit_cycle_count <= single_commit_cycle_count + 1;
 
       // 发射利用率和动态指令类别。只在 testbench 观察 ISSUE 接口，
       // 避免把 MEM/WB 停留拍重复算作动态指令。
@@ -392,8 +416,8 @@ module supervisor_perf_tb;
         load_wakeup_issue_count <= load_wakeup_issue_count + 1;
 
       // === FRONTEND 停顿 ===
-      // icache_miss: IF 停顿但不是因为 ibuf full
-      if (cpu.if_suspend && !cpu.ibuf_full)
+      // 直接观察 IF 内部根因，避免把 IBUF 反压误记为 ICache miss。
+      if (cpu.u_if.miss_hold)
         fe_icache_miss_cycles <= fe_icache_miss_cycles + 1;
 
       // icache_refill: inst_sram 正在进行 refill
@@ -404,13 +428,56 @@ module supervisor_perf_tb;
       if (!cpu.ibuf_front_valid_0)
         fe_ibuf_empty_cycles <= fe_ibuf_empty_cycles + 1;
 
-      // ibuf_full: inst_buffer 已满
-      if (cpu.ibuf_full)
+      if (cpu.u_if.s3_hold)
         fe_ibuf_full_cycles <= fe_ibuf_full_cycles + 1;
+
+      if (cpu.u_if.maint_busy)
+        fe_icache_maint_cycles <= fe_icache_maint_cycles + 1;
 
       // redirect_flush: 流水线冲刷（分支误预测 + CSR + CACOP）
       if (cpu.pipeline_flush)
         fe_redirect_flush_cycles <= fe_redirect_flush_cycles + 1;
+
+      if (cpu.pipeline_flush)
+      begin
+        redirect_recovery_active <= 1'b1;
+        fe_redirect_recovery_cycles <= fe_redirect_recovery_cycles + 1;
+      end
+      else if (redirect_recovery_active)
+      begin
+        if (cpu.ds_to_es_valid_0)
+          redirect_recovery_active <= 1'b0;
+        else
+          fe_redirect_recovery_cycles <= fe_redirect_recovery_cycles + 1;
+      end
+
+      // 每个零发射周期仅归入一个主因，分类和应等于 zero-issue 周期。
+      if (!cpu.ds_to_es_valid_0)
+      begin
+        if (cpu.pipeline_flush || redirect_recovery_active)
+          stall_redirect_cycles <= stall_redirect_cycles + 1;
+        else if (!cpu.ibuf_front_valid_0)
+          stall_frontend_empty_cycles <= stall_frontend_empty_cycles + 1;
+        else if (!cpu.es_allowin)
+        begin
+          if (!cpu.ms_allowin && cpu.u_exe.mul_pending_0)
+            stall_backend_mem_mul_cycles <= stall_backend_mem_mul_cycles + 1;
+          else if (!cpu.ms_allowin)
+            stall_backend_mem_cycles <= stall_backend_mem_cycles + 1;
+          else if (cpu.u_exe.mul_pending_0)
+            stall_backend_mul_cycles <= stall_backend_mul_cycles + 1;
+          else
+            stall_backend_other_cycles <= stall_backend_other_cycles + 1;
+        end
+        else if (cpu.u_issue.blocking_ms_stall_0_for_consume)
+          stall_raw_mem_cycles <= stall_raw_mem_cycles + 1;
+        else if (cpu.u_issue.stall_0_for_consume)
+          stall_raw_ex_cycles <= stall_raw_ex_cycles + 1;
+        else if (cpu.special_block)
+          stall_special_cycles <= stall_special_cycles + 1;
+        else
+          stall_other_cycles <= stall_other_cycles + 1;
+      end
 
       // === ISSUE 停顿 ===
       // issue_no_inst: 无可发射指令（与 ibuf_empty 等价）
@@ -593,6 +660,22 @@ module supervisor_perf_tb;
       if (mem_pending && !mem_pending_is_load && mem_addr_sent && !data_data_ok)
         mem_store_data_wait_cycles <= mem_store_data_wait_cycles + 1;
 
+      // MEM 对流水线反压的互斥原因；将双访存串行与 SRAM 等待分开。
+      if (cpu.u_mem.packet_valid && !cpu.ms_allowin)
+      begin
+        mem_pipe_blocked_cycles <= mem_pipe_blocked_cycles + 1;
+        if (cpu.u_mem.dual_mem_phase_0 && cpu.u_mem.phase_ready_go)
+          mem_pipe_dual_serialize_cycles <= mem_pipe_dual_serialize_cycles + 1;
+        else if (cpu.u_mem.ms_has_cacop)
+          mem_pipe_cacop_wait_cycles <= mem_pipe_cacop_wait_cycles + 1;
+        else if (cpu.u_mem.selected_res_from_mem)
+          mem_pipe_load_wait_cycles <= mem_pipe_load_wait_cycles + 1;
+        else if (cpu.u_mem.selected_mem_we)
+          mem_pipe_store_wait_cycles <= mem_pipe_store_wait_cycles + 1;
+        else
+          mem_pipe_other_wait_cycles <= mem_pipe_other_wait_cycles + 1;
+      end
+
       // === 分支统计 ===
       if (cpu.bpu_ex_valid)
       begin
@@ -667,6 +750,8 @@ module supervisor_perf_tb;
         end
       end
     end // if (counting)
+    else
+      redirect_recovery_active <= 1'b0;
 
     if (!base_we_n)
     begin
@@ -802,6 +887,9 @@ module supervisor_perf_tb;
     integer actual_base;
     integer expected_base;
     integer j;
+    reg [63:0] issued_instruction_count;
+    reg [63:0] classified_stall_cycles;
+    reg [63:0] classified_mem_cycles;
     real    ratio;
     begin
       mismatch = 0;
@@ -868,6 +956,23 @@ module supervisor_perf_tb;
       // =====================================================================
       // 性能报告
       // =====================================================================
+      issued_instruction_count = issue_single_cycle_count +
+                                 (issue_dual_cycle_count << 1);
+      classified_stall_cycles = stall_redirect_cycles +
+                                stall_frontend_empty_cycles +
+                                stall_backend_mem_cycles +
+                                stall_backend_mul_cycles +
+                                stall_backend_mem_mul_cycles +
+                                stall_backend_other_cycles +
+                                stall_raw_mem_cycles +
+                                stall_raw_ex_cycles +
+                                stall_special_cycles +
+                                stall_other_cycles;
+      classified_mem_cycles = mem_pipe_load_wait_cycles +
+                              mem_pipe_store_wait_cycles +
+                              mem_pipe_dual_serialize_cycles +
+                              mem_pipe_cacop_wait_cycles +
+                              mem_pipe_other_wait_cycles;
       $display("================================================================");
       $display("===  Supervisor Performance Counter  ===");
       $display("================================================================");
@@ -880,12 +985,20 @@ module supervisor_perf_tb;
       $display("  IPC                         = %.4f",
                (benchmark_cycle_count > 0) ?
                (commit_count * 1.0 / benchmark_cycle_count) : 0.0);
-      $display("  Dual-issue cycle ratio      = %.2f%% (%0d/%0d)",
-               pct(dual_issue_cycle_count, benchmark_cycle_count),
-               dual_issue_cycle_count, benchmark_cycle_count);
+      $display("  CPI                         = %.4f",
+               (commit_count > 0) ?
+               (benchmark_cycle_count * 1.0 / commit_count) : 0.0);
+      $display("  Retire single/dual cycles   = %0d / %0d",
+               single_commit_cycle_count, dual_commit_cycle_count);
+      $display("  Dual-retire cycle ratio     = %.2f%% (%0d/%0d)",
+               pct(dual_commit_cycle_count, benchmark_cycle_count),
+               dual_commit_cycle_count, benchmark_cycle_count);
       $display("  ISSUE zero/single/dual      = %0d / %0d / %0d",
                issue_zero_cycle_count, issue_single_cycle_count,
                issue_dual_cycle_count);
+      $display("  Issued instructions         = %0d", issued_instruction_count);
+      $display("  Issue-slot utilization      = %.2f%%",
+               pct(issued_instruction_count, benchmark_cycle_count << 1));
       $display("  Dynamic mix L/S/MUL/BR/other= %0d / %0d / %0d / %0d / %0d",
                issue_load_count, issue_store_count, issue_mul_count,
                issue_branch_count, issue_other_count);
@@ -896,8 +1009,27 @@ module supervisor_perf_tb;
       print_stall("icache_miss",   fe_icache_miss_cycles);
       print_stall("icache_refill", fe_icache_refill_cycles);
       print_stall("ibuf_empty",    fe_ibuf_empty_cycles);
-      print_stall("ibuf_full",     fe_ibuf_full_cycles);
+      print_stall("ibuf_backpressure", fe_ibuf_full_cycles);
+      print_stall("icache_maintenance", fe_icache_maint_cycles);
       print_stall("redirect_flush",fe_redirect_flush_cycles);
+      print_stall("redirect_recovery", fe_redirect_recovery_cycles);
+      $display("");
+
+      $display("--- Zero-Issue Primary Cause (exclusive) ---");
+      print_stall("redirect_recovery", stall_redirect_cycles);
+      print_stall("frontend_empty", stall_frontend_empty_cycles);
+      print_stall("backend_memory", stall_backend_mem_cycles);
+      print_stall("backend_multiply", stall_backend_mul_cycles);
+      print_stall("backend_mem_mul", stall_backend_mem_mul_cycles);
+      print_stall("backend_other", stall_backend_other_cycles);
+      print_stall("raw_wait_mem", stall_raw_mem_cycles);
+      print_stall("raw_wait_ex", stall_raw_ex_cycles);
+      print_stall("special_serialize", stall_special_cycles);
+      print_stall("unclassified", stall_other_cycles);
+      $display("  classified / zero-issue    = %0d / %0d",
+               classified_stall_cycles, issue_zero_cycle_count);
+      if (classified_stall_cycles != issue_zero_cycle_count)
+        $fatal(1, "zero-issue stall classification invariant failed");
       $display("");
 
       // -- Issue --
@@ -942,6 +1074,16 @@ module supervisor_perf_tb;
       print_stall("load_data_wait",       mem_load_data_wait_cycles);
       print_stall("store_addr_wait",      mem_store_addr_wait_cycles);
       print_stall("store_data_wait",      mem_store_data_wait_cycles);
+      $display("  Pipeline-blocking causes (exclusive):");
+      print_stall("  pipe_load_wait", mem_pipe_load_wait_cycles);
+      print_stall("  pipe_store_wait", mem_pipe_store_wait_cycles);
+      print_stall("  pipe_dual_serialize", mem_pipe_dual_serialize_cycles);
+      print_stall("  pipe_cacop_wait", mem_pipe_cacop_wait_cycles);
+      print_stall("  pipe_other_wait", mem_pipe_other_wait_cycles);
+      $display("  classified / blocked      = %0d / %0d",
+               classified_mem_cycles, mem_pipe_blocked_cycles);
+      if (classified_mem_cycles != mem_pipe_blocked_cycles)
+        $fatal(1, "MEM stall classification invariant failed");
       $display("  load_wakeup_event           = %0d",
                load_wakeup_event_count);
       $display("  load_wakeup_issue           = %0d",
@@ -1181,7 +1323,8 @@ module supervisor_perf_tb;
     cycle_count   = 0;
     benchmark_cycle_count     = 0;
     commit_count             = 0;
-    dual_issue_cycle_count = 0;
+    dual_commit_cycle_count = 0;
+    single_commit_cycle_count = 0;
     issue_zero_cycle_count   = 0;
     issue_single_cycle_count = 0;
     issue_dual_cycle_count   = 0;
@@ -1195,6 +1338,18 @@ module supervisor_perf_tb;
     fe_ibuf_empty_cycles     = 0;
     fe_ibuf_full_cycles      = 0;
     fe_redirect_flush_cycles = 0;
+    fe_redirect_recovery_cycles = 0;
+    fe_icache_maint_cycles   = 0;
+    stall_redirect_cycles    = 0;
+    stall_frontend_empty_cycles = 0;
+    stall_backend_mem_cycles = 0;
+    stall_backend_mul_cycles = 0;
+    stall_backend_mem_mul_cycles = 0;
+    stall_backend_other_cycles = 0;
+    stall_raw_mem_cycles     = 0;
+    stall_raw_ex_cycles      = 0;
+    stall_special_cycles     = 0;
+    stall_other_cycles       = 0;
     is_no_inst_cycles        = 0;
     is_backend_full_cycles   = 0;
     is_raw_load_cycles       = 0;
@@ -1224,6 +1379,12 @@ module supervisor_perf_tb;
     mem_load_data_wait_cycles = 0;
     mem_store_addr_wait_cycles = 0;
     mem_store_data_wait_cycles = 0;
+    mem_pipe_load_wait_cycles = 0;
+    mem_pipe_store_wait_cycles = 0;
+    mem_pipe_dual_serialize_cycles = 0;
+    mem_pipe_cacop_wait_cycles = 0;
+    mem_pipe_other_wait_cycles = 0;
+    mem_pipe_blocked_cycles  = 0;
     load_wakeup_event_count   = 0;
     load_wakeup_issue_count   = 0;
     br_total_count           = 0;
@@ -1250,6 +1411,7 @@ module supervisor_perf_tb;
     mem_pending              = 1'b0;
     mem_addr_sent            = 1'b0;
     icache_refill_active     = 1'b0;
+    redirect_recovery_active = 1'b0;
     br_info_valid            = 1'b0;
     counting                 = 1'b0;
 
@@ -1259,9 +1421,14 @@ module supervisor_perf_tb;
 
     send_rx_byte(8'h47);
     send_word_le(entry_addr);
+    // 从测试入口首次成为取指地址的完整周期开始统计，排除 monitor
+    // 对 G 命令的解析和 UART 收包开销。
+    while (cpu.pc_out !== entry_addr)
+      @(negedge clk);
     counting = 1'b1;
     wait_tx_count(BOOT_LEN + 2);
     counting = 1'b0;
+    @(negedge clk);
     if (tx_bytes[BOOT_LEN] !== 8'h06 || tx_bytes[BOOT_LEN + 1] !== 8'h07)
       $fatal(1, "G command markers are invalid");
 
