@@ -151,6 +151,8 @@ module issue_special_tb;
       ms_fwd_bus_1 = {`MS_FWD_BUS_1_WD{1'b0}};
       dut.ex_wait_valid_0 = 1'b0;
       dut.ex_wait_dest_0 = 5'b0;
+      dut.ex1_we_shadow = 1'b0;
+      dut.ex1_dest_shadow = 5'b0;
     end
   endtask
 
@@ -170,6 +172,8 @@ module issue_special_tb;
         end
         1: begin
           es_fwd_bus_1 = {1'b1, 1'b1, 1'b1, producer_dest};
+          dut.ex1_we_shadow = (producer_dest != 5'b0);
+          dut.ex1_dest_shadow = producer_dest;
         end
         2: ms_fwd_bus_0 = {1'b1, 1'b1, producer_ready, 1'b1,
                             producer_dest, 32'h3000_0000};

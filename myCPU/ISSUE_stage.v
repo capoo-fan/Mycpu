@@ -162,15 +162,11 @@ module ISSUE_stage(
   wire        es_res_from_mem_0;
   wire [ 4:0] es_dest_0;
 
-  wire        es_valid_1;
-  wire        es_gr_we_1;
   wire        es_fwd_valid_1;
-  wire [ 4:0] es_dest_1;
 
   assign {es_valid_0, es_gr_we_0, es_fwd_valid_0,
           es_res_from_mem_0, es_dest_0} = es_fwd_bus_0;
-  assign {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-          es_dest_1} = es_fwd_bus_1;
+  assign es_fwd_valid_1 = es_fwd_bus_1[5];
 
   wire        ms_valid_0;
   wire        ms_gr_we_0;
@@ -194,6 +190,10 @@ module ISSUE_stage(
   reg        ex_wait_valid_0;
   (* keep = "true", equivalent_register_removal = "no" *)
   reg [4:0]  ex_wait_dest_0;
+  (* keep = "true", equivalent_register_removal = "no" *)
+  reg        ex1_we_shadow;
+  (* keep = "true", equivalent_register_removal = "no" *)
+  reg [4:0]  ex1_dest_shadow;
 
   wire        ws_rf_we_0;
   wire [ 4:0] ws_rf_waddr_0;
@@ -281,7 +281,8 @@ module ISSUE_stage(
   // EXE MEM WB 前递数据检测
   // 第一条指令的前递检测
   wire rj0_hit_es0  = src0_rj_valid  && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr1_0);
-  wire rj0_hit_es1  = src0_rj_valid  && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr1_0);
+  wire rj0_hit_es1  = src0_rj_valid && ex1_we_shadow &&
+       (ex1_dest_shadow == src_raddr1_0);
 
   wire rj0_hit_ms0  = src0_rj_valid  && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr1_0);
   wire rj0_hit_ms1  = src0_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_0);
@@ -311,7 +312,8 @@ module ISSUE_stage(
        rf_rdata1_0);
 
   wire rkd0_hit_es0 = src0_rkd_valid && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr2_0);
-  wire rkd0_hit_es1 = src0_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_0);
+  wire rkd0_hit_es1 = src0_rkd_valid && ex1_we_shadow &&
+       (ex1_dest_shadow == src_raddr2_0);
 
   wire rkd0_hit_ms0 = src0_rkd_valid && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_0);
   wire rkd0_hit_ms1 = src0_rkd_valid && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_0);
@@ -342,7 +344,8 @@ module ISSUE_stage(
 
   // 第二条指令的前递检测
   wire rj1_hit_es0  = src1_rj_valid  && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr1_1);
-  wire rj1_hit_es1  = src1_rj_valid  && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr1_1);
+  wire rj1_hit_es1  = src1_rj_valid && ex1_we_shadow &&
+       (ex1_dest_shadow == src_raddr1_1);
 
   wire rj1_hit_ms0  = src1_rj_valid  && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr1_1);
   wire rj1_hit_ms1  = src1_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_1);
@@ -365,7 +368,8 @@ module ISSUE_stage(
        rf_rdata1_1);
 
   wire rkd1_hit_es0 = src1_rkd_valid && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr2_1);
-  wire rkd1_hit_es1 = src1_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_1);
+  wire rkd1_hit_es1 = src1_rkd_valid && ex1_we_shadow &&
+       (ex1_dest_shadow == src_raddr2_1);
   wire rkd1_hit_ms0 = src1_rkd_valid && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_1);
   wire rkd1_hit_ms1 = src1_rkd_valid && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_1);
   wire rkd1_wait_es1 = rkd1_hit_es1 && !es_fwd_valid_1;
@@ -441,6 +445,20 @@ module ISSUE_stage(
        !raw_0_to_1 && lane1_capable && !(is_bj_0 && is_bj_1) &&
        !special_0;
 
+  always @(posedge clk)
+  begin
+    if (!resetn || br_taken)
+    begin
+      ex1_we_shadow   <= 1'b0;
+      ex1_dest_shadow <= 5'b0;
+    end
+    else if (es_allowin)
+    begin
+      ex1_we_shadow <= issue1_fire && gr_we_1 && (dest_1 != 5'b0);
+      ex1_dest_shadow <= issue1_fire ? dest_1 : 5'b0;
+    end
+  end
+
   assign ds_to_es_valid_0 = issue0_fire;
   assign ds_to_es_valid_1 = issue1_fire;
   assign pop_0            = issue0_fire;
@@ -491,6 +509,17 @@ module ISSUE_stage(
                        "ISSUE local EX wait mirror lost synchronization local=%b/%0d es=%b/%b/%b/%0d",
                        ex_wait_valid_0, ex_wait_dest_0,
                        es_valid_0, es_gr_we_0, es_fwd_valid_0, es_dest_0);
+              if (es_allowin && !br_taken &&
+                  ((ex1_we_shadow !==
+                    (es_fwd_bus_1[7] && es_fwd_bus_1[6] &&
+                     (es_fwd_bus_1[4:0] != 5'b0))) ||
+                   (ex1_we_shadow &&
+                    (ex1_dest_shadow !== es_fwd_bus_1[4:0]))))
+                $fatal(1,
+                       "ISSUE local EX lane1 mirror lost synchronization local=%b/%0d es=%b/%b/%0d",
+                       ex1_we_shadow, ex1_dest_shadow,
+                       es_fwd_bus_1[7], es_fwd_bus_1[6],
+                       es_fwd_bus_1[4:0]);
               if (ds_to_es_valid_1 && !lane1_capable)
                 $fatal(1, "unsupported instruction issued on lane1");
               if (ds_to_es_valid_1 &&
