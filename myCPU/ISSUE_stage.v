@@ -435,8 +435,8 @@ module ISSUE_stage(
 
   wire issue_window_open = es_allowin;
 
-  wire issue0_fire = issue_window_open && !br_taken &&
-       front_valid_0 && !stall_0 && !special_block;
+  wire issue0_fire = issue_window_open && front_valid_0 &&
+       !stall_0 && !special_block;
   wire issue1_fire = issue0_fire && front_valid_1 && !stall_1 &&
        !raw_0_to_1 && lane1_capable && !(is_bj_0 && is_bj_1) &&
        !special_0;

@@ -152,6 +152,8 @@ module supervisor_perf_tb;
   // 仅 testbench 统计，不进入 CPU 综合。
   reg [63:0] load_wakeup_event_count;
   reg [63:0] load_wakeup_issue_count;
+  wire issue_count_valid_0 = cpu.ds_to_es_valid_0 && !cpu.pipeline_flush;
+  wire issue_count_valid_1 = cpu.ds_to_es_valid_1 && !cpu.pipeline_flush;
 
   // -- Benchmark 热点 PC 画像（0x1c002000..0x1c0023ff） --
   localparam integer PC_PROFILE_WORDS = 256;
@@ -354,32 +356,32 @@ module supervisor_perf_tb;
 
       // 发射利用率和动态指令类别。只在 testbench 观察 ISSUE 接口，
       // 避免把 MEM/WB 停留拍重复算作动态指令。
-      if (!cpu.ds_to_es_valid_0)
+      if (!issue_count_valid_0)
         issue_zero_cycle_count <= issue_zero_cycle_count + 1;
-      else if (cpu.ds_to_es_valid_1)
+      else if (issue_count_valid_1)
         issue_dual_cycle_count <= issue_dual_cycle_count + 1;
       else
         issue_single_cycle_count <= issue_single_cycle_count + 1;
 
       issue_load_count <= issue_load_count +
-          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.res_from_mem_0} +
-          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.res_from_mem_1};
+          {63'b0, issue_count_valid_0 && cpu.u_issue.res_from_mem_0} +
+          {63'b0, issue_count_valid_1 && cpu.u_issue.res_from_mem_1};
       issue_store_count <= issue_store_count +
-          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.mem_we_0} +
-          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.mem_we_1};
+          {63'b0, issue_count_valid_0 && cpu.u_issue.mem_we_0} +
+          {63'b0, issue_count_valid_1 && cpu.u_issue.mem_we_1};
       issue_mul_count <= issue_mul_count +
-          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.is_mul_0} +
-          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.is_mul_1};
+          {63'b0, issue_count_valid_0 && cpu.u_issue.is_mul_0} +
+          {63'b0, issue_count_valid_1 && cpu.u_issue.is_mul_1};
       issue_branch_count <= issue_branch_count +
-          {63'b0, cpu.ds_to_es_valid_0 && cpu.u_issue.is_bj_0} +
-          {63'b0, cpu.ds_to_es_valid_1 && cpu.u_issue.is_bj_1};
+          {63'b0, issue_count_valid_0 && cpu.u_issue.is_bj_0} +
+          {63'b0, issue_count_valid_1 && cpu.u_issue.is_bj_1};
       issue_other_count <= issue_other_count +
-          {63'b0, cpu.ds_to_es_valid_0 &&
+          {63'b0, issue_count_valid_0 &&
                    !cpu.u_issue.res_from_mem_0 &&
                    !cpu.u_issue.mem_we_0 &&
                    !cpu.u_issue.is_mul_0 &&
                    !cpu.u_issue.is_bj_0} +
-          {63'b0, cpu.ds_to_es_valid_1 &&
+          {63'b0, issue_count_valid_1 &&
                    !cpu.u_issue.res_from_mem_1 &&
                    !cpu.u_issue.mem_we_1 &&
                    !cpu.u_issue.is_mul_1 &&
@@ -387,7 +389,7 @@ module supervisor_perf_tb;
 
       if (cpu.load_wakeup_valid)
         load_wakeup_event_count <= load_wakeup_event_count + 1;
-      if (cpu.load_wakeup_valid && cpu.ds_to_es_valid_0 &&
+      if (cpu.load_wakeup_valid && issue_count_valid_0 &&
           (cpu.ds_to_es_bus_0[1] || cpu.ds_to_es_bus_0[0]))
         load_wakeup_issue_count <= load_wakeup_issue_count + 1;
 

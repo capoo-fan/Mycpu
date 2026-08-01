@@ -349,7 +349,7 @@ module mul_issue_timing_tb;
     @(negedge clk);
     inst_0 = make_addi(5'd4, 5'd2);
     flush = 1'b1;
-    expect_pop(1'b0, 1'b0, "flush did not block ISSUE");
+    expect_pop(1'b0, 1'b0, "closed EX window did not block ISSUE");
     @(posedge clk);
     #1;
     if (u_exe.mul_pending_0 !== 1'b0 || es_fwd_bus_0[8] !== 1'b0)
@@ -357,6 +357,18 @@ module mul_issue_timing_tb;
     @(negedge clk);
     flush = 1'b0;
     expect_pop(1'b1, 1'b0, "instruction remained blocked after multiply flush");
+
+    // With the issue window otherwise open, flush no longer gates the
+    // combinational fire/pop path. EX must still discard it at the edge.
+    reset_dut();
+    inst_0 = make_addi(5'd4, 5'd0);
+    front_valid_0 = 1'b1;
+    flush = 1'b1;
+    expect_pop(1'b1, 1'b0, "flush unexpectedly gated ISSUE fire");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_valid_0 !== 1'b0 || u_exe.es_valid_1 !== 1'b0)
+      fail("EX captured ISSUE output during flush");
 
     $display("PASS mul_issue_timing_tb");
     $finish;
