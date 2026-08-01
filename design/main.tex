@@ -1,0 +1,412 @@
+% 龙芯杯设计报告 LaTeX 源文件
+% 图片采用固定文件名。直接替换 figures/ 下同名文件即可更新报告。
+\documentclass[UTF8,a4paper,zihao=5,fontset=none]{ctexart}
+
+\usepackage[left=2.7cm,right=2.5cm,top=2.6cm,bottom=2.5cm,headheight=15pt]{geometry}
+\usepackage{fontspec}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{pifont}
+\usepackage{ifthen}
+
+% 字体：使用环境中可稳定获取的开源字体。
+% 中文正文对应宋体风格，标题对应黑体风格；英文正文采用 Times 风格字体。
+\setCJKmainfont{SimHei}
+\setCJKsansfont{SimHei}
+\setCJKmonofont{SimHei}
+\setmainfont{Liberation Serif}
+\setmonofont{Times New Roman}
+
+\newcommand{\songti}{\CJKfamily{rm}}
+\newcommand{\heiti}{\CJKfamily{sf}}
+\newcommand{\grayfill}[1]{\textcolor{gray}{[#1]}}
+\newcommand{\yes}{\ding{51}}
+\newcommand{\no}{\ding{55}}
+\newcommand{\upcite}[1]{\textsuperscript{\cite{#1}}}
+\newcommand{\code}[1]{\nolinkurl{#1}}
+\newcommand{\MHz}{\,\mathrm{MHz}}
+
+% 用户填写信息
+\newcommand{\ReportTitle}{基于 LA 指令集的高频顺序双发射处理器设计报告}
+\newcommand{\SchoolName}{哈尔滨工业大学（深圳）}
+\newcommand{\StudentName}{刘楷}
+\newcommand{\ReportDate}{2026 年 8 月}
+
+% 标题层级严格对应模板：一、；（一）；1、；（1）。
+\ctexset{
+  section={
+    name={,、}, number=\chinese{section},
+    format=\raggedright\heiti\zihao{-3},
+    beforeskip=0.5\baselineskip, afterskip=0.5\baselineskip
+  },
+  subsection={
+    name={（,）}, number=\chinese{subsection},
+    format=\raggedright\heiti\zihao{4},
+    beforeskip=0.25\baselineskip, afterskip=0.25\baselineskip
+  },
+  subsubsection={
+    name={,、}, number=\arabic{subsubsection},
+    format=\raggedright\heiti\zihao{-4},
+    beforeskip=0.15\baselineskip, afterskip=0.1\baselineskip
+  },
+  paragraph={
+    name={（,）}, number=\arabic{paragraph},
+    format=\raggedright\heiti\zihao{5},
+    beforeskip=0.1\baselineskip, afterskip=0.05\baselineskip,
+    runin=false
+  }
+}
+
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{2}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0pt}
+\setlength{\emergencystretch}{2em}
+\setstretch{1.5}
+\setlist{nosep,leftmargin=2em}
+\renewcommand{\arraystretch}{1.25}
+
+\DeclareCaptionFont{reportcap}{\songti\zihao{-5}\setstretch{1.0}}
+\captionsetup{font=reportcap,labelsep=quad,justification=centering,singlelinecheck=true}
+\captionsetup[table]{position=top,skip=5pt}
+\captionsetup[figure]{position=bottom,skip=4pt}
+\renewcommand{\figurename}{图}
+\renewcommand{\tablename}{表}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue,
+  pdfauthor={\StudentName},
+  pdftitle={\ReportTitle}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\zihao{-5}\songti \ReportTitle}
+\fancyfoot[C]{\zihao{-5}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\lstset{
+  basicstyle=\ttfamily\zihao{-5},
+  columns=fullflexible,
+  breaklines=true,
+  frame=single,
+  numbers=none,
+  showstringspaces=false,
+  xleftmargin=1em,
+  xrightmargin=1em,
+  aboveskip=0.5em,
+  belowskip=0.5em
+}
+
+% 固定文件名图片接口：替换 figures/ 下同名文件即可。
+\newcommand{\ReportFigure}[3][0.88\textwidth]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=#1]{#2}
+    \caption{#3}
+  \end{figure}
+}
+
+\begin{document}
+\zihao{5}\songti
+
+% -------------------- 封面 --------------------
+\begin{titlepage}
+  \thispagestyle{empty}
+  \centering
+  \vspace*{2.0cm}
+  {\heiti\zihao{-2}\ReportTitle\par}
+  \vspace{3.0cm}
+  \renewcommand{\arraystretch}{1.8}
+  \begin{tabular}{>{\heiti}r l}
+    学校：  & \SchoolName   \\
+    姓名：  & \StudentName  \\
+    指令集： & LoongArch 指令集 \\
+  \end{tabular}
+  \vfill
+  {\zihao{4}\ReportDate\par}
+\end{titlepage}
+
+\pagenumbering{Roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+% ============================================================
+\section{设计简介}
+
+本设计面向全国大学生计算机系统能力培养大赛“龙芯杯”个人赛，完成了一款兼容龙架构 32 位精简版核心整数指令子集的 FPGA 处理器。处理器采用\textbf{顺序双发射、九级逻辑流水线}，前端能够在单周期取得并缓存最多两条指令，后端配置两条执行通路和一个共享访存通路。设计通过类 SRAM 指令/数据接口连接 BaseRAM、ExtRAM 与 UART，并使用动态分支预测、两路组相联指令缓存、四读两写寄存器堆、跨级前递、三拍乘法器以及 CSR/CACOP 串行化控制提高有效吞吐率。
+
+
+\begin{table}[H]
+  \centering
+  \caption{处理器主要参数}
+  \begin{tabularx}{\textwidth}{>{\bfseries}p{3.4cm} X}
+    \toprule
+    参数        & 当前实现                                                \\
+    \midrule
+    指令体系      & LA32R 指令集                                           \\
+    发射方式      & 顺序双发射，最大 2 条/周期                                     \\
+    逻辑流水级     & PC/IF0、IF1、IF2、IF3、IBUF/译码、ISSUE、EX、MEM、WB          \\
+    通用寄存器堆    & 32$\times$32 bit，4 读口、2 写口                          \\
+    指令缓存      & 2-way，8 sets，16 B/line，总容量 256 B                    \\
+    分支预测器     & 2 bank $\times$ 4 row BTB/BHT，共 8 个物理表项，2 位饱和计数器    \\
+    乘法单元      & 两个 Xilinx Multiplier Generator 实例，结果在进入 EX 后第 3 拍可用 \\
+    地址转换      & 直接地址模式与 DMW0/DMW1 窗口转换；未实现 TLB 页映射                  \\
+    当前 CPU 频率 & 158\,MHz                                            \\
+    外设接口      & BaseRAM、ExtRAM、16550 风格 UART 寄存器窗口                  \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+本设计超过最小顺序单发射流水线的主要特色包括：双指令取指与双发射、带包内相关检测的顺序发射、双乘法执行能力、支持双访存指令包但在 MEM 内按程序顺序串行完成、I-Cache 自修改代码一致性失效、CACOP 指令维护、DMW 地址翻译、分支预测索引哈希，以及针对 FPGA 时序的低扇出热字段复制和宽总线分组寄存。
+
+% ============================================================
+\section{设计方案}
+
+\subsection{总体设计思路}
+
+系统自顶向下划分为处理器核、存储与外设桥接、时钟复位三部分。处理器核 \code{mycpu_top} 内部再分为 PC/BPU、四级取指与 I-Cache、指令缓冲、发射、执行、访存、写回、CSR 和地址翻译等模块；桥接模块将独立的指令与数据类 SRAM 请求映射到 BaseRAM、ExtRAM 和 UART；顶层使用 PLL 产生 CPU 时钟，并采用异步置位、同步释放的复位方式。
+
+\ReportFigure{figures/01_system_architecture.pdf}{系统总体架构（替换同名文件可更新图片）}
+
+模块之间使用 valid/allowin 或 req/addr\_ok/data\_ok 两类握手。流水级只有在下一级可接收时才更新有效位和载荷；缓存缺失、乘法等待、访存响应等待、CACOP 维护和特殊指令串行化均通过局部状态机施加反压。分支、CSR 和 CACOP 产生的恢复请求在顶层统一合成为 \code{pipeline_flush}，并按 CSR、CACOP、分支的优先级选择重定向地址。
+
+\begin{table}[H]
+  \centering
+  \caption{核心 RTL 模块及职责}
+  \begin{tabularx}{\textwidth}{p{3.5cm} X}
+    \toprule
+    模块                              & 主要职责                                         \\
+    \midrule
+    \code{PC}                       & 保存取指地址，处理预测顺序推进、暂停及冲刷重定向                     \\
+    \code{BPU}                      & 查询 BTB/BHT，返回预测方向、目标和包内 lane；两级流水训练          \\
+    \code{IF_stage}                 & 四级取指、两路组相联 I-Cache、缺失回填、CACOP 与 store 失效     \\
+    \code{icache_refill}            & 将一条 16 B cache line 拆成 4 个 32 bit 类 SRAM 读事务 \\
+    \code{inst_buffer}              & 四项 FIFO、双前端槽、预译码和低扇出源寄存器热字段                  \\
+    \code{ISSUE_stage}              & 顺序双发射、RAW/结构冒险检测、寄存器读取和前递选择                  \\
+    \code{EXE_stage}                & 双 ALU、双乘法器、分支条件与目标计算、CPUCFG/CSR 读结果          \\
+    \code{MEM_stage}                & 共享 LSU、双访存包串行化、字节/半字对齐、分支恢复与 BPU 更新          \\
+    \code{WB_stage}                 & 双路寄存器写回、CSR 提交/分发/冲刷状态机                      \\
+    \code{csr}                      & CRMD、DMW0、DMW1 的读写与紧凑翻译上下文生成                 \\
+    \code{addr_translate}           & 根据 DMW 命中情况替换虚拟地址高 3 位                       \\
+    \code{thinpad_sram_uart_bridge} & BaseRAM/ExtRAM 仲裁、UART 寄存器访问和未映射访问响应         \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+
+\subsection{顺序双发射与冒险处理设计}
+
+处理器严格保持程序顺序：lane0 永远对应较老指令，lane1 只有在 lane0 成功发射后才可能发射。发射宽度为 2，但并非任意两条指令都能组成发射包。当前规则汇总见表\ref{tab:issue_rules}。
+
+\begin{table}[H]
+  \centering
+  \caption{双发射约束与处理方式}
+  \label{tab:issue_rules}
+  \begin{tabularx}{\textwidth}{p{3.3cm} p{2.2cm} X}
+    \toprule
+    情况                        & 是否双发射 & 处理方式                               \\
+    \midrule
+    两条普通独立 ALU                & 是     & 分别进入两条执行通路                         \\
+    lane1 依赖 lane0 结果         & 否     & 只发 lane0，lane1 下周期成为队首             \\
+    两条分支                      & 否     & 禁止同包双分支                            \\
+    JIRL/BL 位于 lane1          & 否     & 带链接或间接目标的分支只允许 lane0               \\
+    CSR/CACOP/CPUCFG 位于 lane1 & 否     & 特殊指令只允许 lane0；CSR/CACOP 进一步串行化     \\
+    两条乘法                      & 是     & 仅允许 MUL+MUL；整包等待两路乘法均完成            \\
+    lane0 乘法 + lane1 普通 ALU   & 是     & ALU 结果先产生，但整包按 EX ready-go 统一推进    \\
+    两条访存                      & 是     & 可进入同一包，MEM 中严格按 lane0、lane1 顺序串行访问 \\
+    Load 后继 Store 仅数据相关       & 条件允许  & 地址源已就绪时先发 Store，数据在 MEM 本地晚到前递     \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+相关检测覆盖 EX、MEM、WB 两条通路的目的寄存器。就绪的 EX 结果由紧凑选择码送入 EX 本地 32 bit 结果多路器；MEM/WB 结果可直接在 ISSUE 选择。对于尚未完成的 load、特殊指令或乘法，消费者停顿。包内 RAW 相关由 lane0 目的寄存器与 lane1 两个有效源寄存器直接比较。
+
+寄存器堆具有四个组合读口和两个同步写口。若同一周期写回地址与读地址相同，读端优先返回写回值；双写冲突时 lane1 写口具有更高的读旁路优先级，符合 lane1 更年轻的年龄关系。
+
+
+\subsection{分支预测与流水线恢复设计}
+
+分支预测器由两个 bank 构成，每个 bank 有 4 行。每行保存 valid、18 bit Tag、2 bit 饱和计数器和 32 bit 目标地址。bank 由 \code{PC[2]} 选择，行索引使用
+\[
+  \text{row}=\text{PC}[4{:}3]\oplus \text{PC}[7{:}6],
+\]
+将高位局部差异折叠到 2 bit 行号中，以降低热点循环映射到同一行的冲突。2 bit 饱和计数器是经典动态分支预测方案之一。
+
+一次取指包最多包含两个相邻 PC，两个 bank 并行比较同一 Tag。若 lane0 命中并预测 taken，则停止发出 lane1；若只有 lane1 命中，则返回 \code{pred_lane=1}，前端仍可发出 lane0 和作为转移指令的 lane1。
+
+预测器更新采用两级流水：第一级在分支于 MEM 提交时读取旧表项；第二级比较 Tag、更新计数器和目标。实际方向与目标在 EX 计算，但重定向检测和提交位于 MEM，并在下一个周期输出寄存后的 flush。此方案用额外的误预测惩罚换取较短的 EX$\rightarrow$PC 组合路径。
+
+
+\subsection{CSR、CACOP 与地址翻译设计}
+
+当前 CSR 文件实现 CRMD、DMW0 和 DMW1。复位后 CRMD 的直接地址位有效；当软件配置为映射模式并且当前 PLV 被 DMW 允许时，\code{csr} 模块生成紧凑的翻译上下文：每个窗口只传递 active、VSEG 和 PSEG。三个地址翻译实例分别服务取指、CACOP 地址和数据访问，只在虚拟地址高 3 位命中时替换为物理段号，其余 29 位保持不变。
+
+CSRWR/CSRXCHG 只允许在 lane0 发射。ISSUE 设置 \code{special_block} 阻止年轻指令；WB 使用 APPLY、DISTRIBUTE、FLUSH 三个动作依次写 CSR、更新三个地址翻译实例的本地上下文，再从 CSR 指令的 \code{PC+4} 重新取指。这样确保翻译属性改变前后的指令和访存不会交叉执行。
+
+CACOP 同样通过 special scoreboard 串行化。指令在 MEM 向 I-Cache 维护状态机发请求，等待 \code{icacop_done} 后退休并从 \code{PC+4} 冲刷流水线。
+
+\subsection{存储与外设桥接设计}
+
+桥接器对物理地址做完整窗口译码，避免 UART 或未映射外设与 SRAM 别名。当前映射见表\ref{tab:address_map}。
+
+\begin{table}[H]
+  \centering
+  \caption{桥接器地址窗口}
+  \label{tab:address_map}
+  \begin{tabular}{c c l}
+    \toprule
+    设备      & 判定条件                                    & 说明               \\
+    \midrule
+    BaseRAM & \code{addr \& 0xFFC00000 == 0x1C000000} & 指令与数据共享，数据请求优先   \\
+    ExtRAM  & \code{addr \& 0xFFC00000 == 0x1C400000} & 仅数据接口访问          \\
+    UART    & \code{addr \& 0xFFF00000 == 0x1F000000} & 16550 风格寄存器偏移    \\
+    未映射     & 其他                                      & 接受请求并返回 0，避免总线死锁 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+BaseRAM 和 ExtRAM 控制器均采用 IDLE、ACCESS、DONE 三态状态机，锁存请求后驱动片外异步 SRAM。BaseRAM 同时服务取指与数据访问，冲突时数据请求优先。UART 请求先在桥接边界寄存，再执行读写副作用，切断从 MEM lane 选择、地址翻译到 UART 状态译码的长组合路径。
+
+PLL 使用 Clocking Wizard 由 50\,MHz 输入产生 158\,MHz CPU 时钟和 20\,MHz 辅助时钟\upcite{xilinxclk}。复位由外部按钮或 PLL 未锁定异步置位，再在 CPU 时钟域两级同步释放。UART 波特率为 115200，接收与发送模块的 \code{ClkFrequency} 参数均取 \code{CPU_CLK_FREQ}。
+
+% ============================================================
+\section{设计结果}
+
+\subsection{设计交付物说明}
+
+当前报告基于以下核心交付文件撰写。最终提交时建议去除文件名中的版本括号，并保持模块名与工程引用一致。
+
+\begin{longtable}{p{4.2cm} p{10.0cm}}
+  \caption{核心设计交付物}\label{tab:deliverables}                                                                          \\
+  \toprule
+  文件/目录                                                    & 内容说明                                                    \\
+  \midrule
+  \endfirsthead
+  \toprule
+  文件/目录                                                    & 内容说明                                                    \\
+  \midrule
+  \endhead
+  \code{thinpad_top.v}                                     & FPGA 顶层、PLL/复位、CPU、桥接器、UART 和板级接口连接                     \\
+  \code{mycpu_top.v}                                       & CPU 核顶层及各流水模块互连                                         \\
+  \code{PC.v}, \code{BPU.v}                                & PC 更新与动态分支预测                                            \\
+  \code{IF_stage.v}, \code{icache_refill.v}                & 四级取指、I-Cache 和四拍回填                                      \\
+  \code{inst_buffer.v}, \code{inst_decoder.v}              & 四项指令缓冲与预译码                                              \\
+  \code{ISSUE_stage.v}, \code{regfile_4r2w.v}              & 双发射、冒险处理和寄存器堆                                           \\
+  \code{EXE_stage.v}, \code{alu.v}, \code{branch_judge.v}  & 双执行通路、乘法和分支计算                                           \\
+  \code{MEM_stage.v}, \code{data_txn_tracker.v}            & 访存、分支恢复、BPU 更新和 I-Cache store 失效                        \\
+  \code{WB_stage.v}, \code{csr.v}, \code{addr_translate.v} & 写回、CSR 提交和 DMW 地址转换                                     \\
+  \code{thinpad_sram_uart_bridge.v}                        & BaseRAM/ExtRAM/UART 类 SRAM 桥接                           \\
+  \code{ip/}                                               & \code{pll_example} 与 \code{mult_gen_0} 的 Xilinx IP 配置文件 \\
+  \code{constraints/}                                      & 板级引脚、时钟及输入输出时序约束                                        \\
+  \bottomrule
+\end{longtable}
+
+
+\subsection{设计演示结果}
+
+\begin{table}[H]
+  \centering
+  \caption{当前可由 RTL 直接确认的设计结果}
+  \begin{tabularx}{\textwidth}{p{4.2cm} X}
+    \toprule
+    项目               & 结果                                          \\
+    \midrule
+    CPU 工作频率配置       & 158\,MHz                                    \\
+    最大取指/发射/写回宽度     & 2 / 2 / 2                                   \\
+    I-Cache          & 256 B，2-way，8 sets，16 B line                \\
+    BPU 表容量          & 8 个物理表项，含目标地址与 2 bit 计数器                    \\
+    数据访存             & 单物理端口，双访存包按 lane0、lane1 串行                  \\
+    乘法               & 两路三拍流水乘法器                                   \\
+    CPUCFG/CACOP/CSR & 已译码；CPUCFG、I-Cache CACOP、CRMD/DMW0/DMW1 已实现 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+
+\begin{table}[H]
+  \centering
+  \caption{最终性能测试结果}
+  \begin{tabular}{c c c c c c}
+    \toprule
+    频率       & STREAM          & MATRIX          & CRYPTONIGHT      & MIXED          & 总用时              \\
+    \midrule
+    158\,MHz & \grayfill{41ms} & \grayfill{74ms} & \grayfill{184ms} & \grayfill{4ms} & \grayfill{303ms} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsubsection{结果分析}
+
+本设计的性能目标是在 FPGA 布线约束(WNS>=0)下提高“频率$\times$IPC”。双发射可提升独立整数和访存指令的并行度；四项 IBUF 隔离 I-Cache 与后端停顿；动态分支预测减少循环分支带来的前端气泡；16 B cache line 以四次 32 bit SRAM 访问摊薄取指缺失；双乘法器针对乘法密集程序提供并行能力。
+
+当前主要性能上限来自三个方面：第一，只有 I-Cache，没有 D-Cache，随机或密集数据访问仍受片外 SRAM 延迟限制；第二，顺序发射无法越过长延迟指令寻找后续独立指令；第三，分支恢复位于 MEM，误预测冲刷代价较大。后续若继续优化，应优先在不显著伤害主频的前提下增加小容量 D-Cache、完善 load 返回拍唤醒，并使用性能计数器量化双发射率、RAW 停顿、I-Cache miss、访存等待和误预测占比。
+
+% ============================================================
+\section{参考设计说明}
+
+\subsection{第三方 IP 与平台代码}
+
+\begin{table}[H]
+  \centering
+  \caption{第三方 IP 和平台模块说明}
+  \begin{tabularx}{\textwidth}{p{3.6cm} p{3.4cm} X}
+    \toprule
+    名称                                             & 来源                              & 用途及使用方式                                        \\
+    \midrule
+    \code{pll_example}                             & IP 核      & 由 50\,MHz 板载时钟产生 150\,MHz CPU 时钟和 20\,MHz 辅助时钟 \\
+    \code{mult_gen_0}                              & IP核 & 两个实例分别服务 lane0/lane1，输出 64 bit 三拍乘积            \\
+    \code{async_receiver}、\code{async_transmitter} & 发布包内容                & 115200 波特率串口收发                                 \\
+    \code{SEG7_LUT}、\code{vga}                     & 发布包内容                    & 数码管与 VGA 板级占位输出，不参与 CPU 性能路径                   \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% ============================================================
+\section{参考文献}
+% thebibliography 默认还会生成一个标题；这里清空，保留模板要求的一级标题。
+\renewcommand{\refname}{}
+\begingroup
+\zihao{5}\songti
+\setlength{\baselineskip}{16pt}
+\begin{thebibliography}{99}
+
+  \bibitem{loongarchmanual}
+  龙芯中科技术股份有限公司. 龙芯架构32位精简版参考手册: V1.03[M]. 北京: 龙芯中科技术股份有限公司, 2023.
+
+  \bibitem{training}
+  汪文祥. 走进龙架构32位精简版指令集[R]. 北京: 龙芯中科技术股份有限公司, 2024.
+
+  \bibitem{cpucfgspec}
+  全国大学生计算机系统能力培养大赛组委会. CPUCFG指令定义[Z]. 龙芯杯个人赛补充技术文档, 2026.
+
+  \bibitem{xilinxmult}
+  AMD Xilinx. Multiplier Generator v12.0 LogiCORE IP Product Guide (PG108)[EB/OL]. [2026-08-01]. \url{https://docs.amd.com/v/u/en-US/pg108-mult-gen}.
+
+  \bibitem{xilinxclk}
+  AMD Xilinx. Clocking Wizard v6.0 LogiCORE IP Product Guide (PG065)[EB/OL]. [2026-08-01]. \url{https://docs.amd.com/v/u/en-US/pg065-clk-wiz}.
+
+\end{thebibliography}
+\endgroup
+
+\end{document}
