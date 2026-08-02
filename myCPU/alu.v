@@ -9,6 +9,7 @@ module alu #(
     input  wire [31:0] mul_src1,
     input  wire [31:0] mul_src2,
     output wire [31:0] alu_result,
+    output wire [31:0] alu_fast_result,
     output wire [31:0] mul_result
   );
 
@@ -103,6 +104,11 @@ module alu #(
 
 
   assign mul_result = mul_low_result;
+
+  // ADD/SUB 是 EX->ISSUE->EX 零气泡前递的主导关键路径。保留一条
+  // 不经过十路 ALU 结果归并树的等价旁路，供 EX 前递使用；完整的
+  // alu_result 仍送往 MEM/WB，因而不改变流水级或提交语义。
+  assign alu_fast_result = add_sub_result;
 
   // final result mux
   assign alu_result = ({32{op_add|op_sub}} & add_sub_result)

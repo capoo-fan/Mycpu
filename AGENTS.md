@@ -2,11 +2,11 @@
 
 ## 构建与运行指令
 
-本机项目仿真优先使用独立安装的 Verilator 5.050，不使用系统自带的 4.038。每个新
-shell 先执行：
+CPU 源文件仓库位于 ~/Mycpu,可用于仿真测试正确性
+
+本机项目仿真优先使用 Verilator 5.050。
 
 ```bash
-export PATH=/home/qianfu/.local/verilator-5.050/bin:$PATH
 verilator --version
 ```
 
@@ -21,6 +21,67 @@ verilator --version
 - `UTEST_MIXED`：顺序访存、随机访存、分支和 ALU 混合负载。
 
 不把 SIMPLE、Fibonacci、官方 trace 或额外 CPU 自检加入本项目的验收结果。
+
+---
+
+vivado 仓库位于 ~/thinpad_top，用于生成时序报告，且 CPU 设计文件会自动同步 ～/Mycpu/myCPU 文件夹
+
+真实工程已经创建完成，位于 ~/thinpad_top/run_vivado/project/thinpad_top.xpr
+
+vivado 仓库结构如下
+
+```text
+.
+|-- asm/
+|   |-- Makefile
+|   `-- user-sample.s
+|
+|-- src/
+|   |-- soc/
+|   |   |-- *.v
+|   |   `-- xilinx_ip/
+|   `-- vivado_cannot/
+|
+|-- run_vivado/
+|   |-- constraints/
+|   |   `-- thinpad_top.xdc
+|   |-- simulation/
+|   `-- flow/
+|       |-- create_vivado_project.tcl
+|       |-- lint_hdl.py
+|       |-- implement_design.tcl
+|       |-- check_timing.py
+|       `-- generate_bitstream.tcl
+|
+`-- README.md
+```
+
+修改代码后生成时序报告:
+
+```
+vivado -mode batch \
+    -log ~/thinpad_top/run_vivado/implement.log \
+    -journal ~/thinpad_top/run_vivado/implement.jou \
+    -source ~/thinpad_top/run_vivado/flow/implement_design.tcl
+```
+
+新生成的时序报告位于 `~/thinpad_top/run_vivado/project/thinpad_top.runs/impl_1`  
+
+自动更新流程
+
+```
+每轮 RTL 修改完成后，必须按照以下顺序执行：
+
+备份上一份 thinpad_top_timing_summary_rounted.rpt 于 ~/thinpad_top/reports/ 下
+        ↓
+运行 Vivado implementation
+        ↓
+检查 Vivado 是否成功生成新的 thinpad_top_timing_summary_rounted.rpt
+        ↓
+Agent 读取 thinpad_top_timing_summary_rounted.rpt
+        ↓
+根据关键路径决定下一轮修改
+```
 
 ## Debug 信号约束
 

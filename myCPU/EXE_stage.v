@@ -172,8 +172,10 @@ module EXE_stage(
   assign es_to_ms_valid_1 = es_valid_1 && es_ready_go;
 
   wire [31:0] alu_result_0;
+  wire [31:0] alu_fast_result_0;
   wire [31:0] mul_product_0;
   wire [31:0] alu_result_1;
+  wire [31:0] alu_fast_result_1;
   wire [31:0] mul_product_1;
 
   function [31:0] cpucfg_result;
@@ -205,6 +207,13 @@ module EXE_stage(
        es_is_mul_1 ?
        (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
        alu_result_1;
+  wire [31:0] es_fwd_result_0 = es_is_mul_0 ? es_mul_result_0 :
+       ((es_alu_op_0[0] || es_alu_op_0[1]) ?
+        alu_fast_result_0 : alu_result_0);
+  wire [31:0] es_fwd_result_1 = es_is_mul_1 ?
+       (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
+       ((es_alu_op_1[0] || es_alu_op_1[1]) ?
+        alu_fast_result_1 : alu_result_1);
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
 
@@ -263,9 +272,9 @@ module EXE_stage(
   wire es_fwd_valid_1 = !es_res_from_mem_1 && !mul_pending_0;
 
   assign es_fwd_bus_0 = {es_valid_0, es_gr_we_0, es_fwd_valid_0,
-                         es_res_from_mem_0, es_dest_0, es_exec_result_0};
+                         es_res_from_mem_0, es_dest_0, es_fwd_result_0};
   assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-                         es_dest_1, es_exec_result_1};
+                         es_dest_1, es_fwd_result_1};
 
   assign es_to_ms_bus_0 = {es_store_data_late_0,
                            es_store_data_src_0,
@@ -526,6 +535,7 @@ module EXE_stage(
         .mul_src1   (mul_src1_0),
         .mul_src2   (mul_src2_0),
         .alu_result (alu_result_0),
+        .alu_fast_result (alu_fast_result_0),
         .mul_result (mul_product_0)
       );
 
@@ -540,6 +550,7 @@ module EXE_stage(
         .mul_src1   (mul_src1_1),
         .mul_src2   (mul_src2_1),
         .alu_result (alu_result_1),
+        .alu_fast_result (alu_fast_result_1),
         .mul_result (mul_product_1)
       );
 
