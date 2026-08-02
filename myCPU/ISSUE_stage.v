@@ -19,6 +19,9 @@ module ISSUE_stage(
     input  wire                           special_block,
 
     input  wire                           es_allowin,
+    input  wire                           ms_allowin,
+    input  wire                           es_to_ms_valid_0,
+    input  wire                           es_to_ms_valid_1,
     // 前递信息
     input  wire [`ES_FWD_BUS_WD-1  :  0]  es_fwd_bus_0,
     input  wire [`ES_FWD_BUS_1_WD-1:  0]  es_fwd_bus_1,
@@ -178,6 +181,33 @@ module ISSUE_stage(
   assign {es_bus_valid_1, es_bus_gr_we_1, es_bus_fwd_valid_1,
           es_bus_dest_1, es_fwd_data_1} = es_fwd_bus_1;
 
+  reg        ms_wait_valid_0;
+  reg [4:0]  ms_wait_dest_0;
+  reg        ms_wait_valid_1;
+  reg [4:0]  ms_wait_dest_1;
+
+  always @(posedge clk)
+  begin
+    if (!resetn || br_taken)
+    begin
+      ms_wait_valid_0 <= 1'b0;
+      ms_wait_dest_0  <= 5'b0;
+      ms_wait_valid_1 <= 1'b0;
+      ms_wait_dest_1  <= 5'b0;
+    end
+    else if (ms_allowin)
+    begin
+      ms_wait_valid_0 <= es_to_ms_valid_0 && es_bus_gr_we_0 &&
+                         !es_bus_fwd_valid_0;
+      ms_wait_dest_0  <= (es_to_ms_valid_0 && es_bus_gr_we_0 &&
+                          !es_bus_fwd_valid_0) ? es_bus_dest_0 : 5'b0;
+      ms_wait_valid_1 <= es_to_ms_valid_1 && es_bus_gr_we_1 &&
+                         !es_bus_fwd_valid_1;
+      ms_wait_dest_1  <= (es_to_ms_valid_1 && es_bus_gr_we_1 &&
+                          !es_bus_fwd_valid_1) ? es_bus_dest_1 : 5'b0;
+    end
+  end
+
   // EX hazard 元数据在 ISSUE 本地同步镜像。它与 EX 在同一时钟沿
   // 捕获同一个发射包，使 RAW 比较不再从 EX 跨区返回 InstBuffer；
   // 前递数据本身仍直接使用 EX 结果，因此零气泡 ALU 前递不变。
@@ -310,9 +340,11 @@ module ISSUE_stage(
   wire rj0_hit_ms1  = src0_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_0);
 
   wire rj0_wait_es1 = rj0_hit_es1 && !es_fwd_valid_1;
-  wire rj0_wait_ms1 = rj0_hit_ms1 && !ms_fwd_valid_1;
-  wire rj0_wait_ms0 =
-       rj0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0;
+  wire rj0_wait_ms1 = src0_rj_valid && ms_wait_valid_1 &&
+       !ms_fwd_valid_1 && (ms_wait_dest_1 == src_raddr1_0);
+  wire rj0_wait_ms0 = src0_rj_valid && ms_wait_valid_0 &&
+       !ms_fwd_valid_0 && (ms_wait_dest_0 == src_raddr1_0) &&
+       !load_wakeup_usable_0;
   wire rj0_wait_ex = src0_rj_valid &&
        ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_0);
   wire rj0_wait =
@@ -344,9 +376,11 @@ module ISSUE_stage(
   wire rkd0_wait_ex = src0_rkd_valid &&
        ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_0);
   wire rkd0_wait_es1 = rkd0_hit_es1 && !es_fwd_valid_1;
-  wire rkd0_wait_ms1 = rkd0_hit_ms1 && !ms_fwd_valid_1;
-  wire rkd0_wait_ms0 =
-       rkd0_hit_ms0 && !ms_fwd_valid_0 && !load_wakeup_usable_0;
+  wire rkd0_wait_ms1 = src0_rkd_valid && ms_wait_valid_1 &&
+       !ms_fwd_valid_1 && (ms_wait_dest_1 == src_raddr2_0);
+  wire rkd0_wait_ms0 = src0_rkd_valid && ms_wait_valid_0 &&
+       !ms_fwd_valid_0 && (ms_wait_dest_0 == src_raddr2_0) &&
+       !load_wakeup_usable_0;
   wire rkd0_wait =
        rkd0_wait_es1 || rkd0_wait_ex || rkd0_wait_ms1 || rkd0_wait_ms0;
 
@@ -368,8 +402,10 @@ module ISSUE_stage(
   wire rj1_hit_ms1  = src1_rj_valid  && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_1);
 
   wire rj1_wait_es1 = rj1_hit_es1 && !es_fwd_valid_1;
-  wire rj1_wait_ms1 = rj1_hit_ms1 && !ms_fwd_valid_1;
-  wire rj1_wait_ms0 = rj1_hit_ms0 && !ms_fwd_valid_0;
+  wire rj1_wait_ms1 = src1_rj_valid && ms_wait_valid_1 &&
+       !ms_fwd_valid_1 && (ms_wait_dest_1 == src_raddr1_1);
+  wire rj1_wait_ms0 = src1_rj_valid && ms_wait_valid_0 &&
+       !ms_fwd_valid_0 && (ms_wait_dest_0 == src_raddr1_1);
   wire rj1_wait = src1_rj_valid &&
        (rj1_wait_es1 ||
         (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1)) ||
@@ -386,8 +422,10 @@ module ISSUE_stage(
   wire rkd1_hit_ms0 = src1_rkd_valid && ms_valid_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_1);
   wire rkd1_hit_ms1 = src1_rkd_valid && ms_valid_1 && ms_gr_we_1 && (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_1);
   wire rkd1_wait_es1 = rkd1_hit_es1 && !es_fwd_valid_1;
-  wire rkd1_wait_ms1 = rkd1_hit_ms1 && !ms_fwd_valid_1;
-  wire rkd1_wait_ms0 = rkd1_hit_ms0 && !ms_fwd_valid_0;
+  wire rkd1_wait_ms1 = src1_rkd_valid && ms_wait_valid_1 &&
+       !ms_fwd_valid_1 && (ms_wait_dest_1 == src_raddr2_1);
+  wire rkd1_wait_ms0 = src1_rkd_valid && ms_wait_valid_0 &&
+       !ms_fwd_valid_0 && (ms_wait_dest_0 == src_raddr2_1);
   wire rkd1_wait = src1_rkd_valid &&
        (rkd1_wait_es1 ||
         (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1)) ||
@@ -465,31 +503,31 @@ module ISSUE_stage(
        (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_1);
 
   wire rj0_wait_ms0_for_consume = src0_rj_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr1_0) &&
+       ms_wait_valid_0 && !ms_fwd_valid_0 &&
+       (ms_wait_dest_0 == src_raddr1_0) &&
        !load_wakeup_usable_0;
   wire rj0_wait_ms1_for_consume = src0_rj_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_0);
+       ms_wait_valid_1 && !ms_fwd_valid_1 &&
+       (ms_wait_dest_1 == src_raddr1_0);
   wire rkd0_wait_ms0_for_consume = src0_rkd_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_0) &&
+       ms_wait_valid_0 && !ms_fwd_valid_0 &&
+       (ms_wait_dest_0 == src_raddr2_0) &&
        !load_wakeup_usable_0;
   wire rkd0_wait_ms1_for_consume = src0_rkd_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_0);
+       ms_wait_valid_1 && !ms_fwd_valid_1 &&
+       (ms_wait_dest_1 == src_raddr2_0);
   wire rj1_wait_ms0_for_consume = src1_rj_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr1_1);
+       ms_wait_valid_0 && !ms_fwd_valid_0 &&
+       (ms_wait_dest_0 == src_raddr1_1);
   wire rj1_wait_ms1_for_consume = src1_rj_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr1_1);
+       ms_wait_valid_1 && !ms_fwd_valid_1 &&
+       (ms_wait_dest_1 == src_raddr1_1);
   wire rkd1_wait_ms0_for_consume = src1_rkd_valid_for_consume &&
-       ms_valid_0 && ms_gr_we_0 && !ms_fwd_valid_0 &&
-       (ms_dest_0 != 5'b0) && (ms_dest_0 == src_raddr2_1);
+       ms_wait_valid_0 && !ms_fwd_valid_0 &&
+       (ms_wait_dest_0 == src_raddr2_1);
   wire rkd1_wait_ms1_for_consume = src1_rkd_valid_for_consume &&
-       ms_valid_1 && ms_gr_we_1 && !ms_fwd_valid_1 &&
-       (ms_dest_1 != 5'b0) && (ms_dest_1 == src_raddr2_1);
+       ms_wait_valid_1 && !ms_fwd_valid_1 &&
+       (ms_wait_dest_1 == src_raddr2_1);
 
   wire rj0_wait_ms_for_consume =
        rj0_wait_ms1_for_consume || rj0_wait_ms0_for_consume;

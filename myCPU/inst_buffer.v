@@ -42,7 +42,7 @@ module inst_buffer(
   reg                          front_valid_0_r;
   reg                          front_valid_1_r;
 
-
+  // 提升主频所做的拆分
   reg [44:0] front_bus_0_g0;
   reg [44:0] front_bus_0_g1;
   reg [44:0] front_bus_0_g2;
