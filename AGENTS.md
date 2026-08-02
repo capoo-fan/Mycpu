@@ -58,6 +58,8 @@ vivado 仓库结构如下
 
 修改代码后生成时序报告:
 
+不允许修改 implement_design.tcl，不允许使用任何优化策略进行 implement ，必须通过 implement_design.tcl 生成时序报告！
+
 ```
 vivado -mode batch \
     -log ~/thinpad_top/run_vivado/implement.log \
