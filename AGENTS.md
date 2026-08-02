@@ -26,8 +26,6 @@ verilator --version
 
 vivado 仓库位于 ~/thinpad_top，用于生成时序报告，且 CPU 设计文件会自动同步 ～/Mycpu/myCPU 文件夹
 
-真实工程已经创建完成，位于 ~/thinpad_top/run_vivado/project/thinpad_top.xpr
-
 vivado 仓库结构如下
 
 ```text
@@ -56,11 +54,13 @@ vivado 仓库结构如下
 `-- README.md
 ```
 
-修改代码后生成时序报告:
+修改代码后重新生成工程，然后生成时序报告:
 
 不允许修改 implement_design.tcl，不允许使用任何优化策略进行 implement ，必须通过 implement_design.tcl 生成时序报告！
 
 ```
+vivado -mode batch -source ~/thinpad_top/run_vivado/flow/create_vivado_project.tcl
+
 vivado -mode batch \
     -log ~/thinpad_top/run_vivado/implement.log \
     -journal ~/thinpad_top/run_vivado/implement.jou \
