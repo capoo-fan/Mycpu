@@ -510,14 +510,17 @@ module ISSUE_stage(
   wire rkd0_wait_for_consume =
        rkd0_wait_es1_for_consume || rkd0_wait_ex_for_consume ||
        rkd0_wait_ms0_for_consume || rkd0_wait_ms1_for_consume;
-  wire rj1_wait_for_consume = src1_rj_valid_for_consume &&
-       (rj1_wait_es1_for_consume ||
-        (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1)) ||
-        rj1_wait_ms_for_consume);
-  wire rkd1_wait_for_consume = src1_rkd_valid_for_consume &&
-       (rkd1_wait_es1_for_consume ||
-        (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1)) ||
-        rkd1_wait_ms_for_consume);
+
+  wire rj1_wait_ex_for_consume = src1_rj_valid_for_consume &&
+       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1);
+  wire rj1_wait_for_consume =
+       rj1_wait_es1_for_consume || rj1_wait_ex_for_consume ||
+       rj1_wait_ms_for_consume;
+  wire rkd1_wait_ex_for_consume = src1_rkd_valid_for_consume &&
+       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1);
+  wire rkd1_wait_for_consume =
+       rkd1_wait_es1_for_consume || rkd1_wait_ex_for_consume ||
+       rkd1_wait_ms_for_consume;
 
   wire rkd0_hard_wait_for_consume =
        rkd0_wait_es1_for_consume || rkd0_wait_ms1_for_consume;
@@ -530,26 +533,22 @@ module ISSUE_stage(
   wire store_data_late_0_for_consume =
        !rkd0_hard_wait_for_consume &&
        rkd0_late_wait_for_consume && rkd0_late_ok_for_consume;
+  // r*j/kd*_hit_es* 本身已含 src-valid、producer-valid、gr_we 和地址
+  // 比较，勿在这里重复门控源有效位，否则会延长双发 consume 回环。
   wire mul0_dep_es_for_consume = is_mul_0 &&
-       ((es_fwd_valid_1 &&
-         ((src0_rj_valid_for_consume && rj0_hit_es1) ||
-          (src0_rkd_valid_for_consume && rkd0_hit_es1))) ||
-        (es_fwd_valid_0 &&
-         ((src0_rj_valid_for_consume && rj0_hit_es0) ||
-          (src0_rkd_valid_for_consume && rkd0_hit_es0))));
+       ((es_fwd_valid_1 && (rj0_hit_es1 || rkd0_hit_es1)) ||
+        (es_fwd_valid_0 && (rj0_hit_es0 || rkd0_hit_es0)));
   wire mul1_dep_es_for_consume = is_mul_1 &&
-       ((es_fwd_valid_1 &&
-         ((src1_rj_valid_for_consume && rj1_hit_es1) ||
-          (src1_rkd_valid_for_consume && rkd1_hit_es1))) ||
-        (es_fwd_valid_0 &&
-         ((src1_rj_valid_for_consume && rj1_hit_es0) ||
-          (src1_rkd_valid_for_consume && rkd1_hit_es0))));
-  (* keep = "true" *) wire stall_0_for_consume =
+       ((es_fwd_valid_1 && (rj1_hit_es1 || rkd1_hit_es1)) ||
+        (es_fwd_valid_0 && (rj1_hit_es0 || rkd1_hit_es0)));
+  // 不保留人为的 stall 组合边界，让综合器把低扇出的 ready 条件直接
+  // 吸收到两路 fire LUT 中，少走一级 stall -> fire 级联。
+  wire stall_0_for_consume =
        rj0_wait_for_consume ||
        rkd0_hard_wait_for_consume ||
        (rkd0_late_wait_for_consume && !rkd0_late_ok_for_consume) ||
        mul0_dep_es_for_consume;
-  (* keep = "true" *) wire stall_1_for_consume =
+  wire stall_1_for_consume =
        rj1_wait_for_consume || rkd1_wait_for_consume ||
        mul1_dep_es_for_consume;
   wire ms_stall_0_for_consume =
@@ -583,20 +582,22 @@ module ISSUE_stage(
 
   wire issue_window_open = es_allowin;
 
+  // pipeline flush 在 IBuffer、ISSUE mirror 和 EX 各自的时序块中均为
+  // 高优先级覆盖；无需再把 flush 组合门控进 fire/pop。去掉该重复
+  // 保护可切断 SRAM response -> MEM flush -> ISSUE -> IBuffer 的长路径。
   (* keep = "true", max_fanout = 16 *) wire issue0_fire_for_ex =
-  issue_window_open && !br_taken && front_valid_0 && !stall_0 && !special_block;
+  issue_window_open && front_valid_0 && !stall_0 && !special_block;
   (* keep = "true", max_fanout = 16 *) wire issue1_fire_for_ex =
-  issue_window_open && !br_taken &&
-                    front_valid_0 && !stall_0 && !special_block &&
+  issue_window_open && front_valid_0 && !stall_0 && !special_block &&
                     front_valid_1 && !stall_1 && !raw_0_to_1 &&
                     lane1_capable && !(is_bj_0 && is_bj_1) &&
                     !special_0;
   (* max_fanout = 16 *) wire issue0_fire_for_consume =
-  issue_window_open && !br_taken &&
-                    front_valid_0 && !stall_0_for_consume && !special_block;
+  issue_window_open && front_valid_0 &&
+                    !stall_0_for_consume && !special_block;
   (* max_fanout = 16 *) wire issue1_fire_for_consume =
-  issue_window_open && !br_taken &&
-                    front_valid_0 && !stall_0_for_consume && !special_block &&
+  issue_window_open && front_valid_0 &&
+                    !stall_0_for_consume && !special_block &&
                     front_valid_1 && !stall_1_for_consume &&
                     !raw_0_to_1_for_consume &&
                     lane1_capable && !(is_bj_0 && is_bj_1) &&
