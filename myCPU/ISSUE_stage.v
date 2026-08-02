@@ -30,7 +30,11 @@ module ISSUE_stage(
     output wire                           ds_to_es_valid_0,
     output wire                           ds_to_es_valid_1,
     output wire [`DS_TO_ES_BUS_WD-1:  0]  ds_to_es_bus_0,
-    output wire [`DS_TO_ES_BUS_1_WD-1:0]  ds_to_es_bus_1
+    output wire [`DS_TO_ES_BUS_1_WD-1:0]  ds_to_es_bus_1,
+    output wire [31:0]                    ds_mul_src1_0,
+    output wire [31:0]                    ds_mul_src2_0,
+    output wire [31:0]                    ds_mul_src1_1,
+    output wire [31:0]                    ds_mul_src2_1
   );
 
   // 两条指令译码
@@ -156,23 +160,73 @@ module ISSUE_stage(
   wire [4:0] src_raddr2_1 = front_raddr2_1_hot;
 
   // 拆解前递总线
-  wire        es_valid_0;
-  wire        es_gr_we_0;
-  wire        es_fwd_valid_0;
-  wire        es_res_from_mem_0;
-  wire [ 4:0] es_dest_0;
+  wire        es_bus_valid_0;
+  wire        es_bus_gr_we_0;
+  wire        es_bus_fwd_valid_0;
+  wire        es_bus_res_from_mem_0;
+  wire [ 4:0] es_bus_dest_0;
   wire [31:0] es_fwd_data_0;
 
-  wire        es_valid_1;
-  wire        es_gr_we_1;
-  wire        es_fwd_valid_1;
-  wire [ 4:0] es_dest_1;
+  wire        es_bus_valid_1;
+  wire        es_bus_gr_we_1;
+  wire        es_bus_fwd_valid_1;
+  wire [ 4:0] es_bus_dest_1;
   wire [31:0] es_fwd_data_1;
 
-  assign {es_valid_0, es_gr_we_0, es_fwd_valid_0,
-          es_res_from_mem_0, es_dest_0, es_fwd_data_0} = es_fwd_bus_0;
-  assign {es_valid_1, es_gr_we_1, es_fwd_valid_1,
-          es_dest_1, es_fwd_data_1} = es_fwd_bus_1;
+  assign {es_bus_valid_0, es_bus_gr_we_0, es_bus_fwd_valid_0,
+          es_bus_res_from_mem_0, es_bus_dest_0, es_fwd_data_0} = es_fwd_bus_0;
+  assign {es_bus_valid_1, es_bus_gr_we_1, es_bus_fwd_valid_1,
+          es_bus_dest_1, es_fwd_data_1} = es_fwd_bus_1;
+
+  // EX hazard 元数据在 ISSUE 本地同步镜像。它与 EX 在同一时钟沿
+  // 捕获同一个发射包，使 RAW 比较不再从 EX 跨区返回 InstBuffer；
+  // 前递数据本身仍直接使用 EX 结果，因此零气泡 ALU 前递不变。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  reg        es_valid_0;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  reg        es_gr_we_0;
+  reg        es_fwd_valid_0;
+  reg        es_res_from_mem_0;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  reg [4:0]  es_dest_0;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  reg        es_valid_1;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  reg        es_gr_we_1;
+  reg        es_fwd_valid_1;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  reg [4:0]  es_dest_1;
+
+  always @(posedge clk)
+  begin
+    if (!resetn || br_taken)
+    begin
+      es_valid_0        <= 1'b0;
+      es_gr_we_0        <= 1'b0;
+      es_fwd_valid_0    <= 1'b0;
+      es_res_from_mem_0 <= 1'b0;
+      es_dest_0         <= 5'b0;
+      es_valid_1        <= 1'b0;
+      es_gr_we_1        <= 1'b0;
+      es_fwd_valid_1    <= 1'b0;
+      es_dest_1         <= 5'b0;
+    end
+    else if (es_allowin)
+    begin
+      es_valid_0        <= ds_to_es_valid_0;
+      es_gr_we_0        <= ds_to_es_valid_0 && gr_we_0;
+      es_fwd_valid_0    <= ds_to_es_valid_0 && gr_we_0 &&
+                           !res_from_mem_0 &&
+                           !is_cpucfg_0 && !is_cacop_0 && !is_csr_0;
+      es_res_from_mem_0 <= ds_to_es_valid_0 && res_from_mem_0;
+      es_dest_0         <= dest_0;
+      es_valid_1        <= ds_to_es_valid_1;
+      es_gr_we_1        <= ds_to_es_valid_1 && gr_we_1;
+      es_fwd_valid_1    <= ds_to_es_valid_1 && gr_we_1 &&
+                           !res_from_mem_1;
+      es_dest_1         <= dest_1;
+    end
+  end
 
   wire        ms_valid_0;
   wire        ms_gr_we_0;
@@ -247,36 +301,6 @@ module ISSUE_stage(
   wire load_wakeup_usable_0 =
        load_wakeup_valid && load_wakeup_consumer_0;
 
-  function [4:0] make_fwd_sel;
-    input hit_es1_ready;
-    input hit_es0_ready;
-    input hit_ms1_ready;
-    input hit_ms0_ready;
-    begin
-      make_fwd_sel[4] = hit_es1_ready;
-      make_fwd_sel[3] = !hit_es1_ready && hit_es0_ready;
-      make_fwd_sel[2] = !(hit_es1_ready || hit_es0_ready) && hit_ms1_ready;
-      make_fwd_sel[1] = !(hit_es1_ready || hit_es0_ready || hit_ms1_ready) && hit_ms0_ready;
-      make_fwd_sel[0] = !(hit_es1_ready || hit_es0_ready || hit_ms1_ready || hit_ms0_ready);
-    end
-  endfunction
-
-  function [31:0] select_fwd_data;
-    input [4:0]  sel;
-    input [31:0] es1_data;
-    input [31:0] es0_data;
-    input [31:0] ms1_data;
-    input [31:0] ms0_data;
-    input [31:0] rf_data;
-    begin
-      select_fwd_data = ({32{sel[4]}} & es1_data) |
-                      ({32{sel[3]}} & es0_data) |
-                      ({32{sel[2]}} & ms1_data) |
-                      ({32{sel[1]}} & ms0_data) |
-                      ({32{sel[0]}} & rf_data);
-    end
-  endfunction
-
   // EXE MEM WB 前递数据检测
   // 第一条指令的前递检测
   wire rj0_hit_es0  = src0_rj_valid  && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr1_0);
@@ -299,14 +323,15 @@ module ISSUE_stage(
   wire rj0_use_load_wakeup = load_wakeup_usable_0 && rj0_hit_ms0 &&
        !rj0_hit_es1 && !rj0_hit_es0 && !rj0_hit_ms1;
 
-  wire [4:0] rj0_fwd_sel = make_fwd_sel(rj0_hit_es1 && es_fwd_valid_1,
-                                        rj0_hit_es0 && es_fwd_valid_0,
-                                        rj0_hit_ms1 && ms_fwd_valid_1,
-                                        rj0_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rj_value_0 = select_fwd_data(rj0_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
-       ms_fwd_data_1, ms_fwd_data_0,
-       rf_rdata1_0);
+  // 年轻生产者优先。直接描述数据优先级，避免先生成一热选择量、
+  // 再经 32 组 AND/OR 归并；后者会把 EX 算术前递到乘法器输入
+  // 映射成更深的 LUT 链。
+  wire [31:0] rj_value_0 =
+       (rj0_hit_es1 && es_fwd_valid_1) ? es_fwd_data_1 :
+       (rj0_hit_es0 && es_fwd_valid_0) ? es_fwd_data_0 :
+       (rj0_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rj0_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 :
+                                         rf_rdata1_0;
 
   wire rkd0_hit_es0 = src0_rkd_valid && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr2_0);
   wire rkd0_hit_es1 = src0_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_0);
@@ -328,14 +353,12 @@ module ISSUE_stage(
   wire rkd0_use_load_wakeup = load_wakeup_usable_0 && rkd0_hit_ms0 &&
        !rkd0_hit_es1 && !rkd0_hit_es0 && !rkd0_hit_ms1;
 
-  wire [4:0] rkd0_fwd_sel = make_fwd_sel(rkd0_hit_es1 && es_fwd_valid_1,
-                                         rkd0_hit_es0 && es_fwd_valid_0,
-                                         rkd0_hit_ms1 && ms_fwd_valid_1,
-                                         rkd0_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rkd_value_0 = select_fwd_data(rkd0_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
-       ms_fwd_data_1, ms_fwd_data_0,
-       rf_rdata2_0);
+  wire [31:0] rkd_value_0 =
+       (rkd0_hit_es1 && es_fwd_valid_1) ? es_fwd_data_1 :
+       (rkd0_hit_es0 && es_fwd_valid_0) ? es_fwd_data_0 :
+       (rkd0_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rkd0_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 :
+                                          rf_rdata2_0;
 
   // 第二条指令的前递检测
   wire rj1_hit_es0  = src1_rj_valid  && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr1_1);
@@ -351,14 +374,12 @@ module ISSUE_stage(
        (rj1_wait_es1 ||
         (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1)) ||
         rj1_wait_ms1 || rj1_wait_ms0);
-  wire [4:0] rj1_fwd_sel = make_fwd_sel(rj1_hit_es1 && es_fwd_valid_1,
-                                        rj1_hit_es0 && es_fwd_valid_0,
-                                        rj1_hit_ms1 && ms_fwd_valid_1,
-                                        rj1_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rj_value_1 = select_fwd_data(rj1_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
-       ms_fwd_data_1, ms_fwd_data_0,
-       rf_rdata1_1);
+  wire [31:0] rj_value_1 =
+       (rj1_hit_es1 && es_fwd_valid_1) ? es_fwd_data_1 :
+       (rj1_hit_es0 && es_fwd_valid_0) ? es_fwd_data_0 :
+       (rj1_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rj1_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 :
+                                         rf_rdata1_1;
 
   wire rkd1_hit_es0 = src1_rkd_valid && es_valid_0 && es_gr_we_0 && (es_dest_0 != 5'b0) && (es_dest_0 == src_raddr2_1);
   wire rkd1_hit_es1 = src1_rkd_valid && es_valid_1 && es_gr_we_1 && (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_1);
@@ -372,14 +393,27 @@ module ISSUE_stage(
         (ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1)) ||
         rkd1_wait_ms1 || rkd1_wait_ms0);
 
-  wire [4:0] rkd1_fwd_sel = make_fwd_sel(rkd1_hit_es1 && es_fwd_valid_1,
-                                         rkd1_hit_es0 && es_fwd_valid_0,
-                                         rkd1_hit_ms1 && ms_fwd_valid_1,
-                                         rkd1_hit_ms0 && ms_fwd_valid_0);
-  wire [31:0] rkd_value_1 = select_fwd_data(rkd1_fwd_sel,
-       es_fwd_data_1, es_fwd_data_0,
-       ms_fwd_data_1, ms_fwd_data_0,
-       rf_rdata2_1);
+  wire [31:0] rkd_value_1 =
+       (rkd1_hit_es1 && es_fwd_valid_1) ? es_fwd_data_1 :
+       (rkd1_hit_es0 && es_fwd_valid_0) ? es_fwd_data_0 :
+       (rkd1_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rkd1_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 :
+                                          rf_rdata2_1;
+
+  // EX 依赖的乘法已由 mul*_dep_es 停一拍，DSP 输入只需 MEM/RF
+  // 前递；下一拍生产者已进入 MEM，从而物理切断无效的 EX->DSP 线。
+  assign ds_mul_src1_0 =
+       (rj0_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rj0_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 : rf_rdata1_0;
+  assign ds_mul_src2_0 =
+       (rkd0_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rkd0_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 : rf_rdata2_0;
+  assign ds_mul_src1_1 =
+       (rj1_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rj1_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 : rf_rdata1_1;
+  assign ds_mul_src2_1 =
+       (rkd1_hit_ms1 && ms_fwd_valid_1) ? ms_fwd_data_1 :
+       (rkd1_hit_ms0 && ms_fwd_valid_0) ? ms_fwd_data_0 : rf_rdata2_1;
 
   // Store 的地址源 rj 必须在 ISSUE 就绪；数据源 rkd 若只等待一个
   // lane0 load，则允许先进入 EX，稍后在 MEM 从该 load/WB 前递。
@@ -391,9 +425,19 @@ module ISSUE_stage(
        (rkd0_wait_ex ? es_res_from_mem_0 : ms_res_from_mem_0);
   wire store_data_late_0 =
        !rkd0_hard_wait && rkd0_late_wait && rkd0_late_ok;
+  // EX 普通结果到下一拍乘法 DSP 是跨区长线。只对“乘法确实读取
+  // 上一拍 EX 结果”这一小类 RAW 插入一拍，其他 ALU 前递仍保持
+  // 零气泡；结果下一拍从 MEM 前递，切断 EX->DSP 路径。
+  wire mul0_dep_es = is_mul_0 &&
+       ((es_fwd_valid_1 && (rj0_hit_es1 || rkd0_hit_es1)) ||
+        (es_fwd_valid_0 && (rj0_hit_es0 || rkd0_hit_es0)));
+  wire mul1_dep_es = is_mul_1 &&
+       ((es_fwd_valid_1 && (rj1_hit_es1 || rkd1_hit_es1)) ||
+        (es_fwd_valid_0 && (rj1_hit_es0 || rkd1_hit_es0)));
   wire stall_0 =
-       rj0_wait || rkd0_hard_wait || (rkd0_late_wait && !rkd0_late_ok);
-  wire stall_1 = rj1_wait || rkd1_wait;
+       rj0_wait || rkd0_hard_wait ||
+       (rkd0_late_wait && !rkd0_late_ok) || mul0_dep_es;
+  wire stall_1 = rj1_wait || rkd1_wait || mul1_dep_es;
 
   wire raw_0_to_1 = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid  && (dest_0 == src_raddr1_1)) ||
@@ -486,12 +530,28 @@ module ISSUE_stage(
   wire store_data_late_0_for_consume =
        !rkd0_hard_wait_for_consume &&
        rkd0_late_wait_for_consume && rkd0_late_ok_for_consume;
+  wire mul0_dep_es_for_consume = is_mul_0 &&
+       ((es_fwd_valid_1 &&
+         ((src0_rj_valid_for_consume && rj0_hit_es1) ||
+          (src0_rkd_valid_for_consume && rkd0_hit_es1))) ||
+        (es_fwd_valid_0 &&
+         ((src0_rj_valid_for_consume && rj0_hit_es0) ||
+          (src0_rkd_valid_for_consume && rkd0_hit_es0))));
+  wire mul1_dep_es_for_consume = is_mul_1 &&
+       ((es_fwd_valid_1 &&
+         ((src1_rj_valid_for_consume && rj1_hit_es1) ||
+          (src1_rkd_valid_for_consume && rkd1_hit_es1))) ||
+        (es_fwd_valid_0 &&
+         ((src1_rj_valid_for_consume && rj1_hit_es0) ||
+          (src1_rkd_valid_for_consume && rkd1_hit_es0))));
   (* keep = "true" *) wire stall_0_for_consume =
        rj0_wait_for_consume ||
        rkd0_hard_wait_for_consume ||
-       (rkd0_late_wait_for_consume && !rkd0_late_ok_for_consume);
+       (rkd0_late_wait_for_consume && !rkd0_late_ok_for_consume) ||
+       mul0_dep_es_for_consume;
   (* keep = "true" *) wire stall_1_for_consume =
-  rj1_wait_for_consume || rkd1_wait_for_consume;
+       rj1_wait_for_consume || rkd1_wait_for_consume ||
+       mul1_dep_es_for_consume;
   wire ms_stall_0_for_consume =
        rj0_wait_ms_for_consume || rkd0_wait_ms_for_consume;
   wire blocking_ms_stall_0_for_consume =

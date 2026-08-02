@@ -23,6 +23,8 @@ module mycpu_top(
     input  wire        data_sram_addr_ok,
     input  wire        data_sram_data_ok,
     input  wire [31:0] data_sram_rdata,
+    input  wire        data_sram_fast_data_ok,
+    input  wire [31:0] data_sram_fast_rdata,
     // SoC 兼容端口：内部 debug 状态和布线已删除。
     output wire [31:0] debug_wb_pc,
     output wire [ 3:0] debug_wb_rf_we,
@@ -70,6 +72,10 @@ module mycpu_top(
 
   wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_0;
   wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1;
+  wire [31:0] ds_mul_src1_0;
+  wire [31:0] ds_mul_src2_0;
+  wire [31:0] ds_mul_src1_1;
+  wire [31:0] ds_mul_src2_1;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
   wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
@@ -342,7 +348,11 @@ module mycpu_top(
                 .ds_to_es_valid_0 (ds_to_es_valid_0),
                 .ds_to_es_valid_1 (ds_to_es_valid_1),
                 .ds_to_es_bus_0   (ds_to_es_bus_0),
-                .ds_to_es_bus_1   (ds_to_es_bus_1)
+                .ds_to_es_bus_1   (ds_to_es_bus_1),
+                .ds_mul_src1_0    (ds_mul_src1_0),
+                .ds_mul_src2_0    (ds_mul_src2_0),
+                .ds_mul_src1_1    (ds_mul_src1_1),
+                .ds_mul_src2_1    (ds_mul_src2_1)
               );
 
   // EX stage
@@ -353,6 +363,10 @@ module mycpu_top(
               .ds_to_es_valid_1 (ds_to_es_valid_1),
               .ds_to_es_bus_0   (ds_to_es_bus_0),
               .ds_to_es_bus_1   (ds_to_es_bus_1),
+              .ds_mul_src1_0    (ds_mul_src1_0),
+              .ds_mul_src2_0    (ds_mul_src2_0),
+              .ds_mul_src1_1    (ds_mul_src1_1),
+              .ds_mul_src2_1    (ds_mul_src2_1),
               .flush            (pipeline_flush),
               .ms_allowin       (ms_allowin),
               .load_wakeup_valid(load_wakeup_valid),
@@ -414,7 +428,9 @@ module mycpu_top(
               .data_sram_addr_is_sram(data_sram_addr_is_sram),
               .data_sram_addr_ok (data_sram_addr_ok),
               .data_sram_data_ok (data_sram_data_ok),
-              .data_sram_rdata   (data_sram_rdata)
+              .data_sram_rdata   (data_sram_rdata),
+              .data_sram_fast_data_ok(data_sram_fast_data_ok),
+              .data_sram_fast_rdata(data_sram_fast_rdata)
             );
 
   // WB stage

@@ -28,6 +28,8 @@ module supervisor_boot_tb;
   wire        data_addr_ok;
   wire        data_data_ok;
   wire [31:0] data_rdata;
+  wire        data_fast_data_ok;
+  wire [31:0] data_fast_rdata;
 
   wire [31:0] debug_pc;
   wire [3:0]  debug_we;
@@ -77,6 +79,8 @@ module supervisor_boot_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
+    .data_sram_fast_data_ok(data_fast_data_ok),
+    .data_sram_fast_rdata(data_fast_rdata),
     .debug_wb_pc(debug_pc), .debug_wb_rf_we(debug_we),
     .debug_wb_rf_wnum(debug_wnum), .debug_wb_rf_wdata(debug_wdata)
   );
@@ -93,6 +97,8 @@ module supervisor_boot_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
+    .data_sram_fast_data_ok(data_fast_data_ok),
+    .data_sram_fast_rdata(data_fast_rdata),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
     .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),

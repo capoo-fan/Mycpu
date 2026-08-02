@@ -24,6 +24,8 @@ module thinpad_sram_uart_bridge(
     output wire        data_sram_addr_ok,
     output wire        data_sram_data_ok,
     output wire [31:0] data_sram_rdata,
+    output wire        data_sram_fast_data_ok,
+    output wire [31:0] data_sram_fast_rdata,
 
     output wire [19:0] base_ram_addr,
     output wire [31:0] base_ram_wdata,
@@ -339,6 +341,9 @@ module thinpad_sram_uart_bridge(
     assign data_sram_rdata   = base_data_data_ok ? base_ram_rdata :
                                ext_data_data_ok  ? ext_ram_rdata  :
                                uart_data_data_ok ? uart_rdata_reg  : 32'b0;
+    assign data_sram_fast_data_ok = base_data_data_ok | ext_data_data_ok;
+    assign data_sram_fast_rdata = base_data_data_ok ? base_ram_rdata :
+                                  ext_ram_rdata;
 
     wire unused_cpu_bus = inst_sram_size[0] | inst_sram_size[1] |
                           (|inst_sram_wstrb) | (|inst_sram_wdata) |

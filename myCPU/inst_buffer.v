@@ -56,13 +56,13 @@ module inst_buffer(
   reg [44:0] front_bus_1_g4;
   reg [40:0] front_bus_1_g5;
 
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 32 *)
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr1_0_hot_r;
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 32 *)
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr2_0_hot_r;
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 32 *)
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr1_1_hot_r;
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 32 *)
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr2_1_hot_r;
 
   wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_0_r;

@@ -44,7 +44,9 @@ module MEM_stage(
     input  wire                         data_sram_addr_is_sram,
     input  wire                         data_sram_addr_ok,
     input  wire                         data_sram_data_ok,
-    input  wire [31:0]                  data_sram_rdata
+    input  wire [31:0]                  data_sram_rdata,
+    input  wire                         data_sram_fast_data_ok,
+    input  wire [31:0]                  data_sram_fast_rdata
   );
 
   reg reset;
@@ -238,6 +240,7 @@ module MEM_stage(
 
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
   wire ms_data_ok  = ms_response_waiting && data_sram_data_ok;
+  wire ms_fast_data_ok = ms_response_waiting && data_sram_fast_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
 
   wire packet_valid = ms_valid_0 || ms_valid_1;
@@ -246,7 +249,7 @@ module MEM_stage(
   // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
   wire posted_store_ready = selected_mem_we && ms_addr_is_sram_q;
   wire selected_mem_ready =
-       selected_res_from_mem ? (mem_data_ready || ms_data_ok) :
+       selected_res_from_mem ? (mem_data_ready || ms_fast_data_ok) :
        selected_mem_we ? (posted_store_ready || mem_data_ready) :
        1'b1;
   wire phase_ready_go = ms_has_cacop ? cacop_ready_go :
@@ -322,7 +325,7 @@ module MEM_stage(
   // 已寄存的 ms_rdata_buf。当前 WB 恒可接收，但保留后一条路径可
   // 避免接口约束变化时丢失响应。
   wire [31:0] ms_final_rdata =
-       ms_data_ok ? data_sram_rdata : ms_rdata_buf;
+       ms_fast_data_ok ? data_sram_fast_rdata : ms_rdata_buf;
 
   // 处理加载指令的结果
   function [31:0] load_result;
@@ -355,7 +358,7 @@ module MEM_stage(
   // 受控 Load 返回拍唤醒：只对片上 SRAM 的普通 lane0 Load 产生一次
   // 瞬时事件。ISSUE 复用普通 MEM 前递中的目的 tag 做精确 RAW
   // 放行，数据单独直达 EX 输入寄存器，不进入宽前递网络。
-  assign load_wakeup_valid = !select_lane1 && ms_valid_0 && ms_data_ok &&
+  assign load_wakeup_valid = !select_lane1 && ms_valid_0 && ms_fast_data_ok &&
        ms_res_from_mem_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
        ms_addr_is_sram_q;
   assign load_wakeup_data = ms_load_result_0;
@@ -378,7 +381,7 @@ module MEM_stage(
   // 则是等待/排队情况下的回退。
   wire incoming_store_hit_response =
        es_store_data_late_0 && ms_valid_0 && ms_gr_we_0 &&
-       ms_res_from_mem_0 && ms_data_ok && (ms_dest_0 != 5'b0) &&
+       ms_res_from_mem_0 && ms_fast_data_ok && (ms_dest_0 != 5'b0) &&
        (ms_dest_0 == es_store_data_src_0);
   wire incoming_store_hit_ms =
        es_store_data_late_0 && ms_valid_0 && ms_gr_we_0 &&

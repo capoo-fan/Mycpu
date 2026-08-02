@@ -7,6 +7,10 @@ module EXE_stage(
     input  wire                         ds_to_es_valid_1,
     input  wire [`DS_TO_ES_BUS_WD-1:0]  ds_to_es_bus_0,
     input  wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1,
+    input  wire [31:0]                  ds_mul_src1_0,
+    input  wire [31:0]                  ds_mul_src2_0,
+    input  wire [31:0]                  ds_mul_src1_1,
+    input  wire [31:0]                  ds_mul_src2_1,
     input  wire                         flush,
     input  wire                         ms_allowin,
     input  wire                         load_wakeup_valid,
@@ -30,9 +34,9 @@ module EXE_stage(
   reg         es_valid_0;
   reg  [31:0] es_pc_0;
   reg  [11:0] es_alu_op_0;
-  reg  [31:0] es_alu_src1_0;
-  reg  [31:0] es_alu_src2_0;
-  reg  [31:0] es_rkd_value_0;
+  (* max_fanout = 16 *) reg [31:0] es_alu_src1_0;
+  (* max_fanout = 16 *) reg [31:0] es_alu_src2_0;
+  (* max_fanout = 16 *) reg [31:0] es_rkd_value_0;
   reg         es_store_data_late_0;
   reg  [ 4:0] es_store_data_src_0;
   reg         es_res_from_mem_0;
@@ -65,9 +69,9 @@ module EXE_stage(
   reg         es_valid_1;
   reg  [31:0] es_pc_1;
   reg  [11:0] es_alu_op_1;
-  reg  [31:0] es_alu_src1_1;
-  reg  [31:0] es_alu_src2_1;
-  reg  [31:0] es_rkd_value_1;
+  (* max_fanout = 16 *) reg [31:0] es_alu_src1_1;
+  (* max_fanout = 16 *) reg [31:0] es_alu_src2_1;
+  (* max_fanout = 16 *) reg [31:0] es_rkd_value_1;
   reg         es_res_from_mem_1;
   reg         es_gr_we_1;
   reg         es_mem_we_1;
@@ -519,10 +523,12 @@ module EXE_stage(
 
   // 乘法器始终观察 ISSUE 当前操作数。只有 mul_pending / es_is_mul
   // 控制结果是否有效，不在数据入口增加 valid MUX。
-  wire [31:0] mul_src1_0 = ds_alu_src1_final;
-  wire [31:0] mul_src2_0 = ds_alu_src2_final;
-  wire [31:0] mul_src1_1 = ds_alu_src1_1;
-  wire [31:0] mul_src2_1 = ds_alu_src2_1;
+  wire [31:0] mul_src1_0 =
+       ds_load_wakeup_rj_0 ? load_wakeup_data : ds_mul_src1_0;
+  wire [31:0] mul_src2_0 =
+       ds_load_wakeup_rkd_0 ? load_wakeup_data : ds_mul_src2_0;
+  wire [31:0] mul_src1_1 = ds_mul_src1_1;
+  wire [31:0] mul_src2_1 = ds_mul_src2_1;
 
   alu #(
         .HAS_MUL (1)
