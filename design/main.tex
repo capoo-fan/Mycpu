@@ -172,7 +172,7 @@
     分支预测器     & 2 bank $\times$ 4 row BTB/BHT，共 8 个物理表项，2 位饱和计数器    \\
     乘法单元      & 两个 Xilinx Multiplier Generator 实例，结果在进入 EX 后第 3 拍可用 \\
     地址转换      & 直接地址模式与 DMW0/DMW1 窗口转换；未实现 TLB 页映射                  \\
-    当前 CPU 频率 & 149\,MHz                                            \\
+    当前 CPU 频率 & 148\,MHz                                            \\
     外设接口      & BaseRAM、ExtRAM、16550 风格 UART 寄存器窗口                  \\
     \bottomrule
   \end{tabularx}
@@ -288,7 +288,7 @@ CACOP 同样通过 special scoreboard 串行化。指令在 MEM 向 I-Cache 维�
 
 BaseRAM 和 ExtRAM 控制器均采用 IDLE、ACCESS、DONE 三态状态机，锁存请求后驱动片外异步 SRAM。BaseRAM 同时服务取指与数据访问，冲突时数据请求优先。UART 请求先在桥接边界寄存，再执行读写副作用，切断从 MEM lane 选择、地址翻译到 UART 状态译码的长组合路径。
 
-PLL 使用 Clocking Wizard 由 50\,MHz 输入产生 149\,MHz CPU 时钟和 20\,MHz 辅助时钟\upcite{xilinxclk}。复位由外部按钮或 PLL 未锁定异步置位，再在 CPU 时钟域两级同步释放。UART 波特率为 115200，接收与发送模块的 \code{ClkFrequency} 参数均取 \code{CPU_CLK_FREQ}。
+PLL 使用 Clocking Wizard 由 50\,MHz 输入产生 148\,MHz CPU 时钟和 20\,MHz 辅助时钟\upcite{xilinxclk}。复位由外部按钮或 PLL 未锁定异步置位，再在 CPU 时钟域两级同步释放。UART 波特率为 115200，接收与发送模块的 \code{ClkFrequency} 参数均取 \code{CPU_CLK_FREQ}。
 
 % ============================================================
 \section{设计结果}
@@ -332,7 +332,7 @@ PLL 使用 Clocking Wizard 由 50\,MHz 输入产生 149\,MHz CPU 时钟和 20\,M
     \toprule
     项目               & 结果                                          \\
     \midrule
-    CPU 工作频率配置       & 149\,MHz                                    \\
+    CPU 工作频率配置       & 148\,MHz                                    \\
     最大取指/发射/写回宽度     & 2 / 2 / 2                                   \\
     I-Cache          & 256 B，2-way，8 sets，16 B line                \\
     BPU 表容量          & 8 个物理表项，含目标地址与 2 bit 计数器                    \\
@@ -351,7 +351,7 @@ PLL 使用 Clocking Wizard 由 50\,MHz 输入产生 149\,MHz CPU 时钟和 20\,M
     \toprule
     频率       & STREAM          & MATRIX          & CRYPTONIGHT      & MIXED          & 总用时              \\
     \midrule
-    149\,MHz & \grayfill{33ms} & \grayfill{68ms} & \grayfill{181ms} & \grayfill{4ms} & \grayfill{286ms} \\
+    148\,MHz & \grayfill{33ms} & \grayfill{68ms} & \grayfill{182ms} & \grayfill{4ms} & \grayfill{287ms} \\
     \bottomrule
   \end{tabular}
 \end{table}
