@@ -23,7 +23,7 @@ module BPU (
   localparam BPU_ROWS      = (1 << BPU_ROW_W);
   localparam BPU_TAG_W     = 18;
 
-  reg reset;
+  (* keep = "true", equivalent_register_removal = "no" *) reg reset;
   always @(posedge clk)
     reset <= ~resetn;
 

@@ -60,6 +60,8 @@ module inst_buffer(
   reg [4:0] front_raddr1_0_hot_r;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr2_0_hot_r;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg front_raddr2_0_hot_bit1_r;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr1_1_hot_r;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
@@ -79,7 +81,9 @@ module inst_buffer(
   assign front_bus_0   = front_bus_0_r;
   assign front_bus_1   = front_bus_1_r;
   assign front_raddr1_0_hot = front_raddr1_0_hot_r;
-  assign front_raddr2_0_hot = front_raddr2_0_hot_r;
+  assign front_raddr2_0_hot = {front_raddr2_0_hot_r[4:2],
+                               front_raddr2_0_hot_bit1_r,
+                               front_raddr2_0_hot_r[0]};
   assign front_raddr1_1_hot = front_raddr1_1_hot_r;
   assign front_raddr2_1_hot = front_raddr2_1_hot_r;
 
@@ -330,6 +334,10 @@ module inst_buffer(
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+  (* max_fanout = 12 *) wire front1_hot_raddr2_bit0_next =
+        front1_hot_raddr2_we ?
+        next_front_bus_1_g3[HOT_RADDR2_LSB-135] :
+        front_raddr2_1_hot_r[0];
 
   always @(posedge clk)
   begin
@@ -399,13 +407,19 @@ module inst_buffer(
       if (front0_hot_raddr1_we)
         front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
       if (front0_hot_raddr2_we)
-        front_raddr2_0_hot_r <= next_front_bus_0[HOT_RADDR2_LSB +: 5];
+      begin
+        front_raddr2_0_hot_r[4:2] <=
+             next_front_bus_0[HOT_RADDR2_LSB+2 +: 3];
+        front_raddr2_0_hot_bit1_r <= next_front_bus_0[HOT_RADDR2_LSB+1];
+        front_raddr2_0_hot_r[0] <= next_front_bus_0[HOT_RADDR2_LSB];
+      end
       if (front1_hot_raddr1_we)
         front_raddr1_1_hot_r <=
              next_front_bus_1_g3[HOT_RADDR1_LSB-135 +: 5];
       if (front1_hot_raddr2_we)
-        front_raddr2_1_hot_r <=
-             next_front_bus_1_g3[HOT_RADDR2_LSB-135 +: 5];
+        front_raddr2_1_hot_r[4:1] <=
+             next_front_bus_1_g3[HOT_RADDR2_LSB-134 +: 4];
+      front_raddr2_1_hot_r[0] <= front1_hot_raddr2_bit0_next;
     end
   end
 
