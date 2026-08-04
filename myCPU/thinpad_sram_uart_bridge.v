@@ -24,6 +24,7 @@ module thinpad_sram_uart_bridge(
     output wire        data_sram_addr_ok,
     output wire        data_sram_data_ok,
     output wire [31:0] data_sram_rdata,
+    output wire        data_sram_fast_ready,
     output wire        data_sram_fast_data_ok,
     output wire [31:0] data_sram_fast_rdata,
 
@@ -53,7 +54,6 @@ module thinpad_sram_uart_bridge(
     localparam [1:0] S_IDLE   = 2'd0;
     localparam [1:0] S_ACCESS = 2'd1;
     localparam [1:0] S_DONE   = 2'd2;
-    // One accepted cycle + one ACCESS cycle; read keeps CE/OE active in DONE.
     localparam [1:0] SRAM_WAIT_LAST = 2'd0;
 
     // CPU 导出翻译后的物理地址。
@@ -67,11 +67,10 @@ module thinpad_sram_uart_bridge(
     reg  [1:0]  base_state;
     reg  [1:0]  base_cnt;
     reg         base_client_data;
-    // 在 ACCESS->DONE 边界直接寄存 data client 的完成脉冲。
-    // 它与 base_done & base_client_data 同周期，但避免将 FSM 译码
-    // 串入 MEM ready/ISSUE 的单周期回环。
     (* keep = "true", equivalent_register_removal = "no" *)
     reg         base_fast_data_ok_reg;
+    (* keep = "true", equivalent_register_removal = "no" *)
+    reg         base_fast_ready_reg;
     reg         base_wr_reg;
     reg  [31:0] base_addr_reg;
     reg  [31:0] base_wdata_reg;
@@ -101,12 +100,14 @@ module thinpad_sram_uart_bridge(
             base_cnt         <= 2'b0;
             base_client_data <= 1'b0;
             base_fast_data_ok_reg <= 1'b0;
+            base_fast_ready_reg <= 1'b0;
             base_wr_reg      <= 1'b0;
             base_addr_reg    <= 32'b0;
             base_wdata_reg   <= 32'b0;
             base_wstrb_reg   <= 4'b0;
         end else begin
             base_fast_data_ok_reg <= 1'b0;
+            base_fast_ready_reg <= 1'b0;
             case (base_state)
                 S_IDLE: begin
                     base_cnt <= 2'b0;
@@ -125,6 +126,7 @@ module thinpad_sram_uart_bridge(
                         base_state <= S_DONE;
                         base_cnt   <= 2'b0;
                         base_fast_data_ok_reg <= base_client_data;
+                        base_fast_ready_reg <= base_client_data;
                     end else begin
                         base_cnt <= base_cnt + 2'b01;
                     end
@@ -172,6 +174,8 @@ module thinpad_sram_uart_bridge(
     reg  [1:0]  ext_cnt;
     (* keep = "true", equivalent_register_removal = "no" *)
     reg         ext_fast_data_ok_reg;
+    (* keep = "true", equivalent_register_removal = "no" *)
+    reg         ext_fast_ready_reg;
     reg         ext_wr_reg;
     reg  [31:0] ext_addr_reg;
     reg  [31:0] ext_wdata_reg;
@@ -192,12 +196,14 @@ module thinpad_sram_uart_bridge(
             ext_state     <= S_IDLE;
             ext_cnt       <= 2'b0;
             ext_fast_data_ok_reg <= 1'b0;
+            ext_fast_ready_reg <= 1'b0;
             ext_wr_reg    <= 1'b0;
             ext_addr_reg  <= 32'b0;
             ext_wdata_reg <= 32'b0;
             ext_wstrb_reg <= 4'b0;
         end else begin
             ext_fast_data_ok_reg <= 1'b0;
+            ext_fast_ready_reg <= 1'b0;
             case (ext_state)
                 S_IDLE: begin
                     ext_cnt <= 2'b0;
@@ -215,6 +221,7 @@ module thinpad_sram_uart_bridge(
                         ext_state <= S_DONE;
                         ext_cnt   <= 2'b0;
                         ext_fast_data_ok_reg <= 1'b1;
+                        ext_fast_ready_reg <= 1'b1;
                     end else begin
                         ext_cnt <= ext_cnt + 2'b01;
                     end
@@ -354,6 +361,8 @@ module thinpad_sram_uart_bridge(
     assign data_sram_rdata   = base_data_data_ok ? base_ram_rdata :
                                ext_data_data_ok  ? ext_ram_rdata  :
                                uart_data_data_ok ? uart_rdata_reg  : 32'b0;
+    assign data_sram_fast_ready =
+        base_fast_ready_reg | ext_fast_ready_reg;
     assign data_sram_fast_data_ok =
         base_fast_data_ok_reg | ext_fast_data_ok_reg;
     assign data_sram_fast_rdata = base_data_data_ok ? base_ram_rdata :

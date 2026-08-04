@@ -52,6 +52,7 @@ module supervisor_perf_tb;
   wire        data_data_ok;
   wire [31:0] data_rdata;
   wire        data_fast_data_ok;
+  wire        data_fast_ready;
   wire [31:0] data_fast_rdata;
 
   wire [19:0] base_addr;
@@ -255,6 +256,7 @@ module supervisor_perf_tb;
               .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
               .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
               .data_sram_rdata(data_rdata),
+              .data_sram_fast_ready(data_fast_ready),
               .data_sram_fast_data_ok(data_fast_data_ok),
               .data_sram_fast_rdata(data_fast_rdata),
               .debug_wb_pc(), .debug_wb_rf_we(),
@@ -273,6 +275,7 @@ module supervisor_perf_tb;
                              .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
                              .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
                              .data_sram_rdata(data_rdata),
+                             .data_sram_fast_ready(data_fast_ready),
                              .data_sram_fast_data_ok(data_fast_data_ok),
                              .data_sram_fast_rdata(data_fast_rdata),
                              .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),

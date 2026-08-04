@@ -226,6 +226,10 @@ module ISSUE_stage(
   reg        es_fwd_valid_1;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0]  es_dest_1;
+  // pop/InstBuffer 回环使用独立的 lane1 目的标签副本，避免该标签同时
+  // 跨区驱动 EX 发射和消费两套 RAW 比较锥。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg [4:0]  es_dest_1_consume;
 
   always @(posedge clk)
   begin
@@ -240,6 +244,7 @@ module ISSUE_stage(
       es_gr_we_1        <= 1'b0;
       es_fwd_valid_1    <= 1'b0;
       es_dest_1         <= 5'b0;
+      es_dest_1_consume <= 5'b0;
     end
     else if (es_allowin)
     begin
@@ -255,6 +260,7 @@ module ISSUE_stage(
       es_fwd_valid_1    <= ds_to_es_valid_1 && gr_we_1 &&
                            !res_from_mem_1;
       es_dest_1         <= dest_1;
+      es_dest_1_consume <= dest_1;
     end
   end
 
@@ -491,18 +497,26 @@ module ISSUE_stage(
   // MEM 中未就绪的 load/低频结果只阻塞真正命中目的寄存器的源。
   // 使用 InstBuffer 的 hot 源寄存器字段保持 pop 控制路径窄，不再用
   // 任意一个未完成 load 全局关闭整个发射窗口。
-  wire rj0_wait_es1_for_consume = src0_rj_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr1_0);
-  wire rkd0_wait_es1_for_consume = src0_rkd_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_0);
-  wire rj1_wait_es1_for_consume = src1_rj_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr1_1);
-  wire rkd1_wait_es1_for_consume = src1_rkd_valid_for_consume &&
-       es_valid_1 && es_gr_we_1 && !es_fwd_valid_1 &&
-       (es_dest_1 != 5'b0) && (es_dest_1 == src_raddr2_1);
+  wire rj0_hit_es1_for_consume = src0_rj_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
+       (es_dest_1_consume == src_raddr1_0);
+  wire rkd0_hit_es1_for_consume = src0_rkd_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
+       (es_dest_1_consume == src_raddr2_0);
+  wire rj1_hit_es1_for_consume = src1_rj_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
+       (es_dest_1_consume == src_raddr1_1);
+  wire rkd1_hit_es1_for_consume = src1_rkd_valid_for_consume &&
+       es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
+       (es_dest_1_consume == src_raddr2_1);
+  wire rj0_wait_es1_for_consume = rj0_hit_es1_for_consume &&
+       !es_fwd_valid_1;
+  wire rkd0_wait_es1_for_consume = rkd0_hit_es1_for_consume &&
+       !es_fwd_valid_1;
+  wire rj1_wait_es1_for_consume = rj1_hit_es1_for_consume &&
+       !es_fwd_valid_1;
+  wire rkd1_wait_es1_for_consume = rkd1_hit_es1_for_consume &&
+       !es_fwd_valid_1;
 
   wire rj0_wait_ms0_for_consume = src0_rj_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
@@ -576,10 +590,12 @@ module ISSUE_stage(
   // r*j/kd*_hit_es* 本身已含 src-valid、producer-valid、gr_we 和地址
   // 比较，勿在这里重复门控源有效位，否则会延长双发 consume 回环。
   wire mul0_dep_es_for_consume = is_mul_0 &&
-       ((es_fwd_valid_1 && (rj0_hit_es1 || rkd0_hit_es1)) ||
+       ((es_fwd_valid_1 &&
+         (rj0_hit_es1_for_consume || rkd0_hit_es1_for_consume)) ||
         (es_fwd_valid_0 && (rj0_hit_es0 || rkd0_hit_es0)));
   wire mul1_dep_es_for_consume = is_mul_1 &&
-       ((es_fwd_valid_1 && (rj1_hit_es1 || rkd1_hit_es1)) ||
+       ((es_fwd_valid_1 &&
+         (rj1_hit_es1_for_consume || rkd1_hit_es1_for_consume)) ||
         (es_fwd_valid_0 && (rj1_hit_es0 || rkd1_hit_es0)));
   // 不保留人为的 stall 组合边界，让综合器把低扇出的 ready 条件直接
   // 吸收到两路 fire LUT 中，少走一级 stall -> fire 级联。
@@ -684,6 +700,8 @@ module ISSUE_stage(
               if ((pop_0 !== ds_to_es_valid_0) ||
                   (pop_1 !== ds_to_es_valid_1))
                 $fatal(1, "IBuffer consume and EX issue controls diverged");
+              if (es_dest_1_consume !== es_dest_1)
+                $fatal(1, "lane1 consume destination mirror diverged");
               if (es_allowin && !br_taken &&
                   ((ex_wait_valid_0 !==
                     (es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
