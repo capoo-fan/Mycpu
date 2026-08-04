@@ -90,7 +90,7 @@ module inst_buffer(
   localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 56;
   localparam integer HOT_RADDR2_LSB = `FS_TO_DS_BUS_WD + 51;
 
-  // next=>front_vaild_*_r
+
   reg                           next_front_valid_0;
   reg                           next_front_valid_1;
   reg  [`IBUF_ENTRY_BUS_WD-1:0] next_front_bus_0;
@@ -338,7 +338,6 @@ module inst_buffer(
         front1_hot_raddr2_we ?
         next_front_bus_1_g3[HOT_RADDR2_LSB-135] :
         front_raddr2_1_hot_r[0];
-
   always @(posedge clk)
   begin
     if (!resetn)

@@ -224,8 +224,10 @@ module MEM_stage(
   wire selected_st_half = select_lane1 ? ms_st_half_1 : ms_st_half_0;
   wire selected_store_data_ready = select_lane1 ?
        1'b1 : ms_store_data_ready_0;
-  wire ms_has_mem_op = lane0_mem_op || lane1_mem_op;
-  wire ms_has_cacop = (ms_wait_kind == WAIT_CACOP);
+
+  // WAIT_DATA/WAIT_CACOP 分别是唯一 bit0/bit1 为 1 的可达编码。
+  wire ms_has_mem_op = ms_wait_kind[0];
+  wire ms_has_cacop = ms_wait_kind[1];
   wire dual_mem_phase_0 = lane0_mem_op && lane1_mem_op;
 
   // 处理 SRAM 的握手

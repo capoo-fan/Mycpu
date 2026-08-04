@@ -457,10 +457,12 @@ module ISSUE_stage(
   // lane0 load，则允许先进入 EX，稍后在 MEM 从该 load/WB 前递。
   // 对 CSR/CPUCFG/CACOP 等低频未就绪结果仍保持原有阻塞。
   wire rkd0_hard_wait = rkd0_wait_es1 || rkd0_wait_ms1;
+  // 年轻的 EX 生产者优先于 MEM。把原先 wait 合并后的三元选择改写成
+  // 互斥命中项，避免 source compare -> late_wait -> mux -> stall 串联。
+  wire rkd0_late_ok = mem_we_0 &&
+       ((rkd0_wait_ex && es_res_from_mem_0) ||
+        (!rkd0_wait_ex && rkd0_wait_ms0 && ms_res_from_mem_0));
   wire rkd0_late_wait = rkd0_wait_ex || rkd0_wait_ms0;
-  wire rkd0_late_ok =
-       mem_we_0 &&
-       (rkd0_wait_ex ? es_res_from_mem_0 : ms_res_from_mem_0);
   wire store_data_late_0 =
        !rkd0_hard_wait && rkd0_late_wait && rkd0_late_ok;
   // EX 普通结果到下一拍乘法 DSP 是跨区长线。只对“乘法确实读取
@@ -562,12 +564,12 @@ module ISSUE_stage(
 
   wire rkd0_hard_wait_for_consume =
        rkd0_wait_es1_for_consume || rkd0_wait_ms1_for_consume;
+  wire rkd0_late_ok_for_consume = mem_we_0 &&
+       ((rkd0_wait_ex_for_consume && es_res_from_mem_0) ||
+        (!rkd0_wait_ex_for_consume && rkd0_wait_ms0_for_consume &&
+         ms_res_from_mem_0));
   wire rkd0_late_wait_for_consume =
        rkd0_wait_ex_for_consume || rkd0_wait_ms0_for_consume;
-  wire rkd0_late_ok_for_consume =
-       mem_we_0 &&
-       (rkd0_wait_ex_for_consume ?
-        es_res_from_mem_0 : ms_res_from_mem_0);
   wire store_data_late_0_for_consume =
        !rkd0_hard_wait_for_consume &&
        rkd0_late_wait_for_consume && rkd0_late_ok_for_consume;

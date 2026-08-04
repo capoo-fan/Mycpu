@@ -55,11 +55,10 @@ module thinpad_top(
 );
 
 
-localparam integer CPU_CLK_FREQ = 154000000;
+localparam integer CPU_CLK_FREQ = 155000000;
 
 
 wire cpu_clk;
-wire clk_20M;
 wire pll_locked;
 pll_example clock_gen 
  (
@@ -67,7 +66,6 @@ pll_example clock_gen
   .clk_in1(clk_50M),  // 外部时钟输入
   // Clock out ports
   .clk_out1(cpu_clk), // 时钟输出1，频率在IP配置界面中设置
-  .clk_out2(clk_20M), // 时钟输出2，频率在IP配置界面中设置
   // Status and control signals
   .reset(reset_btn), // PLL复位输入
   .locked(pll_locked)    // PLL锁定指示输出，"1"表示时钟稳定，
@@ -257,7 +255,7 @@ pll_example clock_gen
         .data_enable (video_de)
     );
 
-    wire unused_inputs = clk_11M0592 | clock_btn | (|touch_btn) | (|dip_sw) | clk_20M;
+    wire unused_inputs = clk_11M0592 | clock_btn | (|touch_btn) | (|dip_sw);
 endmodule
 
 `default_nettype wire
