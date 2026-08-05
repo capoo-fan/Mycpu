@@ -241,6 +241,8 @@ module MEM_stage(
   // 处理 SRAM 的握手
   reg  ms_data_pending;
   reg  ms_response_waiting;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 4 *)
+  reg  ms_fast_response_waiting;
   reg  ms_addr_is_sram_q;
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
@@ -250,7 +252,7 @@ module MEM_stage(
 
   wire got_addr_ok = data_sram_req && data_sram_addr_ok;
   wire ms_data_ok  = ms_response_waiting && data_sram_data_ok;
-  wire ms_fast_ready = ms_response_waiting && data_sram_fast_ready;
+  wire ms_fast_ready = ms_fast_response_waiting && data_sram_fast_ready;
   wire ms_fast_data_ok = ms_response_waiting && data_sram_fast_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
 
@@ -573,6 +575,17 @@ module MEM_stage(
                              !data_sram_addr_is_sram;
     else if (ms_data_pending && data_sram_data_ok)
       ms_response_waiting <= 1'b0;
+  end
+
+  always @(posedge clk)
+  begin
+    if (reset || br_taken || branch_redirect_fire)
+      ms_fast_response_waiting <= 1'b0;
+    else if (got_addr_ok)
+      ms_fast_response_waiting <= !selected_mem_we ||
+                                  !data_sram_addr_is_sram;
+    else if (ms_data_pending && data_sram_data_ok)
+      ms_fast_response_waiting <= 1'b0;
   end
 
   always @(posedge clk)
