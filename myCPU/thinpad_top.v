@@ -55,7 +55,7 @@ module thinpad_top(
 );
 
 
-localparam integer CPU_CLK_FREQ = 157000000;
+localparam integer CPU_CLK_FREQ = 158000000;
 
 
 wire cpu_clk;

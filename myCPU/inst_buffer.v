@@ -58,7 +58,7 @@ module inst_buffer(
 
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr1_0_hot_r;
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
   reg [4:0] front_raddr2_0_hot_r;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
   reg front_raddr2_0_hot_bit1_r;
