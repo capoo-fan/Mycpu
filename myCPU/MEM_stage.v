@@ -259,8 +259,10 @@ module MEM_stage(
   wire packet_valid = ms_valid_0 || ms_valid_1;
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
-  // SRAM bridge 在 addr_ok 时已经锁存了 store 的地址、数据和字节使能。
-  wire posted_store_ready = ms_addr_is_sram_q && !ms_response_waiting;
+  // 桥接器在 addr_ok 当拍已将写请求锁存进寄存化 posted-store 槽；
+  // store 因此无需等待后续 data_ok 即可退休。
+  wire posted_store_ready = selected_mem_we && data_sram_addr_is_sram &&
+       got_addr_ok;
   wire selected_mem_ready = mem_data_ready || ms_fast_ready ||
        posted_store_ready;
   wire phase_ready_go = ms_has_cacop ? cacop_ready_go :

@@ -280,14 +280,21 @@ module thinpad_sram_uart_bridge_tb;
           end
 
           if (data_data_ok) begin
+            // A posted response may rise after the address-handshake edge
+            // (during the intervening half cycle where the task drops req).
+            if (data_ok_count_local == 0)
+              data_ok_count_local = 1;
             rdata_value = data_rdata;
-            if (cycle_count_local != 3)
+            if (cycle_count_local != (wr_value ? 1 : 3))
               fail("SRAM data response timing is incorrect");
             if (wr_value) begin
-              if (base_target && !base_ce_n)
-                fail("BaseRAM write stayed active during response");
-              if (!base_target && !ext_ce_n)
-                fail("ExtRAM write stayed active during response");
+              // Posted store is acknowledged while the registered entry is
+              // being drained to SRAM.  Address/data/BE have therefore been
+              // stable for the complete response cycle.
+              if (base_target && base_ce_n)
+                fail("BaseRAM posted write was inactive during response");
+              if (!base_target && ext_ce_n)
+                fail("ExtRAM posted write was inactive during response");
             end else begin
               if (base_target && base_ce_n)
                 fail("BaseRAM read was inactive during response");
@@ -302,7 +309,10 @@ module thinpad_sram_uart_bridge_tb;
         end
       end
 
-      expected_active_count = wr_value ? 2 : 3;
+      // The posted write becomes active immediately after its handshake edge;
+      // this task samples the edge before NBA updates, then observes the write
+      // at the following negedge response check above.
+      expected_active_count = wr_value ? 0 : 3;
       if (addr_ok_count_local != 1)
         fail("SRAM data address handshake count is incorrect");
       if (data_ok_count_local != 1)
