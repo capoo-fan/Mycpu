@@ -99,7 +99,9 @@ module MEM_stage(
   reg         ms_lane1_mem_op_ctrl;
   // 直接寄存当前访存相位的 lane 选择，去掉 lane0/lane1 状态译码后再
   // 驱动地址、写数据和桥接请求的一级高扇出 LUT。
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
+  // posted-store 同拍 ready 回环也由该选择位驱动；把复制阈值略收紧，
+  // 让地址/ready 控制副本留在 MEM 侧，减少跨到 ISSUE/IBuffer 的首段布线。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 12 *)
   reg         ms_select_lane1_q;
   reg  [31:0] ms_pc_1;
   reg  [31:0] ms_alu_result_1;
