@@ -60,6 +60,7 @@ module supervisor_boot_tb;
   reg [31:0] ext_mem  [0:1048575];
   wire [31:0] base_rdata = base_mem[base_addr];
   wire [31:0] ext_rdata  = ext_mem[ext_addr];
+  wire        data_store_ready;
 
   reg [7:0] tx_bytes [0:511];
   integer tx_count;
@@ -83,6 +84,7 @@ module supervisor_boot_tb;
     .data_sram_fast_ready(data_fast_ready),
     .data_sram_fast_data_ok(data_fast_data_ok),
     .data_sram_fast_rdata(data_fast_rdata),
+    .data_sram_store_ready(data_store_ready),
     .debug_wb_pc(debug_pc), .debug_wb_rf_we(debug_we),
     .debug_wb_rf_wnum(debug_wnum), .debug_wb_rf_wdata(debug_wdata)
   );
@@ -102,6 +104,7 @@ module supervisor_boot_tb;
     .data_sram_fast_ready(data_fast_ready),
     .data_sram_fast_data_ok(data_fast_data_ok),
     .data_sram_fast_rdata(data_fast_rdata),
+    .data_sram_store_ready(data_store_ready),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
     .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),

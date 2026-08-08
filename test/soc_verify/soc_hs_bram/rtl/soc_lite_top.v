@@ -182,6 +182,7 @@ mycpu_top cpu(
     .data_sram_fast_ready(cpu_data_data_ok),
     .data_sram_fast_data_ok(cpu_data_data_ok),
     .data_sram_fast_rdata(cpu_data_rdata),
+    .data_sram_store_ready(cpu_data_addr_ok),
 
     //debug interface
     .debug_wb_pc      (debug_wb_pc      ),

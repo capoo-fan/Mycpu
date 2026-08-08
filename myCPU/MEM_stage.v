@@ -42,6 +42,7 @@ module MEM_stage(
     output wire [31:0]                  data_sram_addr,
     output wire [31:0]                  data_sram_wdata,
     input  wire                         data_sram_addr_is_sram,
+    input  wire                         data_sram_store_ready,
     input  wire                         data_sram_addr_ok,
     input  wire                         data_sram_data_ok,
     input  wire [31:0]                  data_sram_rdata,
@@ -261,8 +262,8 @@ module MEM_stage(
 
   // 桥接器在 addr_ok 当拍已将写请求锁存进寄存化 posted-store 槽；
   // store 因此无需等待后续 data_ok 即可退休。
-  wire posted_store_ready = selected_mem_we && data_sram_addr_is_sram &&
-       got_addr_ok;
+  wire posted_store_ready = data_sram_req && selected_mem_we &&
+       data_sram_addr_is_sram && data_sram_store_ready;
   wire selected_mem_ready = mem_data_ready || ms_fast_ready ||
        posted_store_ready;
   wire phase_ready_go = ms_has_cacop ? cacop_ready_go :
@@ -303,9 +304,10 @@ module MEM_stage(
   // 发出 BPU 更新信号
   wire bpu_sel_lane1 = !ms_is_bj_0 && ms_is_bj_1 && ms_lane1_eff_valid;
 
-  assign bpu_valid       = ms_fire &&
-                           ((ms_valid_0 && ms_is_bj_0) ||
-                            (ms_lane1_eff_valid && ms_is_bj_1));
+  // 分支包不携带访存/CACOP，故其 wait_kind 必为 WAIT_NONE；同时 WB
+  // 恒可接收。对分支而言 ms_fire 与下面的 branch valid 完全等价。
+  assign bpu_valid       = (ms_valid_0 && ms_is_bj_0) ||
+                           (ms_lane1_eff_valid && ms_is_bj_1);
   assign bpu_is_bj       = bpu_valid;
   assign bpu_pc          = bpu_sel_lane1 ? ms_pc_1          : ms_pc_0;
   assign bpu_real_taken  = bpu_sel_lane1 ? ms_real_taken_1  : ms_real_taken_0;
