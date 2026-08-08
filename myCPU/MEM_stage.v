@@ -7,6 +7,7 @@ module MEM_stage(
     input  wire                         es_to_ms_valid_1,
     input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     input  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
+    input  wire [`TRANS_CTX_WD-1:0]      trans_ctx,
     input  wire                         ws_allowin,
     input  wire [`WS_TO_RF_BUS_WD-1:0]  ws_to_rf_bus,
     output wire                         ms_allowin,
@@ -93,6 +94,9 @@ module MEM_stage(
   reg         ms_valid_1;
   reg         ms_lane0_mem_op;
   reg         ms_lane1_mem_op;
+  reg         ms_selected_mem_we_q;
+  reg         ms_addr_is_sram_0_q;
+  reg         ms_addr_is_sram_1_q;
   // lane1 访存状态的数据选择副本扇出很高；控制副本只服务双访存
   // 相位/allowin 回环，避免该回环穿过地址和数据 mux 的布线区域。
   (* keep = "true", equivalent_register_removal = "no" *)
@@ -216,13 +220,49 @@ module MEM_stage(
   wire ms_lane1_eff_valid = ms_valid_1;
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
+  // posted-store 必须在请求进入桥接器的同拍退休，但不能让翻译后的
+  // SRAM 区间比较回接到 ms_allowin。进入 MEM 时分别预计算两路物理
+  // 段，只在当前相位的两个寄存结果之间选择；地址 bit[28:23] 不受DMW 翻译影响。
+  wire       trans_dmw1_active;
+  wire [2:0] trans_dmw1_vseg;
+  wire [2:0] trans_dmw1_pseg;
+  wire       trans_dmw0_active;
+  wire [2:0] trans_dmw0_vseg;
+  wire [2:0] trans_dmw0_pseg;
+  assign {trans_dmw1_active, trans_dmw1_vseg, trans_dmw1_pseg,
+          trans_dmw0_active, trans_dmw0_vseg, trans_dmw0_pseg} = trans_ctx;
+
+  wire es_dmw0_hit_0 = trans_dmw0_active &&
+       (es_final_result_0[31:29] == trans_dmw0_vseg);
+  wire es_dmw1_hit_0 = trans_dmw1_active &&
+       (es_final_result_0[31:29] == trans_dmw1_vseg);
+  wire [2:0] es_pseg_0 = es_dmw0_hit_0 ? trans_dmw0_pseg :
+       es_dmw1_hit_0 ? trans_dmw1_pseg : es_final_result_0[31:29];
+  wire es_addr_is_sram_0 = (es_pseg_0 == 3'b000) &&
+       (es_final_result_0[28:23] == 6'b111000);
+
+  wire es_dmw0_hit_1 = trans_dmw0_active &&
+       (es_final_result_1[31:29] == trans_dmw0_vseg);
+  wire es_dmw1_hit_1 = trans_dmw1_active &&
+       (es_final_result_1[31:29] == trans_dmw1_vseg);
+  wire [2:0] es_pseg_1 = es_dmw0_hit_1 ? trans_dmw0_pseg :
+       es_dmw1_hit_1 ? trans_dmw1_pseg : es_final_result_1[31:29];
+  wire es_addr_is_sram_1 = (es_pseg_1 == 3'b000) &&
+       (es_final_result_1[28:23] == 6'b111000);
+
   wire lane0_mem_op = ms_lane0_mem_op;
+
   // lane0 优先；lane0 完成后清除 ms_valid_0，选择器自然转到 lane1。
   // 复用两个 valid 位表达串行相位，不增加访存队列或第二套状态机。
   wire select_lane1 = ms_select_lane1_q;
+  wire selected_addr_is_sram_q = select_lane1 ?
+       ms_addr_is_sram_1_q : ms_addr_is_sram_0_q;
   wire selected_res_from_mem = select_lane1 ?
        ms_res_from_mem_1 : ms_res_from_mem_0;
-  wire selected_mem_we = select_lane1 ? ms_mem_we_1 : ms_mem_we_0;
+       
+  // 当前访存相位的 store 属性与 lane 选择同时寄存，避免 posted-store
+  // ready 回环先穿过 lane0/lane1 写标志选择 LUT。
+  wire selected_mem_we = ms_selected_mem_we_q;
   wire [31:0] selected_addr = select_lane1 ?
        ms_alu_result_1 : ms_alu_result_0;
   wire [31:0] selected_rkd = select_lane1 ?
@@ -265,7 +305,7 @@ module MEM_stage(
   // 桥接器在 addr_ok 当拍已将写请求锁存进寄存化 posted-store 槽；
   // store 因此无需等待后续 data_ok 即可退休。
   wire posted_store_ready = data_sram_req && selected_mem_we &&
-       data_sram_addr_is_sram && data_sram_store_ready;
+       selected_addr_is_sram_q && data_sram_store_ready;
   wire selected_mem_ready = mem_data_ready || ms_fast_ready ||
        posted_store_ready;
   wire phase_ready_go = ms_has_cacop ? cacop_ready_go :
@@ -485,6 +525,9 @@ module MEM_stage(
       ms_valid_1 <= 1'b0;
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= 1'b0;
+      ms_selected_mem_we_q <= 1'b0;
+      ms_addr_is_sram_0_q <= 1'b0;
+      ms_addr_is_sram_1_q <= 1'b0;
       ms_lane1_mem_op_ctrl <= 1'b0;
       ms_select_lane1_q <= 1'b0;
     end
@@ -494,6 +537,9 @@ module MEM_stage(
       ms_valid_1 <= 1'b0;
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= 1'b0;
+      ms_selected_mem_we_q <= 1'b0;
+      ms_addr_is_sram_0_q <= 1'b0;
+      ms_addr_is_sram_1_q <= 1'b0;
       ms_lane1_mem_op_ctrl <= 1'b0;
       ms_select_lane1_q <= 1'b0;
     end
@@ -505,6 +551,12 @@ module MEM_stage(
            (es_res_from_mem_0 || es_mem_we_0);
       ms_lane1_mem_op <= es_lane1_eff_valid &&
            (es_res_from_mem_1 || es_mem_we_1);
+      ms_selected_mem_we_q <= (es_to_ms_valid_0 &&
+           (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
+           (es_lane1_eff_valid &&
+           (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
+      ms_addr_is_sram_0_q <= es_addr_is_sram_0;
+      ms_addr_is_sram_1_q <= es_addr_is_sram_1;
       ms_lane1_mem_op_ctrl <= es_lane1_eff_valid &&
            (es_res_from_mem_1 || es_mem_we_1);
       ms_select_lane1_q <= !(es_to_ms_valid_0 &&
@@ -517,6 +569,7 @@ module MEM_stage(
       ms_valid_1 <= ms_lane1_eff_valid;
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= ms_lane1_mem_op;
+      ms_selected_mem_we_q <= ms_mem_we_1;
       ms_lane1_mem_op_ctrl <= ms_lane1_mem_op_ctrl;
       ms_select_lane1_q <= 1'b1;
     end
