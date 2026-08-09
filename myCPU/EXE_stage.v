@@ -71,7 +71,7 @@ module EXE_stage(
   (* max_fanout = 8 *) reg [11:0] es_alu_op_1;
   (* max_fanout = 4 *) reg [31:0] es_alu_src1_1;
   (* max_fanout = 4 *) reg [31:0] es_alu_src2_1;
-  (* max_fanout = 8 *) reg [31:0] es_rkd_value_1;
+  (* max_fanout = 4 *) reg [31:0] es_rkd_value_1;
   reg         es_res_from_mem_1;
   reg         es_gr_we_1;
   reg         es_mem_we_1;

@@ -11,7 +11,6 @@ module ISSUE_stage(
     input  wire                           front_valid_1,
     input  wire [`IBUF_ENTRY_BUS_WD-1:0]  front_bus_1,
     input  wire [4:0]                     front_raddr1_1_hot,
-    input  wire [4:0]                     front_raddr1_1_consume,
     input  wire [4:0]                     front_raddr2_1_hot,
     output wire                           pop_0,
     output wire                           pop_1,
@@ -161,7 +160,6 @@ module ISSUE_stage(
   wire [4:0] src_raddr1_0 = front_raddr1_0_hot;
   wire [4:0] src_raddr2_0 = front_raddr2_0_hot;
   wire [4:0] src_raddr1_1 = front_raddr1_1_hot;
-  wire [4:0] src_raddr1_1_consume = front_raddr1_1_consume;
   wire [4:0] src_raddr2_1 = front_raddr2_1_hot;
 
   // 拆解前递总线
@@ -288,10 +286,6 @@ module ISSUE_stage(
   reg        ex_wait_valid_0;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
   reg [4:0]  ex_wait_dest_0;
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
-  reg        ex_wait_valid_0_consume;
-  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
-  reg [4:0]  ex_wait_dest_0_consume;
 
   wire        ws_rf_we_0;
   wire [ 4:0] ws_rf_waddr_0;
@@ -497,8 +491,7 @@ module ISSUE_stage(
 
   wire src0_rj_valid_for_consume  = src0_rj_valid;
   wire src0_rkd_valid_for_consume = src0_rkd_valid;
-  wire src1_rj_valid_for_consume  = need_rj_1 &&
-       (src_raddr1_1_consume != 5'b0);
+  wire src1_rj_valid_for_consume  = src1_rj_valid;
   wire src1_rkd_valid_for_consume = src1_rkd_valid;
 
   // MEM 中未就绪的 load/低频结果只阻塞真正命中目的寄存器的源。
@@ -512,7 +505,7 @@ module ISSUE_stage(
        (es_dest_1_consume == src_raddr2_0);
   wire rj1_hit_es1_for_consume = src1_rj_valid_for_consume &&
        es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
-       (es_dest_1_consume == src_raddr1_1_consume);
+       (es_dest_1_consume == src_raddr1_1);
   wire rkd1_hit_es1_for_consume = src1_rkd_valid_for_consume &&
        es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
        (es_dest_1_consume == src_raddr2_1);
@@ -541,10 +534,10 @@ module ISSUE_stage(
        (ms_wait_dest_1 == src_raddr2_0);
   wire rj1_wait_ms0_for_consume = src1_rj_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
-       (ms_wait_dest_0 == src_raddr1_1_consume);
+       (ms_wait_dest_0 == src_raddr1_1);
   wire rj1_wait_ms1_for_consume = src1_rj_valid_for_consume &&
        ms_wait_valid_1 && !ms_fwd_valid_1 &&
-       (ms_wait_dest_1 == src_raddr1_1_consume);
+       (ms_wait_dest_1 == src_raddr1_1);
   wire rkd1_wait_ms0_for_consume = src1_rkd_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
        (ms_wait_dest_0 == src_raddr2_1);
@@ -562,27 +555,23 @@ module ISSUE_stage(
        rkd1_wait_ms1_for_consume || rkd1_wait_ms0_for_consume;
 
   wire rj0_wait_ex_for_consume = src0_rj_valid_for_consume &&
-       ex_wait_valid_0_consume &&
-       (ex_wait_dest_0_consume == src_raddr1_0);
+       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_0);
   wire rj0_wait_for_consume =
        rj0_wait_es1_for_consume || rj0_wait_ex_for_consume ||
        rj0_wait_ms0_for_consume || rj0_wait_ms1_for_consume;
   wire rkd0_wait_ex_for_consume = src0_rkd_valid_for_consume &&
-       ex_wait_valid_0_consume &&
-       (ex_wait_dest_0_consume == src_raddr2_0);
+       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_0);
   wire rkd0_wait_for_consume =
        rkd0_wait_es1_for_consume || rkd0_wait_ex_for_consume ||
        rkd0_wait_ms0_for_consume || rkd0_wait_ms1_for_consume;
 
   wire rj1_wait_ex_for_consume = src1_rj_valid_for_consume &&
-       ex_wait_valid_0_consume &&
-       (ex_wait_dest_0_consume == src_raddr1_1_consume);
+       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr1_1);
   wire rj1_wait_for_consume =
        rj1_wait_es1_for_consume || rj1_wait_ex_for_consume ||
        rj1_wait_ms_for_consume;
   wire rkd1_wait_ex_for_consume = src1_rkd_valid_for_consume &&
-       ex_wait_valid_0_consume &&
-       (ex_wait_dest_0_consume == src_raddr2_1);
+       ex_wait_valid_0 && (ex_wait_dest_0 == src_raddr2_1);
   wire rkd1_wait_for_consume =
        rkd1_wait_es1_for_consume || rkd1_wait_ex_for_consume ||
        rkd1_wait_ms_for_consume;
@@ -627,7 +616,7 @@ module ISSUE_stage(
        rj1_wait_ms_for_consume || rkd1_wait_ms_for_consume;
   wire raw_0_to_1_for_consume = gr_we_0 && (dest_0 != 5'b0) &&
        ((src1_rj_valid_for_consume &&
-         (dest_0 == src_raddr1_1_consume)) ||
+         (dest_0 == src_raddr1_1)) ||
         (src1_rkd_valid_for_consume &&
          (dest_0 == src_raddr2_1)));
 
@@ -687,15 +676,11 @@ module ISSUE_stage(
     begin
       ex_wait_valid_0 <= 1'b0;
       ex_wait_dest_0  <= 5'b0;
-      ex_wait_valid_0_consume <= 1'b0;
-      ex_wait_dest_0_consume  <= 5'b0;
     end
     else if (es_allowin)
     begin
       ex_wait_valid_0 <= capture_ex_wait_0;
       ex_wait_dest_0  <= capture_ex_wait_0 ? dest_0 : 5'b0;
-      ex_wait_valid_0_consume <= capture_ex_wait_0;
-      ex_wait_dest_0_consume  <= capture_ex_wait_0 ? dest_0 : 5'b0;
     end
   end
 
@@ -710,7 +695,6 @@ module ISSUE_stage(
                 $fatal(1, "lane0 IBuffer hot fields lost synchronization");
               if (front_valid_1 &&
                   ((front_raddr1_1_hot !== rf_raddr1_1) ||
-                   (front_raddr1_1_consume !== rf_raddr1_1) ||
                    (front_raddr2_1_hot !== rf_raddr2_1)))
                 $fatal(1, "lane1 IBuffer hot fields lost synchronization");
               if ((pop_0 !== ds_to_es_valid_0) ||
@@ -718,9 +702,6 @@ module ISSUE_stage(
                 $fatal(1, "IBuffer consume and EX issue controls diverged");
               if (es_dest_1_consume !== es_dest_1)
                 $fatal(1, "lane1 consume destination mirror diverged");
-              if ((ex_wait_valid_0_consume !== ex_wait_valid_0) ||
-                  (ex_wait_dest_0_consume !== ex_wait_dest_0))
-                $fatal(1, "EX wait consume mirror diverged");
               if (es_allowin && !br_taken &&
                   ((ex_wait_valid_0 !==
                     (es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
