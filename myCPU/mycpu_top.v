@@ -61,6 +61,7 @@ module mycpu_top(
   wire [4:0]  ibuf_front_raddr1_0_hot;
   wire [4:0]  ibuf_front_raddr2_0_hot;
   wire [4:0]  ibuf_front_raddr1_1_hot;
+  wire [4:0]  ibuf_front_raddr1_1_consume;
   wire [4:0]  ibuf_front_raddr2_1_hot;
   wire        issue_pop_0;
   wire        issue_pop_1;
@@ -319,6 +320,7 @@ module mycpu_top(
                 .front_valid_1 (ibuf_front_valid_1),
                 .front_bus_1   (ibuf_front_bus_1),
                 .front_raddr1_1_hot(ibuf_front_raddr1_1_hot),
+                .front_raddr1_1_consume(ibuf_front_raddr1_1_consume),
                 .front_raddr2_1_hot(ibuf_front_raddr2_1_hot)
               );
 
@@ -332,6 +334,7 @@ module mycpu_top(
                 .front_valid_1    (ibuf_front_valid_1),
                 .front_bus_1      (ibuf_front_bus_1),
                 .front_raddr1_1_hot(ibuf_front_raddr1_1_hot),
+                .front_raddr1_1_consume(ibuf_front_raddr1_1_consume),
                 .front_raddr2_1_hot(ibuf_front_raddr2_1_hot),
                 .pop_0            (issue_pop_0),
                 .pop_1            (issue_pop_1),

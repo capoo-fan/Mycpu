@@ -21,6 +21,7 @@ module inst_buffer(
     output wire                          front_valid_1,
     output wire [`IBUF_ENTRY_BUS_WD-1:0] front_bus_1,
     output wire [4:0]                    front_raddr1_1_hot,
+    output wire [4:0]                    front_raddr1_1_consume,
     output wire [4:0]                    front_raddr2_1_hot
   );
   localparam pointer_width = 2;
@@ -64,6 +65,10 @@ module inst_buffer(
   reg front_raddr2_0_hot_bit1_r;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr1_1_hot_r;
+  // lane1 rj 的 consume 判断只驱动 pop 回环，保留同拍独立副本以隔离
+  // RegFile/EX 前递扇出；两份寄存器使用完全相同的更新使能和数据。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg [4:0] front_raddr1_1_consume_r;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr2_1_hot_r;
 
@@ -85,6 +90,7 @@ module inst_buffer(
                                front_raddr2_0_hot_bit1_r,
                                front_raddr2_0_hot_r[0]};
   assign front_raddr1_1_hot = front_raddr1_1_hot_r;
+  assign front_raddr1_1_consume = front_raddr1_1_consume_r;
   assign front_raddr2_1_hot = front_raddr2_1_hot_r;
 
   localparam integer HOT_RADDR1_LSB = `FS_TO_DS_BUS_WD + 56;
@@ -413,8 +419,12 @@ module inst_buffer(
         front_raddr2_0_hot_r[0] <= next_front_bus_0[HOT_RADDR2_LSB];
       end
       if (front1_hot_raddr1_we)
+      begin
         front_raddr1_1_hot_r <=
              next_front_bus_1_g3[HOT_RADDR1_LSB-135 +: 5];
+        front_raddr1_1_consume_r <=
+             next_front_bus_1_g3[HOT_RADDR1_LSB-135 +: 5];
+      end
       if (front1_hot_raddr2_we)
         front_raddr2_1_hot_r[4:1] <=
              next_front_bus_1_g3[HOT_RADDR2_LSB-134 +: 4];

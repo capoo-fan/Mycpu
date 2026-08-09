@@ -561,7 +561,7 @@ module MEM_stage(
            (es_res_from_mem_1 || es_mem_we_1);
       ms_select_lane1_q <= !(es_to_ms_valid_0 &&
            (es_res_from_mem_0 || es_mem_we_0)) &&
-           es_lane1_eff_valid && (es_res_from_mem_1 || es_mem_we_1);
+           es_to_ms_valid_1 && (es_res_from_mem_1 || es_mem_we_1);
     end
     else if (advance_to_lane1)
     begin

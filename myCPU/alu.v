@@ -49,7 +49,8 @@ module alu #(
   wire [31:0] xor_result;
   wire [31:0] lui_result;
   wire [31:0] sll_result;
-  wire [63:0] sr64_result;
+  wire [31:0] srl_result;
+  wire [31:0] sra_result;
   wire [31:0] sr_result;
 
   wire [31:0] mul_low_result;
@@ -78,14 +79,10 @@ module alu #(
 
   // SLL result
   assign sll_result = alu_src1 << alu_src2[4:0];   //rj << i5
+  assign srl_result = alu_src1 >> alu_src2[4:0];
+  assign sra_result = $signed(alu_src1) >>> alu_src2[4:0];
+  assign sr_result  = op_sra ? sra_result : srl_result;
 
-  // SRL, SRA result
-  assign sr64_result = {{32{op_sra & alu_src1[31]}}, alu_src1[31:0]} >> alu_src2[4:0]; //rj >> i5
-
-  assign sr_result   = sr64_result[31:0];
-
-  // 两个 lane 使用同构的三拍 Xilinx 乘法 IP。MUL.W 只保留乘积低
-  // 32 位，因此 IP 配置为 32x32 无符号乘法；是否实例化由 EX 参数决定。
   generate
     if (HAS_MUL)
     begin: gen_multiplier
@@ -104,10 +101,6 @@ module alu #(
 
 
   assign mul_result = mul_low_result;
-
-  // ADD/SUB 是 EX->ISSUE->EX 零气泡前递的主导关键路径。保留一条
-  // 不经过十路 ALU 结果归并树的等价旁路，供 EX 前递使用；完整的
-  // alu_result 仍送往 MEM/WB，因而不改变流水级或提交语义。
   assign alu_fast_result = add_sub_result;
 
   // final result mux
