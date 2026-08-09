@@ -212,11 +212,13 @@ module EXE_stage(
        (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
        alu_result_1;
   wire [31:0] es_fwd_result_0 = es_is_mul_0 ? es_mul_result_0 :
-       ((es_alu_op_0[0] || es_alu_op_0[1]) ?
+       ((es_alu_op_0[0] || es_alu_op_0[1] ||
+         es_alu_op_0[9] || es_alu_op_0[10]) ?
         alu_fast_result_0 : alu_result_0);
   wire [31:0] es_fwd_result_1 = es_is_mul_1 ?
        (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
-       ((es_alu_op_1[0] || es_alu_op_1[1]) ?
+       ((es_alu_op_1[0] || es_alu_op_1[1] ||
+         es_alu_op_1[9] || es_alu_op_1[10]) ?
         alu_fast_result_1 : alu_result_1);
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;

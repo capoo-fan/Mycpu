@@ -49,8 +49,7 @@ module alu #(
   wire [31:0] xor_result;
   wire [31:0] lui_result;
   wire [31:0] sll_result;
-  wire [31:0] srl_result;
-  wire [31:0] sra_result;
+  wire [63:0] sr64_result;
   wire [31:0] sr_result;
 
   wire [31:0] mul_low_result;
@@ -79,9 +78,10 @@ module alu #(
 
   // SLL result
   assign sll_result = alu_src1 << alu_src2[4:0];   //rj << i5
-  assign srl_result = alu_src1 >> alu_src2[4:0];
-  assign sra_result = $signed(alu_src1) >>> alu_src2[4:0];
-  assign sr_result  = op_sra ? sra_result : srl_result;
+
+  assign sr64_result = {{32{op_sra & alu_src1[31]}}, alu_src1} >>
+       alu_src2[4:0];
+  assign sr_result = sr64_result[31:0];
 
   generate
     if (HAS_MUL)
@@ -101,7 +101,9 @@ module alu #(
 
 
   assign mul_result = mul_low_result;
-  assign alu_fast_result = add_sub_result;
+  // ADD/SUB 与右移结果直接供 EX 零气泡前递，避免 SRL/SRA 再穿过
+  // 十类 ALU 总结果归并树；复用既有 fast 总线，不增加宽数据通路。
+  assign alu_fast_result = (op_srl | op_sra) ? sr_result : add_sub_result;
 
   // final result mux
   assign alu_result = ({32{op_add|op_sub}} & add_sub_result)

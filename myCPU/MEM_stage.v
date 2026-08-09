@@ -312,11 +312,15 @@ module MEM_stage(
        (!ms_has_mem_op || selected_mem_ready);
   wire advance_to_lane1 = packet_valid && dual_mem_phase_0 &&
        phase_ready_go && ws_allowin;
-  wire packet_ready_go = phase_ready_go && !dual_mem_phase_0;
 
-  // WB 在本设计中恒可接收。空包和普通 ALU/分支包的 wait_kind 均为
-  // WAIT_NONE，因此无需再把 packet_valid 接回全局 ready 链。
-  assign ms_allowin = packet_ready_go && ws_allowin;
+  // SRAM load 的快返回是当前 ready 回环的关键路径。把它从通用的
+  // CACOP/WAIT_DATA 选择锥中单独旁路，只在末端与慢路径汇合；该变换
+  // 与 phase_ready_go && !dual_mem_phase_0 完全等价，不增加流水停顿。
+  wire ms_fast_allowin = ms_fast_ready && !dual_mem_phase_0 && ws_allowin;
+  wire ms_slow_allowin = !dual_mem_phase_0 && ws_allowin &&
+       (ms_has_cacop ? cacop_ready_go :
+        (!ms_has_mem_op || mem_data_ready || posted_store_ready));
+  assign ms_allowin = ms_fast_allowin || ms_slow_allowin;
   wire ms_fire      = packet_valid && phase_ready_go && ws_allowin;
 
   assign icacop_req_valid = ms_has_cacop && !ms_data_pending &&
