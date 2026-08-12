@@ -59,18 +59,18 @@ module thinpad_sram_uart_bridge(
     localparam [1:0] S_IDLE   = 2'd0;
     localparam [1:0] S_ACCESS = 2'd1;
     localparam [1:0] S_DONE   = 2'd2;
-    localparam [1:0] SRAM_WAIT_LAST = 2'd0;
-
     // CPU 导出翻译后的物理地址。
-    //解码完整的窗口，以便 UART 和未映射的外设不能与 SRAM 别名。
-    wire inst_is_base = (inst_sram_addr & 32'hffc0_0000) == 32'h1c00_0000;
-    wire data_is_base = (data_sram_addr & 32'hffc0_0000) == 32'h1c00_0000;
-    wire data_is_ext  = (data_sram_addr & 32'hffc0_0000) == 32'h1c40_0000;
-    wire data_is_uart = (data_sram_addr & 32'hfff0_0000) == 32'h1f00_0000;
-    wire data_is_unmapped = ~(data_is_base | data_is_ext | data_is_uart);
+    // BaseRAM/ExtRAM 是连续的 8 MiB 窗口：先共享高 9 位比较，
+    // 再用 bit22 选 bank，避免两套 10 位比较器并行进入握手树。
+    // UART 仍解码完整 1 MiB 窗口，未映射外设不与 SRAM 别名。
+    wire inst_is_base = inst_sram_addr[31:22] == 10'h070;
+    wire data_is_sram = data_sram_addr[31:23] == 9'h038;
+    wire data_is_base = data_is_sram & ~data_sram_addr[22];
+    wire data_is_ext  = data_is_sram &  data_sram_addr[22];
+    wire data_is_uart = data_sram_addr[31:20] == 12'h1f0;
+    wire data_is_unmapped = ~(data_is_sram | data_is_uart);
 
     reg  [1:0]  base_state;
-    reg  [1:0]  base_cnt;
     reg         base_client_data;
     (* keep = "true", equivalent_register_removal = "no" *)
     reg         base_fast_data_ok_reg;
@@ -111,7 +111,6 @@ module thinpad_sram_uart_bridge(
     always @(posedge clk) begin
         if (!resetn) begin
             base_state       <= S_IDLE;
-            base_cnt         <= 2'b0;
             base_client_data <= 1'b0;
             base_fast_data_ok_reg <= 1'b0;
             base_fast_ready_reg <= 1'b0;
@@ -136,7 +135,6 @@ module thinpad_sram_uart_bridge(
             end
             case (base_state)
                 S_IDLE: begin
-                    base_cnt <= 2'b0;
                     if (base_grant) begin
                         base_state       <= S_ACCESS;
                         base_client_data <= base_grant_data;
@@ -147,14 +145,11 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_ACCESS: begin
-                    if (base_cnt == SRAM_WAIT_LAST) begin
-                        base_state <= S_DONE;
-                        base_cnt   <= 2'b0;
-                        base_fast_data_ok_reg <= base_client_data;
-                        base_fast_ready_reg <= base_client_data;
-                    end else begin
-                        base_cnt <= base_cnt + 2'b01;
-                    end
+                    // 异步 SRAM 读周期固定为一个完整 ACCESS 拍。
+                    // 原计数器的终值恒为 0，直接转移不改变时序。
+                    base_state <= S_DONE;
+                    base_fast_data_ok_reg <= base_client_data;
+                    base_fast_ready_reg <= base_client_data;
                 end
 
                 S_DONE: begin
@@ -199,7 +194,6 @@ module thinpad_sram_uart_bridge(
     assign inst_sram_rdata   = base_inst_data_ok ? base_ram_rdata : 32'b0;
 
     reg  [1:0]  ext_state;
-    reg  [1:0]  ext_cnt;
     (* keep = "true", equivalent_register_removal = "no" *)
     reg         ext_fast_data_ok_reg;
     (* keep = "true", equivalent_register_removal = "no" *)
@@ -235,7 +229,6 @@ module thinpad_sram_uart_bridge(
     always @(posedge clk) begin
         if (!resetn) begin
             ext_state     <= S_IDLE;
-            ext_cnt       <= 2'b0;
             ext_fast_data_ok_reg <= 1'b0;
             ext_fast_ready_reg <= 1'b0;
             ext_addr_reg  <= 20'b0;
@@ -259,7 +252,6 @@ module thinpad_sram_uart_bridge(
             end
             case (ext_state)
                 S_IDLE: begin
-                    ext_cnt <= 2'b0;
                     ext_addr_reg <= ext_grant_data ? data_sram_addr[21:2] :
                                     early_sram_load_addr[21:2];
                     if (ext_grant) begin
@@ -268,14 +260,9 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_ACCESS: begin
-                    if (ext_cnt == SRAM_WAIT_LAST) begin
-                        ext_state <= S_DONE;
-                        ext_cnt   <= 2'b0;
-                        ext_fast_data_ok_reg <= 1'b1;
-                        ext_fast_ready_reg <= 1'b1;
-                    end else begin
-                        ext_cnt <= ext_cnt + 2'b01;
-                    end
+                    ext_state <= S_DONE;
+                    ext_fast_data_ok_reg <= 1'b1;
+                    ext_fast_ready_reg <= 1'b1;
                 end
 
                 S_DONE: begin
@@ -315,10 +302,17 @@ module thinpad_sram_uart_bridge(
     wire [2:0] uart_offset = data_sram_addr[2:0];
     reg        uart_dlab;
 
-    wire [7:0] uart_write_byte = data_sram_wstrb[0] ? data_sram_wdata[ 7: 0] :
-                                  data_sram_wstrb[1] ? data_sram_wdata[15: 8] :
-                                  data_sram_wstrb[2] ? data_sram_wdata[23:16] :
-                                                        data_sram_wdata[31:24];
+    // MEM 已根据地址生成 byte enable；直接用地址低位选择写字节，
+    // 去掉 wstrb[0..2] 优先级链。对 byte/half/word store 均与原选择一致。
+    reg [7:0] uart_write_byte;
+    always @(*) begin
+        case (data_sram_addr[1:0])
+            2'd0: uart_write_byte = data_sram_wdata[ 7: 0];
+            2'd1: uart_write_byte = data_sram_wdata[15: 8];
+            2'd2: uart_write_byte = data_sram_wdata[23:16];
+            default: uart_write_byte = data_sram_wdata[31:24];
+        endcase
+    end
     wire       uart_req       = data_sram_req & data_is_uart;
     wire       uart_tx_write  = data_sram_wr & (uart_offset == 3'd0) & ~uart_dlab;
 
@@ -327,7 +321,6 @@ module thinpad_sram_uart_bridge(
     // 穿过 byte-lane/状态译码到 UART 响应和副作用寄存器。
     reg        uart_req_pending;
     reg        uart_req_wr;
-    reg        uart_req_tx_write;
     reg  [2:0] uart_req_offset;
     reg  [7:0] uart_req_write_byte;
 
@@ -363,7 +356,6 @@ module thinpad_sram_uart_bridge(
         if (!resetn) begin
             uart_req_pending  <= 1'b0;
             uart_req_wr       <= 1'b0;
-            uart_req_tx_write <= 1'b0;
             uart_req_offset   <= 3'b0;
             uart_req_write_byte <= 8'b0;
             uart_resp_valid   <= 1'b0;
@@ -378,17 +370,18 @@ module thinpad_sram_uart_bridge(
 
             if (uart_grant) begin
                 uart_req_wr         <= data_sram_wr;
-                uart_req_tx_write   <= uart_tx_write;
                 uart_req_offset     <= uart_offset;
                 uart_req_write_byte <= uart_write_byte;
             end
 
-            uart_tx_start_reg <= uart_exec & uart_req_tx_write;
+            uart_tx_start_reg <= uart_exec & uart_req_wr &
+                                 (uart_req_offset == 3'd0) & ~uart_dlab;
             uart_rx_clear_reg <= uart_exec & ~uart_req_wr &
                                  (uart_req_offset == 3'd0) &
                                  uart_rx_ready;
 
-            if (uart_exec & uart_req_tx_write)
+            if (uart_exec & uart_req_wr & (uart_req_offset == 3'd0) &
+                ~uart_dlab)
                 uart_tx_data_reg <= uart_req_write_byte;
 
             if (uart_exec & uart_req_wr && (uart_req_offset == 3'd3))
