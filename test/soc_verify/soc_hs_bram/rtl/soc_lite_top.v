@@ -176,6 +176,9 @@ mycpu_top cpu(
     .data_sram_wstrb  (cpu_data_wstrb  ),
     .data_sram_addr   (cpu_data_addr   ),
     .data_sram_wdata  (cpu_data_wdata  ),
+    .data_sram_store_bank(),
+    .early_sram_load_req(),
+    .early_sram_load_addr(),
     .data_sram_addr_ok(cpu_data_addr_ok),
     .data_sram_data_ok(cpu_data_data_ok),
     .data_sram_rdata  (cpu_data_rdata  ),
@@ -183,6 +186,7 @@ mycpu_top cpu(
     .data_sram_fast_data_ok(cpu_data_data_ok),
     .data_sram_fast_rdata(cpu_data_rdata),
     .data_sram_store_ready(cpu_data_addr_ok),
+    .data_sram_early_read_accept(cpu_data_addr_ok),
 
     //debug interface
     .debug_wb_pc      (debug_wb_pc      ),

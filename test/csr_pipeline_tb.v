@@ -33,12 +33,16 @@ module csr_pipeline_tb;
               .data_sram_req(data_req), .data_sram_wr(),
               .data_sram_size(), .data_sram_wstrb(),
               .data_sram_addr(data_addr), .data_sram_wdata(),
+              .data_sram_store_bank(),
+              .early_sram_load_req(),
+              .early_sram_load_addr(),
               .data_sram_addr_ok(1'b1), .data_sram_data_ok(1'b1),
               .data_sram_rdata(32'b0),
               .data_sram_fast_ready(1'b1),
               .data_sram_fast_data_ok(1'b1),
               .data_sram_fast_rdata(32'b0),
               .data_sram_store_ready(1'b1),
+              .data_sram_early_read_accept(1'b1),
               .debug_wb_pc(), .debug_wb_rf_we(),
               .debug_wb_rf_wnum(), .debug_wb_rf_wdata()
             );

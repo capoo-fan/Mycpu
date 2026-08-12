@@ -55,6 +55,10 @@ module supervisor_perf_tb;
   wire        data_fast_ready;
   wire [31:0] data_fast_rdata;
   wire        data_store_ready;
+  wire        data_store_bank;
+  wire        data_early_read_accept;
+  wire        early_sram_load_req;
+  wire [22:0] early_sram_load_addr;
 
   wire [19:0] base_addr;
   wire [31:0] base_wdata;
@@ -114,6 +118,9 @@ module supervisor_perf_tb;
   reg [63:0] issue_mul_count;
   reg [63:0] issue_branch_count;
   reg [63:0] issue_other_count;
+  reg [63:0] early_load_req_count;
+  reg [63:0] early_load_accept_count;
+  reg [63:0] early_load_lane1_req_count;
 
   // -- Frontend 停顿 --
   reg [63:0] fe_icache_miss_cycles;
@@ -255,12 +262,16 @@ module supervisor_perf_tb;
               .data_sram_req(data_req), .data_sram_wr(data_wr),
               .data_sram_size(data_size), .data_sram_wstrb(data_wstrb),
               .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+              .data_sram_store_bank(data_store_bank),
+              .early_sram_load_req(early_sram_load_req),
+              .early_sram_load_addr(early_sram_load_addr),
               .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
               .data_sram_rdata(data_rdata),
               .data_sram_fast_ready(data_fast_ready),
               .data_sram_fast_data_ok(data_fast_data_ok),
               .data_sram_fast_rdata(data_fast_rdata),
               .data_sram_store_ready(data_store_ready),
+              .data_sram_early_read_accept(data_early_read_accept),
               .debug_wb_pc(), .debug_wb_rf_we(),
               .debug_wb_rf_wnum(), .debug_wb_rf_wdata()
             );
@@ -275,12 +286,16 @@ module supervisor_perf_tb;
                              .data_sram_req(data_req), .data_sram_wr(data_wr),
                              .data_sram_size(data_size), .data_sram_wstrb(data_wstrb),
                              .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+                             .data_sram_store_bank(data_store_bank),
+                             .early_sram_load_req(early_sram_load_req),
+                             .early_sram_load_addr(early_sram_load_addr),
                              .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
                              .data_sram_rdata(data_rdata),
                              .data_sram_fast_ready(data_fast_ready),
                              .data_sram_fast_data_ok(data_fast_data_ok),
                              .data_sram_fast_rdata(data_fast_rdata),
                              .data_sram_store_ready(data_store_ready),
+                             .data_sram_early_read_accept(data_early_read_accept),
                              .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
                              .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
                              .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),
@@ -420,6 +435,15 @@ module supervisor_perf_tb;
                    !cpu.u_issue.mem_we_1 &&
                    !cpu.u_issue.is_mul_1 &&
                    !cpu.u_issue.is_bj_1};
+
+      if (cpu.u_mem.early_load_req)
+      begin
+        early_load_req_count <= early_load_req_count + 1;
+        if (cpu.u_mem.early_load_select_lane1)
+          early_load_lane1_req_count <= early_load_lane1_req_count + 1;
+      end
+      if (cpu.u_mem.early_load_accept)
+        early_load_accept_count <= early_load_accept_count + 1;
 
       if (cpu.load_wakeup_valid)
         load_wakeup_event_count <= load_wakeup_event_count + 1;
@@ -689,7 +713,11 @@ module supervisor_perf_tb;
       end
 
       // === 分支统计 ===
-      if (cpu.bpu_ex_valid)
+      // bpu_ex_valid follows the MEM-stage branch valid and can remain high
+      // while MEM is backpressured.  br_info_valid is the one-cycle
+      // EXE->MEM branch handshake pulse, so use both signals to count each
+      // dynamic branch exactly once instead of once per held MEM cycle.
+      if (cpu.bpu_ex_valid && br_info_valid)
       begin
         br_total_count <= br_total_count + 1;
 
@@ -1100,6 +1128,9 @@ module supervisor_perf_tb;
                load_wakeup_event_count);
       $display("  load_wakeup_issue           = %0d",
                load_wakeup_issue_count);
+      $display("  EX early-load request/accept= %0d / %0d (lane1 request=%0d)",
+               early_load_req_count, early_load_accept_count,
+               early_load_lane1_req_count);
       $display("  store_buffer_full           = N/A (no store buffer)");
       $display("");
 
@@ -1345,6 +1376,9 @@ module supervisor_perf_tb;
     issue_mul_count          = 0;
     issue_branch_count       = 0;
     issue_other_count        = 0;
+    early_load_req_count     = 0;
+    early_load_accept_count  = 0;
+    early_load_lane1_req_count = 0;
     fe_icache_miss_cycles    = 0;
     fe_icache_refill_cycles  = 0;
     fe_ibuf_empty_cycles     = 0;

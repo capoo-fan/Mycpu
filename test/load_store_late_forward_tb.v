@@ -30,6 +30,8 @@ module load_store_late_forward_tb;
   wire es_to_ms_valid_1;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
   wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1;
+  wire [31:0] es_load_addr_fast_0;
+  wire [31:0] es_load_addr_fast_1;
   wire [`ES_FWD_BUS_WD-1:0] es_fwd_bus_0;
   wire [`ES_FWD_BUS_1_WD-1:0] es_fwd_bus_1;
   wire ms_allowin;
@@ -117,6 +119,8 @@ module load_store_late_forward_tb;
     .es_to_ms_valid_0(es_to_ms_valid_0),
     .es_to_ms_valid_1(es_to_ms_valid_1),
     .es_to_ms_bus_0(es_to_ms_bus_0), .es_to_ms_bus_1(es_to_ms_bus_1),
+    .es_load_addr_fast_0(es_load_addr_fast_0),
+    .es_load_addr_fast_1(es_load_addr_fast_1),
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
     .csr_busy(), .cacop_busy(), .csr_raddr(), .csr_rdata(32'b0)
   );
@@ -127,6 +131,8 @@ module load_store_late_forward_tb;
     .es_to_ms_valid_1(es_to_ms_valid_1),
     .es_to_ms_bus_0(es_to_ms_bus_0),
     .es_to_ms_bus_1(es_to_ms_bus_1),
+    .es_load_addr_fast_0(es_load_addr_fast_0),
+    .es_load_addr_fast_1(es_load_addr_fast_1),
     .ws_allowin(ws_allowin), .ws_to_rf_bus(ws_to_rf_bus),
     .ms_allowin(ms_allowin),
     .ms_to_ws_valid_0(ms_to_ws_valid_0),
@@ -144,8 +150,12 @@ module load_store_late_forward_tb;
     .data_sram_req(data_req), .data_sram_wr(data_wr),
     .data_sram_size(), .data_sram_wstrb(),
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+    .data_sram_store_bank(),
+    .early_sram_load_req(),
+    .early_sram_load_addr(),
     .data_sram_addr_is_sram(1'b1),
     .data_sram_store_ready(1'b1),
+    .data_sram_early_read_accept(1'b0),
     .data_sram_addr_ok(data_addr_ok),
     .data_sram_data_ok(data_data_ok), .data_sram_rdata(data_rdata)
   );

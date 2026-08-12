@@ -20,6 +20,8 @@ module EXE_stage(
     output wire                         es_to_ms_valid_1,
     output wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     output wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
+    output wire [31:0]                  es_load_addr_fast_0,
+    output wire [31:0]                  es_load_addr_fast_1,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_0,
     output wire [`ES_FWD_BUS_1_WD-1:0]  es_fwd_bus_1,
     output wire                         csr_busy,
@@ -220,6 +222,9 @@ module EXE_stage(
         alu_fast_result_1 : alu_result_1);
   wire [31:0] es_final_result_0 = es_is_csr_0 ? csr_rdata :
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
+
+  assign es_load_addr_fast_0 = alu_fast_result_0;
+  assign es_load_addr_fast_1 = alu_fast_result_1;
 
   //去除掉低频指令的前递
   wire es_result_forwardable_0 =
