@@ -1,0 +1,1 @@
+/home/qianfu/thinpad_top/run_vivado/constraints/thinpad_top.xdc
