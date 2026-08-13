@@ -219,6 +219,8 @@ module ISSUE_stage(
   reg        es_res_from_mem_0;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0]  es_dest_0;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg [4:0]  es_dest_0_consume;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg        es_valid_1;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
@@ -240,6 +242,7 @@ module ISSUE_stage(
       es_fwd_valid_0    <= 1'b0;
       es_res_from_mem_0 <= 1'b0;
       es_dest_0         <= 5'b0;
+      es_dest_0_consume <= 5'b0;
       es_valid_1        <= 1'b0;
       es_gr_we_1        <= 1'b0;
       es_fwd_valid_1    <= 1'b0;
@@ -255,6 +258,7 @@ module ISSUE_stage(
                            !is_cpucfg_0 && !is_cacop_0 && !is_csr_0;
       es_res_from_mem_0 <= ds_to_es_valid_0 && res_from_mem_0;
       es_dest_0         <= dest_0;
+      es_dest_0_consume <= dest_0;
       es_valid_1        <= ds_to_es_valid_1;
       es_gr_we_1        <= ds_to_es_valid_1 && gr_we_1;
       es_fwd_valid_1    <= ds_to_es_valid_1 && gr_we_1 &&
@@ -509,6 +513,18 @@ module ISSUE_stage(
   wire rkd1_hit_es1_for_consume = src1_rkd_valid_for_consume &&
        es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
        (es_dest_1_consume == src_raddr2_1);
+  wire rj0_hit_es0_for_consume = src0_rj_valid_for_consume &&
+       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       (es_dest_0_consume == src_raddr1_0);
+  wire rkd0_hit_es0_for_consume = src0_rkd_valid_for_consume &&
+       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       (es_dest_0_consume == src_raddr2_0);
+  wire rj1_hit_es0_for_consume = src1_rj_valid_for_consume &&
+       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       (es_dest_0_consume == src_raddr1_1);
+  wire rkd1_hit_es0_for_consume = src1_rkd_valid_for_consume &&
+       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       (es_dest_0_consume == src_raddr2_1);
   wire rj0_wait_es1_for_consume = rj0_hit_es1_for_consume &&
        !es_fwd_valid_1;
   wire rkd0_wait_es1_for_consume = rkd0_hit_es1_for_consume &&
@@ -592,11 +608,13 @@ module ISSUE_stage(
   wire mul0_dep_es_for_consume = is_mul_0 &&
        ((es_fwd_valid_1 &&
          (rj0_hit_es1_for_consume || rkd0_hit_es1_for_consume)) ||
-        (es_fwd_valid_0 && (rj0_hit_es0 || rkd0_hit_es0)));
+        (es_fwd_valid_0 &&
+         (rj0_hit_es0_for_consume || rkd0_hit_es0_for_consume)));
   wire mul1_dep_es_for_consume = is_mul_1 &&
        ((es_fwd_valid_1 &&
          (rj1_hit_es1_for_consume || rkd1_hit_es1_for_consume)) ||
-        (es_fwd_valid_0 && (rj1_hit_es0 || rkd1_hit_es0)));
+        (es_fwd_valid_0 &&
+         (rj1_hit_es0_for_consume || rkd1_hit_es0_for_consume)));
   // 不保留人为的 stall 组合边界，让综合器把低扇出的 ready 条件直接
   // 吸收到两路 fire LUT 中，少走一级 stall -> fire 级联。
   wire stall_0_for_consume =
@@ -702,6 +720,8 @@ module ISSUE_stage(
                 $fatal(1, "IBuffer consume and EX issue controls diverged");
               if (es_dest_1_consume !== es_dest_1)
                 $fatal(1, "lane1 consume destination mirror diverged");
+              if (es_dest_0_consume !== es_dest_0)
+                $fatal(1, "lane0 consume destination mirror diverged");
               if (es_allowin && !br_taken &&
                   ((ex_wait_valid_0 !==
                     (es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&
