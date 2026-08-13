@@ -55,6 +55,7 @@ module supervisor_perf_tb;
   wire        data_fast_ready;
   wire [31:0] data_fast_rdata;
   wire        data_store_ready;
+  wire        data_store_is_ext;
 
   wire [19:0] base_addr;
   wire [31:0] base_wdata;
@@ -261,6 +262,7 @@ module supervisor_perf_tb;
               .data_sram_fast_data_ok(data_fast_data_ok),
               .data_sram_fast_rdata(data_fast_rdata),
               .data_sram_store_ready(data_store_ready),
+              .data_sram_store_is_ext(data_store_is_ext),
               .debug_wb_pc(), .debug_wb_rf_we(),
               .debug_wb_rf_wnum(), .debug_wb_rf_wdata()
             );
@@ -281,6 +283,7 @@ module supervisor_perf_tb;
                              .data_sram_fast_data_ok(data_fast_data_ok),
                              .data_sram_fast_rdata(data_fast_rdata),
                              .data_sram_store_ready(data_store_ready),
+                             .data_sram_store_is_ext(data_store_is_ext),
                              .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
                              .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
                              .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),

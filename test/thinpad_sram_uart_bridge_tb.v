@@ -72,6 +72,7 @@ module thinpad_sram_uart_bridge_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
+    .data_sram_store_is_ext(data_addr[22]),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
     .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),

@@ -44,6 +44,7 @@ module MEM_stage(
     output wire [31:0]                  data_sram_wdata,
     input  wire                         data_sram_addr_is_sram,
     input  wire                         data_sram_store_ready,
+    output wire                         data_sram_store_is_ext,
     input  wire                         data_sram_addr_ok,
     input  wire                         data_sram_data_ok,
     input  wire [31:0]                  data_sram_rdata,
@@ -63,6 +64,8 @@ module MEM_stage(
   reg  [ 1:0] ms_wait_kind;
 
   reg         ms_result_forwardable_0;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg         ms_fwd_nonload_0;
   reg  [31:0] ms_pc_0;
   reg  [31:0] ms_alu_result_0;
   reg  [31:0] ms_rkd_value_0;
@@ -95,16 +98,14 @@ module MEM_stage(
   reg         ms_lane0_mem_op;
   reg         ms_lane1_mem_op;
   reg         ms_selected_mem_we_q;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 4 *)
+  reg         ms_selected_store_is_ext_q;
   reg         ms_addr_is_sram_0_q;
   reg         ms_addr_is_sram_1_q;
   // lane1 访存状态的数据选择副本扇出很高；控制副本只服务双访存
   // 相位/allowin 回环，避免该回环穿过地址和数据 mux 的布线区域。
   (* keep = "true", equivalent_register_removal = "no" *)
   reg         ms_lane1_mem_op_ctrl;
-  // 直接寄存当前访存相位的 lane 选择，去掉 lane0/lane1 状态译码后再
-  // 驱动地址、写数据和桥接请求的一级高扇出 LUT。
-  // posted-store 同拍 ready 回环也由该选择位驱动；把复制阈值略收紧，
-  // 让地址/ready 控制副本留在 MEM 侧，减少跨到 ISSUE/IBuffer 的首段布线。
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 12 *)
   reg         ms_select_lane1_q;
   reg  [31:0] ms_pc_1;
@@ -299,6 +300,11 @@ module MEM_stage(
   wire ms_fast_data_ok = ms_response_waiting && data_sram_fast_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
 
+  // DMW 仅替换地址高 3 位，BaseRAM/ExtRAM 的选择位 bit22 在 EX 已经
+  // 确定。把当前相位的 bank 位同步寄存并送给桥接器，避免 posted
+  // store ready 回环穿过 lane 地址 mux。
+  assign data_sram_store_is_ext = ms_selected_store_is_ext_q;
+
   wire packet_valid = ms_valid_0 || ms_valid_1;
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
@@ -330,10 +336,6 @@ module MEM_stage(
   assign ms_to_ws_valid_1 = ms_lane1_eff_valid &&
        phase_ready_go && !dual_mem_phase_0;
 
-  // 分支预测与重定向。仅在整个双 lane 包真正 fire 时锁存误预测，
-  // 检测拍同时完成分支写回和 BPU 训练。全局 flush 延后一拍由本地
-  // 寄存器发出，切断 ms_ready_go/ms_allowin 到 ISSUE/InstBuffer 的
-  // 组合路径。
   wire branch_redirect_detect = ms_redirect_0_raw || ms_redirect_1_raw;
   wire branch_redirect_fire = ms_fire && branch_redirect_detect;
   wire [31:0] branch_redirect_target =
@@ -412,30 +414,17 @@ module MEM_stage(
   wire [31:0] ms_load_result_0 = selected_load_result_resp;
   wire [31:0] ms_load_result_1 = selected_load_result_resp;
 
-  // 受控 Load 返回拍唤醒：只对片上 SRAM 的普通 lane0 Load 产生一次
-  // 瞬时事件。ISSUE 复用普通 MEM 前递中的目的 tag 做精确 RAW
-  // 放行，数据单独直达 EX 输入寄存器，不进入宽前递网络。
-  assign load_wakeup_valid = !select_lane1 && ms_valid_0 && ms_fast_ready &&
-       ms_res_from_mem_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-       ms_addr_is_sram_q;
+  assign load_wakeup_valid = !select_lane1 && ms_fast_ready;
   assign load_wakeup_data = ms_load_result_0;
 
-  // 特殊结果只进入 WB；load 的 ISSUE 前递只能使用已经寄存的
-  // ms_rdata_buf。ms_final_rdata 虽可在完成拍读取 SRAM 返回值，
-  // 但 ms_fwd_valid_0 此时保持为 0，避免外部 SRAM 返回路径在
-  // 同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
   wire ms_fwd_valid_0 = ms_result_forwardable_0 &&
-       (!ms_res_from_mem_0 || mem_data_ready);
+       (ms_fwd_nonload_0 || mem_data_ready);
   wire [31:0] ms_load_result_0_fwd = load_result(
        ms_alu_result_0, ms_rdata_buf,
        ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
   wire [31:0] ms_fwd_data_0 = ms_res_from_mem_0 ? ms_load_result_0_fwd :
        (ms_result_forwardable_0 ? ms_alu_result_0 : 32'b0);
 
-  // 晚到 store data 只进入 MEM 本地寄存器，不参与 ISSUE 前递或
-  // ms_allowin 的控制判定。Load 完成快路径下，后继 store 可在
-  // data_ok 边沿直接锁存 load 结果；已寄存的 MEM 前递和 WB 前递
-  // 则是等待/排队情况下的回退。
   wire incoming_store_hit_response =
        es_store_data_late_0 && ms_valid_0 && ms_gr_we_0 &&
        ms_res_from_mem_0 && ms_fast_ready && (ms_dest_0 != 5'b0) &&
@@ -526,6 +515,7 @@ module MEM_stage(
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= 1'b0;
       ms_selected_mem_we_q <= 1'b0;
+      ms_selected_store_is_ext_q <= 1'b0;
       ms_addr_is_sram_0_q <= 1'b0;
       ms_addr_is_sram_1_q <= 1'b0;
       ms_lane1_mem_op_ctrl <= 1'b0;
@@ -538,6 +528,7 @@ module MEM_stage(
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= 1'b0;
       ms_selected_mem_we_q <= 1'b0;
+      ms_selected_store_is_ext_q <= 1'b0;
       ms_addr_is_sram_0_q <= 1'b0;
       ms_addr_is_sram_1_q <= 1'b0;
       ms_lane1_mem_op_ctrl <= 1'b0;
@@ -555,13 +546,17 @@ module MEM_stage(
            (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
            (es_lane1_eff_valid &&
            (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
+      ms_selected_store_is_ext_q <= (es_to_ms_valid_0 &&
+           (es_res_from_mem_0 || es_mem_we_0)) ? es_final_result_0[22] :
+           (es_lane1_eff_valid &&
+           (es_res_from_mem_1 || es_mem_we_1)) ? es_final_result_1[22] : 1'b0;
       ms_addr_is_sram_0_q <= es_addr_is_sram_0;
       ms_addr_is_sram_1_q <= es_addr_is_sram_1;
       ms_lane1_mem_op_ctrl <= es_lane1_eff_valid &&
            (es_res_from_mem_1 || es_mem_we_1);
       ms_select_lane1_q <= !(es_to_ms_valid_0 &&
            (es_res_from_mem_0 || es_mem_we_0)) &&
-           es_lane1_eff_valid && (es_res_from_mem_1 || es_mem_we_1);
+           es_to_ms_valid_1 && (es_res_from_mem_1 || es_mem_we_1);
     end
     else if (advance_to_lane1)
     begin
@@ -570,6 +565,7 @@ module MEM_stage(
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= ms_lane1_mem_op;
       ms_selected_mem_we_q <= ms_mem_we_1;
+      ms_selected_store_is_ext_q <= ms_alu_result_1[22];
       ms_lane1_mem_op_ctrl <= ms_lane1_mem_op_ctrl;
       ms_select_lane1_q <= 1'b1;
     end
@@ -668,6 +664,7 @@ module MEM_stage(
     if (reset)
     begin
       ms_result_forwardable_0 <= 1'b0;
+      ms_fwd_nonload_0  <= 1'b0;
       ms_pc_0           <= 32'b0;
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;
@@ -718,6 +715,7 @@ module MEM_stage(
     end
     else if (br_taken || branch_redirect_fire)
     begin
+      ms_fwd_nonload_0  <= 1'b0;
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;
       ms_store_data_ready_0 <= 1'b1;
@@ -737,6 +735,7 @@ module MEM_stage(
       if (es_to_ms_valid_0)
       begin
         ms_result_forwardable_0 <= es_result_forwardable_0;
+        ms_fwd_nonload_0  <= !es_res_from_mem_0;
         ms_pc_0           <= es_pc_0;
         ms_alu_result_0   <= es_final_result_0;
         ms_rkd_value_0    <= incoming_store_data;
@@ -768,6 +767,7 @@ module MEM_stage(
       else
       begin
         ms_result_forwardable_0 <= 1'b0;
+        ms_fwd_nonload_0  <= 1'b0;
         ms_gr_we_0        <= 1'b0;
         ms_mem_we_0       <= 1'b0;
         ms_store_data_ready_0 <= 1'b1;
@@ -813,6 +813,7 @@ module MEM_stage(
     else if (advance_to_lane1)
     begin
       ms_result_forwardable_0 <= 1'b0;
+      ms_fwd_nonload_0  <= 1'b0;
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;
       ms_res_from_mem_0 <= 1'b0;

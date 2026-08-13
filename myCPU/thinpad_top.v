@@ -55,7 +55,7 @@ module thinpad_top(
 );
 
 
-localparam integer CPU_CLK_FREQ = 153000000;
+localparam integer CPU_CLK_FREQ = 154000000;
 
 
 wire cpu_clk;
@@ -107,6 +107,7 @@ pll_example clock_gen
     wire        data_sram_fast_data_ok;
     wire [31:0] data_sram_fast_rdata;
     wire        data_sram_store_ready;
+    wire        data_sram_store_is_ext;
 
     mycpu_top u_cpu (
         .clk                (cpu_clk),
@@ -135,6 +136,7 @@ pll_example clock_gen
         .data_sram_fast_data_ok(data_sram_fast_data_ok),
         .data_sram_fast_rdata(data_sram_fast_rdata),
         .data_sram_store_ready(data_sram_store_ready),
+        .data_sram_store_is_ext(data_sram_store_is_ext),
 
         .debug_wb_pc        (),
         .debug_wb_rf_we     (),
@@ -184,6 +186,7 @@ pll_example clock_gen
         .data_sram_fast_data_ok(data_sram_fast_data_ok),
         .data_sram_fast_rdata(data_sram_fast_rdata),
         .data_sram_store_ready(data_sram_store_ready),
+        .data_sram_store_is_ext(data_sram_store_is_ext),
 
         .base_ram_addr      (base_ram_addr),
         .base_ram_wdata     (base_ram_wdata),

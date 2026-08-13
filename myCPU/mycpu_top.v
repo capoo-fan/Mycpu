@@ -27,6 +27,7 @@ module mycpu_top(
     input  wire        data_sram_fast_data_ok,
     input  wire [31:0] data_sram_fast_rdata,
     input  wire        data_sram_store_ready,
+    output wire        data_sram_store_is_ext,
     // SoC 兼容端口：内部 debug 状态和布线已删除。
     output wire [31:0] debug_wb_pc,
     output wire [ 3:0] debug_wb_rf_we,
@@ -431,6 +432,7 @@ module mycpu_top(
               .data_sram_wdata   (data_sram_wdata),
               .data_sram_addr_is_sram(data_sram_addr_is_sram),
               .data_sram_store_ready(data_sram_store_ready),
+              .data_sram_store_is_ext(data_sram_store_is_ext),
               .data_sram_addr_ok (data_sram_addr_ok),
               .data_sram_data_ok (data_sram_data_ok),
               .data_sram_rdata   (data_sram_rdata),
