@@ -22,6 +22,8 @@ module EXE_stage(
     output wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
     output wire [`ES_FWD_BUS_WD-1:0]    es_fwd_bus_0,
     output wire [`ES_FWD_BUS_1_WD-1:0]  es_fwd_bus_1,
+    output wire                         dmem_lookup_valid,
+    output wire [31:0]                  dmem_lookup_addr,
     output wire                         csr_busy,
     output wire                         cacop_busy,
     output wire [13:0]                  csr_raddr,
@@ -279,6 +281,13 @@ module EXE_stage(
                          es_res_from_mem_0, es_dest_0, es_fwd_result_0};
   assign es_fwd_bus_1 = {es_valid_1, es_gr_we_1, es_fwd_valid_1,
                          es_dest_1, es_fwd_result_1};
+
+  wire es_lane0_mem_query = es_to_ms_valid_0 &&
+       (es_res_from_mem_0 || es_mem_we_0);
+  assign dmem_lookup_valid = (es_to_ms_valid_0 && es_res_from_mem_0) ||
+       (!es_lane0_mem_query && es_to_ms_valid_1 && es_res_from_mem_1);
+  assign dmem_lookup_addr = (es_to_ms_valid_0 && es_res_from_mem_0) ?
+       es_final_result_0 : es_exec_result_1;
 
   assign es_to_ms_bus_0 = {es_store_data_late_0,
                            es_store_data_src_0,

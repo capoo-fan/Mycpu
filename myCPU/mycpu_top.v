@@ -167,6 +167,30 @@ module mycpu_top(
   wire [31:0] pc_out;
   wire [31:0] pc_paddr;
   wire [31:0] data_sram_vaddr;
+  wire [31:0] mem_data_paddr;
+  wire [31:0] mem_data_pc;
+  wire        exe_data_lookup_valid;
+  wire [31:0] exe_data_lookup_vaddr;
+  wire        mem_phase_lookup_valid;
+  wire [31:0] mem_phase_lookup_vaddr;
+  wire        mem_data_lookup_valid = mem_phase_lookup_valid ||
+       exe_data_lookup_valid;
+  wire [31:0] mem_data_lookup_vaddr = mem_phase_lookup_valid ?
+       mem_phase_lookup_vaddr : exe_data_lookup_vaddr;
+  wire [31:0] mem_data_lookup_paddr;
+  wire        mem_data_req;
+  wire        mem_data_wr;
+  wire [ 1:0] mem_data_size;
+  wire [ 3:0] mem_data_wstrb;
+  wire [31:0] mem_data_wdata;
+  wire        mem_data_addr_ok;
+  wire        mem_data_data_ok;
+  wire [31:0] mem_data_rdata;
+  wire        mem_data_fast_ready;
+  wire        mem_data_fast_data_ok;
+  wire [31:0] mem_data_fast_rdata;
+  wire        mem_data_store_ready;
+  wire        mem_data_store_is_ext;
   wire        pc_inst_req;
   wire        if_suspend;
   wire        pc_cross_line = (pc_out[3:2] == 2'b11);
@@ -182,18 +206,18 @@ module mycpu_top(
   assign bpu_pred_target_0 = bpu_pred_target;
   assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
   assign bpu_pred_target_1 = bpu_pred_target;
-  wire data_txn_accept = data_sram_req && data_sram_addr_ok;
+  wire data_txn_accept = mem_data_req && mem_data_addr_ok;
   // BaseRAM 与 ExtRAM 合起来正好是 0x1c00_0000..0x1c7f_ffff。
   // 合并比较可减少 DMW 翻译后地址分类的逻辑级数。
   wire data_sram_addr_is_sram =
-       (data_sram_addr & 32'hff80_0000) == 32'h1c00_0000;
+       (mem_data_paddr & 32'hff80_0000) == 32'h1c00_0000;
   data_txn_tracker u_data_txn_tracker(
                      .clk            (clk),
                      .resetn         (resetn),
                      .txn_accept     (data_txn_accept),
-                     .txn_store      (data_sram_wr),
-                     .txn_paddr      (data_sram_addr),
-                     .txn_data_ok    (data_sram_data_ok),
+                     .txn_store      (mem_data_wr),
+                     .txn_paddr      (mem_data_paddr),
+                     .txn_data_ok    (mem_data_data_ok),
                      .store_inv_valid(store_inv_valid),
                      .store_inv_addr (store_inv_addr)
                    );
@@ -237,8 +261,55 @@ module mycpu_top(
                    .ctx_update(csr_ctx_update),
                    .ctx_in(csr_trans_ctx),
                    .vaddr (data_sram_vaddr),
-                   .paddr (data_sram_addr)
+                 .paddr (mem_data_paddr)
+               );
+
+  addr_translate u_data_lookup_addr_translate(
+                   .clk   (clk),
+                   .resetn(resetn),
+                   .ctx_update(csr_ctx_update),
+                   .ctx_in(csr_trans_ctx),
+                   .vaddr (mem_data_lookup_vaddr),
+                   .paddr (mem_data_lookup_paddr)
                  );
+
+  dmem_prefetch u_dmem_prefetch(
+                  .clk              (clk),
+                  .resetn           (resetn),
+                  .invalidate_all   (csr_ctx_update || cacop_flush),
+                  .lookup_cancel    (pipeline_flush),
+                  .cpu_req          (mem_data_req),
+                  .cpu_wr           (mem_data_wr),
+                  .cpu_size         (mem_data_size),
+                  .cpu_wstrb        (mem_data_wstrb),
+                  .cpu_addr         (mem_data_paddr),
+                  .cpu_wdata        (mem_data_wdata),
+                  .cpu_pc           (mem_data_pc),
+                  .cpu_store_is_ext (mem_data_store_is_ext),
+                  .cpu_lookup_valid (mem_data_lookup_valid),
+                  .cpu_lookup_addr  (mem_data_lookup_paddr),
+                  .cpu_addr_ok      (mem_data_addr_ok),
+                  .cpu_data_ok      (mem_data_data_ok),
+                  .cpu_rdata        (mem_data_rdata),
+                  .cpu_fast_ready   (mem_data_fast_ready),
+                  .cpu_fast_data_ok (mem_data_fast_data_ok),
+                  .cpu_fast_rdata   (mem_data_fast_rdata),
+                  .cpu_store_ready  (mem_data_store_ready),
+                  .mem_req          (data_sram_req),
+                  .mem_wr           (data_sram_wr),
+                  .mem_size         (data_sram_size),
+                  .mem_wstrb        (data_sram_wstrb),
+                  .mem_addr         (data_sram_addr),
+                  .mem_wdata        (data_sram_wdata),
+                  .mem_store_is_ext (data_sram_store_is_ext),
+                  .mem_addr_ok      (data_sram_addr_ok),
+                  .mem_data_ok      (data_sram_data_ok),
+                  .mem_rdata        (data_sram_rdata),
+                  .mem_fast_ready   (data_sram_fast_ready),
+                  .mem_fast_data_ok (data_sram_fast_data_ok),
+                  .mem_fast_rdata   (data_sram_fast_rdata),
+                  .mem_store_ready  (data_sram_store_ready)
+                );
 
   PC u_pc(
        .clk      (clk),
@@ -382,6 +453,8 @@ module mycpu_top(
               .es_to_ms_bus_1   (es_to_ms_bus_1),
               .es_fwd_bus_0     (es_fwd_bus_0),
               .es_fwd_bus_1     (es_fwd_bus_1),
+              .dmem_lookup_valid(exe_data_lookup_valid),
+              .dmem_lookup_addr (exe_data_lookup_vaddr),
               .csr_busy         (es_csr_busy),
               .cacop_busy       (es_cacop_busy),
               .csr_raddr        (csr_raddr),
@@ -424,21 +497,24 @@ module mycpu_top(
               .icacop_done       (icacop_done),
               .cacop_flush       (cacop_flush),
               .cacop_flush_target(cacop_flush_target),
-              .data_sram_req     (data_sram_req),
-              .data_sram_wr      (data_sram_wr),
-              .data_sram_size    (data_sram_size),
-              .data_sram_wstrb   (data_sram_wstrb),
+              .data_sram_req     (mem_data_req),
+              .data_sram_wr      (mem_data_wr),
+              .data_sram_size    (mem_data_size),
+              .data_sram_wstrb   (mem_data_wstrb),
               .data_sram_addr    (data_sram_vaddr),
-              .data_sram_wdata   (data_sram_wdata),
+              .data_sram_wdata   (mem_data_wdata),
+              .data_sram_pc      (mem_data_pc),
+              .data_sram_lookup_valid(mem_phase_lookup_valid),
+              .data_sram_lookup_addr(mem_phase_lookup_vaddr),
               .data_sram_addr_is_sram(data_sram_addr_is_sram),
-              .data_sram_store_ready(data_sram_store_ready),
-              .data_sram_store_is_ext(data_sram_store_is_ext),
-              .data_sram_addr_ok (data_sram_addr_ok),
-              .data_sram_data_ok (data_sram_data_ok),
-              .data_sram_rdata   (data_sram_rdata),
-              .data_sram_fast_ready(data_sram_fast_ready),
-              .data_sram_fast_data_ok(data_sram_fast_data_ok),
-              .data_sram_fast_rdata(data_sram_fast_rdata)
+              .data_sram_store_ready(mem_data_store_ready),
+              .data_sram_store_is_ext(mem_data_store_is_ext),
+              .data_sram_addr_ok (mem_data_addr_ok),
+              .data_sram_data_ok (mem_data_data_ok),
+              .data_sram_rdata   (mem_data_rdata),
+              .data_sram_fast_ready(mem_data_fast_ready),
+              .data_sram_fast_data_ok(mem_data_fast_data_ok),
+              .data_sram_fast_rdata(mem_data_fast_rdata)
             );
 
   // WB stage

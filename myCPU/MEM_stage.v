@@ -42,6 +42,9 @@ module MEM_stage(
     output wire [ 3:0]                  data_sram_wstrb,
     output wire [31:0]                  data_sram_addr,
     output wire [31:0]                  data_sram_wdata,
+    output wire [31:0]                  data_sram_pc,
+    output wire                         data_sram_lookup_valid,
+    output wire [31:0]                  data_sram_lookup_addr,
     input  wire                         data_sram_addr_is_sram,
     input  wire                         data_sram_store_ready,
     output wire                         data_sram_store_is_ext,
@@ -320,6 +323,9 @@ module MEM_stage(
        phase_ready_go && ws_allowin;
   wire packet_ready_go = phase_ready_go && !dual_mem_phase_0;
 
+  assign data_sram_lookup_valid = advance_to_lane1 && ms_res_from_mem_1;
+  assign data_sram_lookup_addr = ms_alu_result_1;
+
   // WB 在本设计中恒可接收。空包和普通 ALU/分支包的 wait_kind 均为
   // WAIT_NONE，因此无需再把 packet_valid 接回全局 ready 链。
   assign ms_allowin = packet_ready_go && ws_allowin;
@@ -379,6 +385,7 @@ module MEM_stage(
   assign data_sram_wstrb = selected_mem_we ? ms_st_strb : 4'b0;
   assign data_sram_addr  = selected_addr;
   assign data_sram_wdata = ms_st_data;
+  assign data_sram_pc    = select_lane1 ? ms_pc_1 : ms_pc_0;
 
   // data_ok 返回拍直接送 WB；若 WB 暂时不能接收，则下一拍回退到
   // 已寄存的 ms_rdata_buf。当前 WB 恒可接收，但保留后一条路径可

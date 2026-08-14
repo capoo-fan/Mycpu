@@ -1104,6 +1104,13 @@ module supervisor_perf_tb;
       $display("  load_wakeup_issue           = %0d",
                load_wakeup_issue_count);
       $display("  store_buffer_full           = N/A (no store buffer)");
+      $display("  prefetch candidate/issued   = %0d / %0d",
+               cpu.u_dmem_prefetch.pf_candidate_count,
+               cpu.u_dmem_prefetch.pf_issue_count);
+      $display("  prefetch hit/late/drop      = %0d / %0d / %0d",
+               cpu.u_dmem_prefetch.pf_hit_count,
+               cpu.u_dmem_prefetch.pf_late_count,
+               cpu.u_dmem_prefetch.pf_drop_count);
       $display("");
 
       // -- Branch --
