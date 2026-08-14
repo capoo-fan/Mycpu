@@ -127,6 +127,7 @@ module load_store_late_forward_tb;
     .es_to_ms_valid_1(es_to_ms_valid_1),
     .es_to_ms_bus_0(es_to_ms_bus_0),
     .es_to_ms_bus_1(es_to_ms_bus_1),
+    .es_load_addr_fast_0(32'b0), .es_load_addr_fast_1(32'b0),
     .ws_allowin(ws_allowin), .ws_to_rf_bus(ws_to_rf_bus),
     .ms_allowin(ms_allowin),
     .ms_to_ws_valid_0(ms_to_ws_valid_0),
@@ -144,8 +145,10 @@ module load_store_late_forward_tb;
     .data_sram_req(data_req), .data_sram_wr(data_wr),
     .data_sram_size(), .data_sram_wstrb(),
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+    .early_sram_load_req(), .early_sram_load_addr(),
     .data_sram_addr_is_sram(1'b1),
     .data_sram_store_ready(1'b1),
+    .data_sram_early_read_accept(1'b0),
     .data_sram_addr_ok(data_addr_ok),
     .data_sram_data_ok(data_data_ok), .data_sram_rdata(data_rdata)
   );

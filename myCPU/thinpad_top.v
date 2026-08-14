@@ -55,7 +55,7 @@ module thinpad_top(
 );
 
 
-localparam integer CPU_CLK_FREQ = 154000000;
+localparam integer CPU_CLK_FREQ = 136000000;
 
 
 wire cpu_clk;
@@ -108,6 +108,9 @@ pll_example clock_gen
     wire [31:0] data_sram_fast_rdata;
     wire        data_sram_store_ready;
     wire        data_sram_store_is_ext;
+    wire        early_sram_load_req;
+    wire [22:0] early_sram_load_addr;
+    wire        data_sram_early_read_accept;
 
     mycpu_top u_cpu (
         .clk                (cpu_clk),
@@ -137,6 +140,9 @@ pll_example clock_gen
         .data_sram_fast_rdata(data_sram_fast_rdata),
         .data_sram_store_ready(data_sram_store_ready),
         .data_sram_store_is_ext(data_sram_store_is_ext),
+        .early_sram_load_req(early_sram_load_req),
+        .early_sram_load_addr(early_sram_load_addr),
+        .data_sram_early_read_accept(data_sram_early_read_accept),
 
         .debug_wb_pc        (),
         .debug_wb_rf_we     (),
@@ -179,6 +185,8 @@ pll_example clock_gen
         .data_sram_wstrb    (data_sram_wstrb),
         .data_sram_addr     (data_sram_addr),
         .data_sram_wdata    (data_sram_wdata),
+        .early_sram_load_req(early_sram_load_req),
+        .early_sram_load_addr(early_sram_load_addr),
         .data_sram_addr_ok  (data_sram_addr_ok),
         .data_sram_data_ok  (data_sram_data_ok),
         .data_sram_rdata    (data_sram_rdata),
@@ -186,6 +194,7 @@ pll_example clock_gen
         .data_sram_fast_data_ok(data_sram_fast_data_ok),
         .data_sram_fast_rdata(data_sram_fast_rdata),
         .data_sram_store_ready(data_sram_store_ready),
+        .data_sram_early_read_accept(data_sram_early_read_accept),
         .data_sram_store_is_ext(data_sram_store_is_ext),
 
         .base_ram_addr      (base_ram_addr),

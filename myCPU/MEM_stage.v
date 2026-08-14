@@ -7,6 +7,8 @@ module MEM_stage(
     input  wire                         es_to_ms_valid_1,
     input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     input  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
+    input  wire [31:0]                  es_load_addr_fast_0,
+    input  wire [31:0]                  es_load_addr_fast_1,
     input  wire [`TRANS_CTX_WD-1:0]      trans_ctx,
     input  wire                         ws_allowin,
     input  wire [`WS_TO_RF_BUS_WD-1:0]  ws_to_rf_bus,
@@ -42,8 +44,11 @@ module MEM_stage(
     output wire [ 3:0]                  data_sram_wstrb,
     output wire [31:0]                  data_sram_addr,
     output wire [31:0]                  data_sram_wdata,
+    output wire                         early_sram_load_req,
+    output wire [22:0]                  early_sram_load_addr,
     input  wire                         data_sram_addr_is_sram,
     input  wire                         data_sram_store_ready,
+    input  wire                         data_sram_early_read_accept,
     output wire                         data_sram_store_is_ext,
     input  wire                         data_sram_addr_ok,
     input  wire                         data_sram_data_ok,
@@ -233,23 +238,26 @@ module MEM_stage(
   assign {trans_dmw1_active, trans_dmw1_vseg, trans_dmw1_pseg,
           trans_dmw0_active, trans_dmw0_vseg, trans_dmw0_pseg} = trans_ctx;
 
+  // load/store 地址恒为 ADD。SRAM 分类直接观察 EX 的加法旁路，避免
+  // 提前读资格先穿过通用 ALU 结果归并树；对所有访存指令与
+  // es_final_result_* 完全等价。
   wire es_dmw0_hit_0 = trans_dmw0_active &&
-       (es_final_result_0[31:29] == trans_dmw0_vseg);
+       (es_load_addr_fast_0[31:29] == trans_dmw0_vseg);
   wire es_dmw1_hit_0 = trans_dmw1_active &&
-       (es_final_result_0[31:29] == trans_dmw1_vseg);
+       (es_load_addr_fast_0[31:29] == trans_dmw1_vseg);
   wire [2:0] es_pseg_0 = es_dmw0_hit_0 ? trans_dmw0_pseg :
-       es_dmw1_hit_0 ? trans_dmw1_pseg : es_final_result_0[31:29];
+       es_dmw1_hit_0 ? trans_dmw1_pseg : es_load_addr_fast_0[31:29];
   wire es_addr_is_sram_0 = (es_pseg_0 == 3'b000) &&
-       (es_final_result_0[28:23] == 6'b111000);
+       (es_load_addr_fast_0[28:23] == 6'b111000);
 
   wire es_dmw0_hit_1 = trans_dmw0_active &&
-       (es_final_result_1[31:29] == trans_dmw0_vseg);
+       (es_load_addr_fast_1[31:29] == trans_dmw0_vseg);
   wire es_dmw1_hit_1 = trans_dmw1_active &&
-       (es_final_result_1[31:29] == trans_dmw1_vseg);
+       (es_load_addr_fast_1[31:29] == trans_dmw1_vseg);
   wire [2:0] es_pseg_1 = es_dmw0_hit_1 ? trans_dmw0_pseg :
-       es_dmw1_hit_1 ? trans_dmw1_pseg : es_final_result_1[31:29];
+       es_dmw1_hit_1 ? trans_dmw1_pseg : es_load_addr_fast_1[31:29];
   wire es_addr_is_sram_1 = (es_pseg_1 == 3'b000) &&
-       (es_final_result_1[28:23] == 6'b111000);
+       (es_load_addr_fast_1[28:23] == 6'b111000);
 
   wire lane0_mem_op = ms_lane0_mem_op;
 
@@ -288,13 +296,23 @@ module MEM_stage(
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 4 *)
   reg  ms_fast_response_waiting;
   reg  ms_addr_is_sram_q;
+  reg  ms_early_load_probe;
   reg  ms_rdata_buf_valid;
   reg  [31:0] ms_rdata_buf;
   reg  cacop_req_sent;
   reg         branch_flush_q;
   reg  [31:0] branch_target_q;
 
-  wire got_addr_ok = data_sram_req && data_sram_addr_ok;
+  wire normal_data_req;
+  wire got_normal_addr_ok = normal_data_req && data_sram_addr_ok;
+  // bridge 对提前读的接受脉冲寄存一拍返回。probe 保证该脉冲只会
+  // 归属于已经在同一边沿进入 MEM 的那条 load。
+  // 错误路径 lane1 的无副作用读可以进入 bridge，但不得由当前 MEM
+  // 包接管。只有当前相位确实是 load 时才消费寄存返回的 accept；
+  // 分支误预测包为 WAIT_NONE，accept 会被自然忽略。
+  wire early_load_accept = ms_early_load_probe &&
+       data_sram_early_read_accept && ms_has_mem_op && !selected_mem_we;
+  wire got_addr_ok = got_normal_addr_ok || early_load_accept;
   wire ms_data_ok  = ms_response_waiting && data_sram_data_ok;
   wire ms_fast_ready = ms_fast_response_waiting && data_sram_fast_ready;
   wire ms_fast_data_ok = ms_response_waiting && data_sram_fast_data_ok;
@@ -310,7 +328,7 @@ module MEM_stage(
 
   // 桥接器在 addr_ok 当拍已将写请求锁存进寄存化 posted-store 槽；
   // store 因此无需等待后续 data_ok 即可退休。
-  wire posted_store_ready = data_sram_req && selected_mem_we &&
+  wire posted_store_ready = normal_data_req && selected_mem_we &&
        selected_addr_is_sram_q && data_sram_store_ready;
   wire selected_mem_ready = mem_data_ready || ms_fast_ready ||
        posted_store_ready;
@@ -368,12 +386,62 @@ module MEM_stage(
        (selected_ld_half || selected_st_half) ? 2'b01 :
        2'b10;
 
+  // ExtRAM 与取指 BaseRAM 分属独立物理 bank。当前 MEM 槽为空或只含
+  // 非访存普通包时，允许即将进入 MEM 的 ExtRAM load 在 EX 拍启动。
+  // load 无副作用；若 bridge 正忙而未接受，请求会在进入 MEM 后自动
+  // 回退到原有 normal_data_req 路径。BaseRAM load 保持原路径，避免
+  // 与 I-fetch 仲裁及历史上已观察到的 STREAM 风险相互影响。
+  wire es_lane0_mem_op_in = es_to_ms_valid_0 &&
+       (es_res_from_mem_0 || es_mem_we_0);
+  wire early_load_lane0 = es_to_ms_valid_0 && es_res_from_mem_0 &&
+       es_addr_is_sram_0 && es_load_addr_fast_0[22];
+  // 提前读没有架构副作用；lane0 误预测仍在 MEM 入边沿杀掉 lane1 的
+  // 架构 valid。这里使用原始 lane1 valid，避免分支目标加法/比较链
+  // 进入 ExtRAM bridge 的单拍控制路径。误路径读的返回不会被接管。
+  wire early_load_lane1 = !es_lane0_mem_op_in && es_to_ms_valid_1 &&
+       es_res_from_mem_1 && es_addr_is_sram_1 &&
+       es_load_addr_fast_1[22];
+  wire early_load_select_lane1 = !early_load_lane0 && early_load_lane1;
+  wire early_load_candidate = early_load_lane0 || early_load_lane1;
+  // 提前读只观察 ready 条件，不直接负载全局 ms_allowin/advance_to_lane1
+  // 控制网。保留独立等价锥，避免这条性能旁路扰动 ISSUE->InstBuffer
+  // 的高扇出关键路径。最终访存响应拍仍可在 S_DONE 边沿接收下一包。
+  (* keep = "true", max_fanout = 4 *)
+  wire early_selected_mem_ready = mem_data_ready || ms_fast_ready ||
+       posted_store_ready;
+  (* keep = "true", max_fanout = 4 *)
+  wire early_phase_ready_go = ms_has_cacop ? cacop_ready_go :
+       (!ms_has_mem_op || early_selected_mem_ready);
+  (* keep = "true", max_fanout = 4 *)
+  wire early_mem_slot = early_phase_ready_go && !dual_mem_phase_0 &&
+       ws_allowin;
+  (* keep = "true", max_fanout = 4 *)
+  wire early_advance_to_lane1 = packet_valid && dual_mem_phase_0 &&
+       early_phase_ready_go && ws_allowin;
+
+  // 双访存包的 lane1 已经保存在 MEM 中。lane0 load 返回并确认按序
+  // 退休时，直接把 lane1 ExtRAM 地址交给 bridge 的 S_DONE 边沿；
+  // 这里只提前启动请求，不提前 lane1 的架构提交。
+  wire phase1_early_load = early_advance_to_lane1 && ms_lane1_eff_valid &&
+       ms_res_from_mem_1 && ms_addr_is_sram_1_q && ms_alu_result_1[22];
+  wire ex_early_load_req = early_load_candidate && early_mem_slot;
+
+  assign early_sram_load_req =
+       (phase1_early_load || ex_early_load_req) &&
+       (!ms_data_pending || data_sram_data_ok) &&
+       !ms_rdata_buf_valid && !ms_early_load_probe &&
+       !branch_redirect_fire && !br_taken && resetn && !reset;
+  assign early_sram_load_addr = phase1_early_load ? ms_alu_result_1[22:0] :
+       early_load_select_lane1 ?
+       es_load_addr_fast_1[22:0] : es_load_addr_fast_0[22:0];
+
   // 非 SRAM store 的返回先进入 rdata_buf，再在下一拍退休；该拍仍需
   // 阻止原指令重复发地址。Load 在 data_ok 拍直接退休，posted SRAM
   // store 则不会置 rdata_buf_valid。
-  assign data_sram_req   = ms_has_mem_op && !ms_data_pending &&
+  assign normal_data_req = ms_has_mem_op && !ms_data_pending &&
        !ms_rdata_buf_valid &&
        (!selected_mem_we || selected_store_data_ready);
+  assign data_sram_req   = normal_data_req;
   assign data_sram_wr    = selected_mem_we;
   assign data_sram_size  = ms_mem_size;
   assign data_sram_wstrb = selected_mem_we ? ms_st_strb : 4'b0;
@@ -605,10 +673,24 @@ module MEM_stage(
   begin
     if (reset || br_taken || branch_redirect_fire)
       ms_addr_is_sram_q <= 1'b0;
+    else if (early_load_accept)
+      ms_addr_is_sram_q <= 1'b1;
     else if (ms_allowin || advance_to_lane1)
       ms_addr_is_sram_q <= 1'b0;
     else if (got_addr_ok)
       ms_addr_is_sram_q <= data_sram_addr_is_sram;
+  end
+
+  // 提前请求随 EX->MEM 的边沿记录。bridge 下一拍若返回接受脉冲，
+  // 当前 load 接管该事务；否则 probe 清除并继续走普通 MEM 请求。
+  always @(posedge clk)
+  begin
+    if (reset || br_taken || branch_redirect_fire)
+      ms_early_load_probe <= 1'b0;
+    else if (early_sram_load_req)
+      ms_early_load_probe <= early_sram_load_req;
+    else if (ms_early_load_probe)
+      ms_early_load_probe <= 1'b0;
   end
 
   always @(posedge clk)
@@ -625,8 +707,10 @@ module MEM_stage(
   begin
     if (reset || br_taken || branch_redirect_fire)
       ms_response_waiting <= 1'b0;
-    else if (got_addr_ok)
-      ms_response_waiting <= !selected_mem_we ||
+    else if (early_load_accept)
+      ms_response_waiting <= 1'b1;
+    else if (got_normal_addr_ok)
+      ms_response_waiting <= !data_sram_wr ||
                              !data_sram_addr_is_sram;
     else if (ms_data_pending && data_sram_data_ok)
       ms_response_waiting <= 1'b0;
@@ -636,8 +720,10 @@ module MEM_stage(
   begin
     if (reset || br_taken || branch_redirect_fire)
       ms_fast_response_waiting <= 1'b0;
-    else if (got_addr_ok)
-      ms_fast_response_waiting <= !selected_mem_we ||
+    else if (early_load_accept)
+      ms_fast_response_waiting <= 1'b1;
+    else if (got_normal_addr_ok)
+      ms_fast_response_waiting <= !data_sram_wr ||
                                   !data_sram_addr_is_sram;
     else if (ms_data_pending && data_sram_data_ok)
       ms_fast_response_waiting <= 1'b0;
@@ -847,6 +933,15 @@ module MEM_stage(
         $fatal(1, "lane1 retired before lane0 in a dual memory packet");
       if (data_sram_req && ms_data_pending)
         $fatal(1, "memory request overlapped an outstanding transaction");
+      if (early_sram_load_req &&
+          (!(phase1_early_load || ex_early_load_req) ||
+           early_sram_load_addr[22] != 1'b1))
+        $fatal(1, "invalid ExtRAM early-load request");
+      if (early_load_accept &&
+          (!ms_early_load_probe || !ms_has_mem_op || selected_mem_we))
+        $fatal(1, "early-load response was not owned by a MEM load");
+      if (early_load_lane1 && es_lane0_mem_op_in)
+        $fatal(1, "lane1 early load bypassed an older memory operation");
     end
   end
 `endif

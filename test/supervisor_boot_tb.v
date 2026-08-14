@@ -62,6 +62,9 @@ module supervisor_boot_tb;
   wire [31:0] ext_rdata  = ext_mem[ext_addr];
   wire        data_store_ready;
   wire        data_store_is_ext;
+  wire        early_sram_load_req;
+  wire [22:0] early_sram_load_addr;
+  wire        data_early_read_accept;
 
   reg [7:0] tx_bytes [0:511];
   integer tx_count;
@@ -87,6 +90,9 @@ module supervisor_boot_tb;
     .data_sram_fast_rdata(data_fast_rdata),
     .data_sram_store_ready(data_store_ready),
     .data_sram_store_is_ext(data_store_is_ext),
+    .early_sram_load_req(early_sram_load_req),
+    .early_sram_load_addr(early_sram_load_addr),
+    .data_sram_early_read_accept(data_early_read_accept),
     .debug_wb_pc(debug_pc), .debug_wb_rf_we(debug_we),
     .debug_wb_rf_wnum(debug_wnum), .debug_wb_rf_wdata(debug_wdata)
   );
@@ -101,12 +107,15 @@ module supervisor_boot_tb;
     .data_sram_req(data_req), .data_sram_wr(data_wr),
     .data_sram_size(data_size), .data_sram_wstrb(data_wstrb),
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+    .early_sram_load_req(early_sram_load_req),
+    .early_sram_load_addr(early_sram_load_addr),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
     .data_sram_fast_ready(data_fast_ready),
     .data_sram_fast_data_ok(data_fast_data_ok),
     .data_sram_fast_rdata(data_fast_rdata),
     .data_sram_store_ready(data_store_ready),
+    .data_sram_early_read_accept(data_early_read_accept),
     .data_sram_store_is_ext(data_store_is_ext),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),

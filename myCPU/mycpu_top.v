@@ -27,6 +27,9 @@ module mycpu_top(
     input  wire        data_sram_fast_data_ok,
     input  wire [31:0] data_sram_fast_rdata,
     input  wire        data_sram_store_ready,
+    output wire        early_sram_load_req,
+    output wire [22:0] early_sram_load_addr,
+    input  wire        data_sram_early_read_accept,
     output wire        data_sram_store_is_ext,
     // SoC 兼容端口：内部 debug 状态和布线已删除。
     output wire [31:0] debug_wb_pc,
@@ -81,6 +84,8 @@ module mycpu_top(
   wire [31:0] ds_mul_src2_1;
   wire [`ES_TO_MS_BUS_WD-1:0] es_to_ms_bus_0;
   wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1;
+  wire [31:0] es_load_addr_fast_0;
+  wire [31:0] es_load_addr_fast_1;
   wire [`MS_TO_WS_BUS_WD-1:0] ms_to_ws_bus_0;
   wire [`MS_TO_WS_BUS_1_WD-1:0] ms_to_ws_bus_1;
 
@@ -380,6 +385,8 @@ module mycpu_top(
               .es_to_ms_valid_1 (es_to_ms_valid_1),
               .es_to_ms_bus_0   (es_to_ms_bus_0),
               .es_to_ms_bus_1   (es_to_ms_bus_1),
+              .es_load_addr_fast_0(es_load_addr_fast_0),
+              .es_load_addr_fast_1(es_load_addr_fast_1),
               .es_fwd_bus_0     (es_fwd_bus_0),
               .es_fwd_bus_1     (es_fwd_bus_1),
               .csr_busy         (es_csr_busy),
@@ -396,6 +403,8 @@ module mycpu_top(
               .es_to_ms_valid_1  (es_to_ms_valid_1),
               .es_to_ms_bus_0    (es_to_ms_bus_0),
               .es_to_ms_bus_1    (es_to_ms_bus_1),
+              .es_load_addr_fast_0(es_load_addr_fast_0),
+              .es_load_addr_fast_1(es_load_addr_fast_1),
               .trans_ctx         (csr_trans_ctx),
               .ws_allowin        (ws_allowin),
               .ws_to_rf_bus      (ws_to_rf_bus),
@@ -430,8 +439,11 @@ module mycpu_top(
               .data_sram_wstrb   (data_sram_wstrb),
               .data_sram_addr    (data_sram_vaddr),
               .data_sram_wdata   (data_sram_wdata),
+              .early_sram_load_req(early_sram_load_req),
+              .early_sram_load_addr(early_sram_load_addr),
               .data_sram_addr_is_sram(data_sram_addr_is_sram),
               .data_sram_store_ready(data_sram_store_ready),
+              .data_sram_early_read_accept(data_sram_early_read_accept),
               .data_sram_store_is_ext(data_sram_store_is_ext),
               .data_sram_addr_ok (data_sram_addr_ok),
               .data_sram_data_ok (data_sram_data_ok),

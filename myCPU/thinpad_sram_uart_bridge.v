@@ -21,6 +21,8 @@ module thinpad_sram_uart_bridge(
     input  wire [3:0]  data_sram_wstrb,
     input  wire [31:0] data_sram_addr,
     input  wire [31:0] data_sram_wdata,
+    input  wire        early_sram_load_req,
+    input  wire [22:0] early_sram_load_addr,
     output wire        data_sram_addr_ok,
     output wire        data_sram_data_ok,
     output wire [31:0] data_sram_rdata,
@@ -28,6 +30,7 @@ module thinpad_sram_uart_bridge(
     output wire        data_sram_fast_data_ok,
     output wire [31:0] data_sram_fast_rdata,
     output wire        data_sram_store_ready,
+    output wire        data_sram_early_read_accept,
     input  wire        data_sram_store_is_ext,
 
     output wire [19:0] base_ram_addr,
@@ -213,10 +216,7 @@ module thinpad_sram_uart_bridge(
     reg         ext_fast_data_ok_reg;
     (* keep = "true", equivalent_register_removal = "no" *)
     reg         ext_fast_ready_reg;
-    reg         ext_wr_reg;
     reg  [31:0] ext_addr_reg;
-    reg  [31:0] ext_wdata_reg;
-    reg  [3:0]  ext_wstrb_reg;
     reg         ext_store_valid;
     reg  [31:0] ext_store_addr;
     reg  [31:0] ext_store_wdata;
@@ -228,16 +228,28 @@ module thinpad_sram_uart_bridge(
     wire ext_store_drain = (ext_state == S_IDLE) & ext_store_valid;
     wire ext_store_ready = ~ext_store_valid | ext_store_drain;
     wire ext_store_accept = ext_data_store & ext_store_ready;
-    wire ext_grant = (ext_state == S_IDLE) & ~ext_store_valid &
-                     ext_data_req & ~data_sram_wr;
+    wire ext_data_read = ext_data_req & ~data_sram_wr;
+    // 提前读只覆盖 ExtRAM；标准 data_sram 请求保持最高优先级。
+    // 地址低 22 位已经是 DMW 不变的 SRAM bank 内地址。
+    wire ext_early_read = early_sram_load_req & early_sram_load_addr[22];
+    wire ext_grant_data = (ext_state == S_IDLE) & ~ext_store_valid &
+                          ext_data_read;
+    wire ext_grant_early = ((ext_state == S_IDLE) ||
+                            (ext_state == S_DONE)) &
+                           (~ext_store_valid | ext_store_drain) &
+                           ~ext_data_req &
+                           ext_early_read;
+    wire ext_grant = ext_grant_data | ext_grant_early;
     wire ext_done  = (ext_state == S_DONE);
 
-    wire        ext_cur_wr    = ext_grant ? data_sram_wr    : ext_wr_reg;
-    wire [31:0] ext_cur_addr  = ext_grant ? data_sram_addr  : ext_addr_reg;
-    wire [31:0] ext_cur_wdata = ext_grant ? data_sram_wdata : ext_wdata_reg;
-    wire [3:0]  ext_cur_wstrb = ext_grant ? data_sram_wstrb : ext_wstrb_reg;
+    // S_DONE 上的提前请求只在边沿锁存；边沿前仍用旧地址完成当前响应。
+    wire [31:0] ext_cur_addr  = ext_grant_data ? data_sram_addr :
+                                 (ext_grant_early &&
+                                  (ext_state == S_IDLE)) ?
+                                 {9'h038, early_sram_load_addr} :
+                                 ext_addr_reg;
     wire        ext_read_active = ext_grant | (ext_state == S_ACCESS) |
-                                (ext_done & ~ext_wr_reg);
+                                ext_done;
     wire        ext_active    = ext_store_drain | ext_read_active;
 
     always @(posedge clk) begin
@@ -246,10 +258,7 @@ module thinpad_sram_uart_bridge(
             ext_cnt       <= 2'b0;
             ext_fast_data_ok_reg <= 1'b0;
             ext_fast_ready_reg <= 1'b0;
-            ext_wr_reg    <= 1'b0;
             ext_addr_reg  <= 32'b0;
-            ext_wdata_reg <= 32'b0;
-            ext_wstrb_reg <= 4'b0;
             ext_store_valid <= 1'b0;
             ext_store_addr  <= 32'b0;
             ext_store_wdata <= 32'b0;
@@ -268,15 +277,14 @@ module thinpad_sram_uart_bridge(
             end else if (ext_store_drain) begin
                 ext_store_valid <= 1'b0;
             end
+
             case (ext_state)
                 S_IDLE: begin
                     ext_cnt <= 2'b0;
                     if (ext_grant) begin
                         ext_state     <= S_ACCESS;
-                        ext_wr_reg    <= data_sram_wr;
-                        ext_addr_reg  <= data_sram_addr;
-                        ext_wdata_reg <= data_sram_wdata;
-                        ext_wstrb_reg <= data_sram_wstrb;
+                        ext_addr_reg  <= ext_grant_data ? data_sram_addr :
+                                         {9'h038, early_sram_load_addr};
                     end
                 end
 
@@ -292,7 +300,12 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_DONE: begin
-                    ext_state <= S_IDLE;
+                    if (ext_grant_early) begin
+                        ext_state     <= S_ACCESS;
+                        ext_addr_reg  <= {9'h038, early_sram_load_addr};
+                    end else begin
+                        ext_state <= S_IDLE;
+                    end
                 end
 
                 default: begin
@@ -304,15 +317,30 @@ module thinpad_sram_uart_bridge(
 
     assign ext_ram_addr  = ext_store_drain ? ext_store_addr[21:2] :
                            ext_read_active ? ext_cur_addr[21:2] : 20'b0;
-    assign ext_ram_wdata = ext_store_drain ? ext_store_wdata : ext_cur_wdata;
+    // ExtRAM 写操作全部由 posted-store 槽执行；读事务无需锁存写数据和
+    // 字节使能，避免 EX 提前读 grant 进入无关的写数据寄存器 D 端。
+    assign ext_ram_wdata = ext_store_drain ? ext_store_wdata : 32'b0;
     assign ext_ram_be_n  = ext_store_drain ? ~ext_store_wstrb :
                            ext_read_active ? 4'b0000 : 4'b1111;
     assign ext_ram_ce_n  = ~ext_active;
-    assign ext_ram_oe_n  = ~ext_read_active;
+    // store 排空拍可以在结束边沿锁存下一笔提前读，但该拍 SRAM 引脚
+    // 仍是纯写周期，OE 必须保持关闭。
+    assign ext_ram_oe_n  = ext_store_drain ? 1'b1 : ~ext_read_active;
     assign ext_ram_we_n  = ~ext_store_drain;
 
-    wire ext_data_addr_ok = ext_store_accept | ext_grant;
+    wire ext_data_addr_ok = ext_store_accept | ext_grant_data;
     wire ext_data_data_ok = ext_store_resp_valid | ext_done;
+
+    // MEM 用一拍后的确认把已经启动的 EX 请求归入当前 load。确认不
+    // 参与任何 ready 回环，避免 EX 地址经 bridge 再返回 ISSUE。
+    reg ext_early_read_accept_reg;
+    always @(posedge clk) begin
+        if (!resetn)
+            ext_early_read_accept_reg <= 1'b0;
+        else
+            ext_early_read_accept_reg <= ext_grant_early;
+    end
+    assign data_sram_early_read_accept = ext_early_read_accept_reg;
 
     wire [2:0] uart_offset = data_sram_addr[2:0];
     reg        uart_dlab;

@@ -56,6 +56,9 @@ module supervisor_perf_tb;
   wire [31:0] data_fast_rdata;
   wire        data_store_ready;
   wire        data_store_is_ext;
+  wire        early_sram_load_req;
+  wire [22:0] early_sram_load_addr;
+  wire        data_early_read_accept;
 
   wire [19:0] base_addr;
   wire [31:0] base_wdata;
@@ -115,6 +118,13 @@ module supervisor_perf_tb;
   reg [63:0] issue_mul_count;
   reg [63:0] issue_branch_count;
   reg [63:0] issue_other_count;
+  reg [63:0] early_load_req_count;
+  reg [63:0] early_load_accept_count;
+  reg [63:0] early_load_lane1_req_count;
+  reg [63:0] early_load_block_data_req_count;
+  reg [63:0] early_load_block_store_count;
+  reg [63:0] early_load_block_busy_count;
+  reg [63:0] early_load_block_other_count;
 
   // -- Frontend 停顿 --
   reg [63:0] fe_icache_miss_cycles;
@@ -263,6 +273,9 @@ module supervisor_perf_tb;
               .data_sram_fast_rdata(data_fast_rdata),
               .data_sram_store_ready(data_store_ready),
               .data_sram_store_is_ext(data_store_is_ext),
+              .early_sram_load_req(early_sram_load_req),
+              .early_sram_load_addr(early_sram_load_addr),
+              .data_sram_early_read_accept(data_early_read_accept),
               .debug_wb_pc(), .debug_wb_rf_we(),
               .debug_wb_rf_wnum(), .debug_wb_rf_wdata()
             );
@@ -277,12 +290,15 @@ module supervisor_perf_tb;
                              .data_sram_req(data_req), .data_sram_wr(data_wr),
                              .data_sram_size(data_size), .data_sram_wstrb(data_wstrb),
                              .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
+                             .early_sram_load_req(early_sram_load_req),
+                             .early_sram_load_addr(early_sram_load_addr),
                              .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
                              .data_sram_rdata(data_rdata),
                              .data_sram_fast_ready(data_fast_ready),
                              .data_sram_fast_data_ok(data_fast_data_ok),
                              .data_sram_fast_rdata(data_fast_rdata),
                              .data_sram_store_ready(data_store_ready),
+                             .data_sram_early_read_accept(data_early_read_accept),
                              .data_sram_store_is_ext(data_store_is_ext),
                              .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
                              .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
@@ -423,6 +439,31 @@ module supervisor_perf_tb;
                    !cpu.u_issue.mem_we_1 &&
                    !cpu.u_issue.is_mul_1 &&
                    !cpu.u_issue.is_bj_1};
+
+      if (early_sram_load_req)
+      begin
+        early_load_req_count <= early_load_req_count + 1;
+        if (cpu.u_mem.early_load_select_lane1)
+          early_load_lane1_req_count <= early_load_lane1_req_count + 1;
+        if (!bridge.ext_grant_early)
+        begin
+          if (bridge.ext_data_req)
+            early_load_block_data_req_count <=
+                early_load_block_data_req_count + 1;
+          else if (bridge.ext_store_valid)
+            early_load_block_store_count <=
+                early_load_block_store_count + 1;
+          else if ((bridge.ext_state != 2'd0) &&
+                   (bridge.ext_state != 2'd2))
+            early_load_block_busy_count <=
+                early_load_block_busy_count + 1;
+          else
+            early_load_block_other_count <=
+                early_load_block_other_count + 1;
+        end
+      end
+      if (cpu.u_mem.early_load_accept)
+        early_load_accept_count <= early_load_accept_count + 1;
 
       if (cpu.load_wakeup_valid)
         load_wakeup_event_count <= load_wakeup_event_count + 1;
@@ -1103,6 +1144,14 @@ module supervisor_perf_tb;
                load_wakeup_event_count);
       $display("  load_wakeup_issue           = %0d",
                load_wakeup_issue_count);
+      $display("  EX early-load request/accept= %0d / %0d (lane1=%0d)",
+               early_load_req_count, early_load_accept_count,
+               early_load_lane1_req_count);
+      $display("    rejected data/store/busy/other = %0d / %0d / %0d / %0d",
+               early_load_block_data_req_count,
+               early_load_block_store_count,
+               early_load_block_busy_count,
+               early_load_block_other_count);
       $display("  store_buffer_full           = N/A (no store buffer)");
       $display("");
 
@@ -1402,6 +1451,13 @@ module supervisor_perf_tb;
     mem_pipe_blocked_cycles  = 0;
     load_wakeup_event_count   = 0;
     load_wakeup_issue_count   = 0;
+    early_load_req_count      = 0;
+    early_load_accept_count   = 0;
+    early_load_lane1_req_count = 0;
+    early_load_block_data_req_count = 0;
+    early_load_block_store_count = 0;
+    early_load_block_busy_count = 0;
+    early_load_block_other_count = 0;
     br_total_count           = 0;
     br_mispredict_count      = 0;
     br_btb_miss_count        = 0;
