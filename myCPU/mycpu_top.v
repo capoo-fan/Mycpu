@@ -188,10 +188,9 @@ module mycpu_top(
   assign bpu_pred_taken_1  = bpu_pred_taken && bpu_pred_lane;
   assign bpu_pred_target_1 = bpu_pred_target;
   wire data_txn_accept = data_sram_req && data_sram_addr_ok;
-  // BaseRAM 与 ExtRAM 合起来正好是 0x1c00_0000..0x1c7f_ffff。
-  // 合并比较可减少 DMW 翻译后地址分类的逻辑级数。
-  wire data_sram_addr_is_sram =
-       (data_sram_addr & 32'hff80_0000) == 32'h1c00_0000;
+  // 合法数据地址只有 0x1c*_**** SRAM 和 0x1f0*_*** UART；
+  // DMW 不改变 bit25，因此一位即可完成 SRAM 分类。
+  wire data_sram_addr_is_sram = ~data_sram_addr[25];
   data_txn_tracker u_data_txn_tracker(
                      .clk            (clk),
                      .resetn         (resetn),

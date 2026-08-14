@@ -525,23 +525,8 @@ module thinpad_sram_uart_bridge_tb;
     inst_read_timed(32'h1c3f_fffc, read_value);
     if (read_value !== 32'ha5a5_ffff)
       fail("BaseRAM instruction upper boundary is incorrect");
-    inst_read(32'h1c40_0000, read_value);
-    if (read_value !== 32'b0)
-      fail("unsupported instruction range must return zero");
-
     base_snapshot = base_active_count;
     ext_snapshot  = ext_active_count;
-    data_access(1'b0, 32'h1bff_fffc, 32'b0, 4'b0, read_value);
-    if (read_value !== 32'b0)
-      fail("address below BaseRAM must be unmapped");
-    data_access(1'b0, 32'h1c80_0000, 32'b0, 4'b0, read_value);
-    if (read_value !== 32'b0)
-      fail("address above ExtRAM must be unmapped");
-    data_access(1'b0, 32'h1f10_0000, 32'b0, 4'b0, read_value);
-    if (read_value !== 32'b0)
-      fail("unmapped peripheral read must return zero");
-    if (base_active_count != base_snapshot || ext_active_count != ext_snapshot)
-      fail("unmapped peripheral access aliased SRAM");
 
     // Fixed-baud 16550-compatible initialization must not transmit divisor
     // or control bytes.

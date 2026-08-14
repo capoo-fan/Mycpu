@@ -28,7 +28,8 @@ module data_txn_tracker(
     begin
       data_txn_valid   <= 1'b1;
       data_txn_store   <= txn_store;
-      data_txn_is_base <= ((txn_paddr & 32'hffc0_0000) == 32'h1c00_0000);
+      // 合法窗口中bit25=0表示 SRAM，bit22=0表示 BaseRAM。
+      data_txn_is_base <= ~txn_paddr[25] && ~txn_paddr[22];
       data_txn_line    <= txn_paddr[31:4];
     end
     else if (txn_data_ok)

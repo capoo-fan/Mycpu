@@ -226,38 +226,11 @@ module MEM_stage(
   wire ms_lane1_eff_valid = ms_valid_1;
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
-  // posted-store 必须在请求进入桥接器的同拍退休，但不能让翻译后的
-  // SRAM 区间比较回接到 ms_allowin。进入 MEM 时分别预计算两路物理
-  // 段，只在当前相位的两个寄存结果之间选择；地址 bit[28:23] 不受DMW 翻译影响。
-  wire       trans_dmw1_active;
-  wire [2:0] trans_dmw1_vseg;
-  wire [2:0] trans_dmw1_pseg;
-  wire       trans_dmw0_active;
-  wire [2:0] trans_dmw0_vseg;
-  wire [2:0] trans_dmw0_pseg;
-  assign {trans_dmw1_active, trans_dmw1_vseg, trans_dmw1_pseg,
-          trans_dmw0_active, trans_dmw0_vseg, trans_dmw0_pseg} = trans_ctx;
-
-  // load/store 地址恒为 ADD。SRAM 分类直接观察 EX 的加法旁路，避免
-  // 提前读资格先穿过通用 ALU 结果归并树；对所有访存指令与
-  // es_final_result_* 完全等价。
-  wire es_dmw0_hit_0 = trans_dmw0_active &&
-       (es_load_addr_fast_0[31:29] == trans_dmw0_vseg);
-  wire es_dmw1_hit_0 = trans_dmw1_active &&
-       (es_load_addr_fast_0[31:29] == trans_dmw1_vseg);
-  wire [2:0] es_pseg_0 = es_dmw0_hit_0 ? trans_dmw0_pseg :
-       es_dmw1_hit_0 ? trans_dmw1_pseg : es_load_addr_fast_0[31:29];
-  wire es_addr_is_sram_0 = (es_pseg_0 == 3'b000) &&
-       (es_load_addr_fast_0[28:23] == 6'b111000);
-
-  wire es_dmw0_hit_1 = trans_dmw0_active &&
-       (es_load_addr_fast_1[31:29] == trans_dmw0_vseg);
-  wire es_dmw1_hit_1 = trans_dmw1_active &&
-       (es_load_addr_fast_1[31:29] == trans_dmw1_vseg);
-  wire [2:0] es_pseg_1 = es_dmw0_hit_1 ? trans_dmw0_pseg :
-       es_dmw1_hit_1 ? trans_dmw1_pseg : es_load_addr_fast_1[31:29];
-  wire es_addr_is_sram_1 = (es_pseg_1 == 3'b000) &&
-       (es_load_addr_fast_1[28:23] == 6'b111000);
+  // supervisor 的合法访存地址只有 SRAM 和 UART，两者可由
+  // bit25 直接区分。DMW 只替换 bit[31:29]，所以虚地址与物理
+  // 地址的该位恒等价；无需在 EX->MEM 路径上重复计算 DMW 命中。
+  wire es_addr_is_sram_0 = ~es_load_addr_fast_0[25];
+  wire es_addr_is_sram_1 = ~es_load_addr_fast_1[25];
 
   wire lane0_mem_op = ms_lane0_mem_op;
 
