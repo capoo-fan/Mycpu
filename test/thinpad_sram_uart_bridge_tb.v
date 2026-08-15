@@ -285,7 +285,7 @@ module thinpad_sram_uart_bridge_tb;
             if (data_ok_count_local == 0)
               data_ok_count_local = 1;
             rdata_value = data_rdata;
-            if (cycle_count_local != (wr_value ? 1 : 3))
+            if (cycle_count_local != (wr_value ? 1 : 4))
               fail("SRAM data response timing is incorrect");
             if (wr_value) begin
               // Posted store is acknowledged while the registered entry is
@@ -312,7 +312,7 @@ module thinpad_sram_uart_bridge_tb;
       // The posted write becomes active immediately after its handshake edge;
       // this task samples the edge before NBA updates, then observes the write
       // at the following negedge response check above.
-      expected_active_count = wr_value ? 0 : 3;
+      expected_active_count = wr_value ? 0 : 4;
       if (addr_ok_count_local != 1)
         fail("SRAM data address handshake count is incorrect");
       if (data_ok_count_local != 1)
@@ -440,7 +440,7 @@ module thinpad_sram_uart_bridge_tb;
 
           if (inst_data_ok) begin
             rdata_value = inst_rdata;
-            if (cycle_count_local != 3)
+            if (cycle_count_local != 4)
               fail("SRAM instruction response timing is incorrect");
             if (base_ce_n)
               fail("BaseRAM instruction read was inactive during response");
@@ -456,7 +456,7 @@ module thinpad_sram_uart_bridge_tb;
         fail("SRAM instruction address handshake count is incorrect");
       if (data_ok_count_local != 1)
         fail("SRAM instruction response count is incorrect");
-      if (active_count_local != 3)
+      if (active_count_local != 4)
         fail("SRAM instruction active cycle count is incorrect");
 
       @(negedge clk);
