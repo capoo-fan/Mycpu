@@ -62,24 +62,34 @@ module BPU (
   reg [31:0]          btb_target  [0:BPU_BANKS-1][0:BPU_ROWS-1];
 
   wire [BPU_TAG_W-1:0]   pred_tag  = btb_tag(if_pc);
-  wire [BPU_ROW_W-1:0]   pred_row  = btb_row(if_pc);
+  // The hashed row bits select every valid/tag/counter/target word in the
+  // combinational predictor.  Keep one local copy per bank so the PC->BTB->PC
+  // loop does not route a single XOR result to more than one hundred loads.
+  // This is only physical replication; both copies retain the same index.
+  (* keep = "true", max_fanout = 16 *)
+  wire [BPU_ROW_W-1:0] pred_row_bank0 = btb_row(if_pc);
+  (* keep = "true", max_fanout = 16 *)
+  wire [BPU_ROW_W-1:0] pred_row_bank1 = btb_row(if_pc);
   wire                   pred_bank = if_pc[2];
 
-  wire pred_hit_bank0 = btb_valid[1'b0][pred_row] &&
-                        (btb_tag_mem[1'b0][pred_row] == pred_tag);
-  wire pred_hit_bank1 = btb_valid[1'b1][pred_row] &&
-                        (btb_tag_mem[1'b1][pred_row] == pred_tag);
+  wire pred_hit_bank0 = btb_valid[1'b0][pred_row_bank0] &&
+                        (btb_tag_mem[1'b0][pred_row_bank0] == pred_tag);
+  wire pred_hit_bank1 = btb_valid[1'b1][pred_row_bank1] &&
+                        (btb_tag_mem[1'b1][pred_row_bank1] == pred_tag);
 
-  wire pred_valid_bank0 = pred_hit_bank0 && btb_counter[1'b0][pred_row][1];
-  wire pred_valid_bank1 = pred_hit_bank1 && btb_counter[1'b1][pred_row][1];
+  wire pred_valid_bank0 = pred_hit_bank0 &&
+                          btb_counter[1'b0][pred_row_bank0][1];
+  wire pred_valid_bank1 = pred_hit_bank1 &&
+                          btb_counter[1'b1][pred_row_bank1][1];
 
   wire lane0_taken = pred_bank ? pred_valid_bank1 : pred_valid_bank0;
   wire lane1_taken = !pred_bank && pred_valid_bank1;
   wire raw_pred_taken = lane0_taken || lane1_taken;
   wire raw_pred_lane  = !lane0_taken && lane1_taken;
-  wire [31:0] raw_pred_target = raw_pred_lane ? btb_target[1'b1][pred_row] :
-                                                (pred_bank ? btb_target[1'b1][pred_row] :
-                                                             btb_target[1'b0][pred_row]);
+  wire [31:0] raw_pred_target =
+       raw_pred_lane ? btb_target[1'b1][pred_row_bank1] :
+       (pred_bank ? btb_target[1'b1][pred_row_bank1] :
+                    btb_target[1'b0][pred_row_bank0]);
 
   assign pred_taken = if_valid && raw_pred_taken;
   assign pred_target = pred_taken ? raw_pred_target : 32'b0;

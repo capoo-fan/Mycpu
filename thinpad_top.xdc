@@ -299,24 +299,30 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 # would make the external I/O budget compete with normal CPU reg-to-reg timing.
 set sram_cpu_clk [get_clocks -quiet clk_out1_pll_example]
 
-set base_sram_read_launch_ports [get_ports -quiet {
+set base_sram_read_addr_ports [get_ports -quiet {
     base_ram_addr[*]
-    base_ram_be_n[*]
-    base_ram_ce_n
     base_ram_oe_n
 }]
-set ext_sram_read_launch_ports [get_ports -quiet {
+set ext_sram_read_addr_ports [get_ports -quiet {
     ext_ram_addr[*]
+    ext_ram_oe_n
+}]
+set base_sram_read_ctrl_ports [get_ports -quiet {
+    base_ram_be_n[*]
+    base_ram_ce_n
+}]
+set ext_sram_read_ctrl_ports [get_ports -quiet {
     ext_ram_be_n[*]
     ext_ram_ce_n
-    ext_ram_oe_n
 }]
 
 # FAST output slew makes address, byte-enable, chip-enable and output-enable
 # settle earlier at the SRAM pins.  The bidirectional data pins keep their
 # default write-drive slew because it does not improve their input delay.
-set_property SLEW FAST $base_sram_read_launch_ports
-set_property SLEW FAST $ext_sram_read_launch_ports
+set_property SLEW FAST $base_sram_read_addr_ports
+set_property SLEW FAST $ext_sram_read_addr_ports
+set_property SLEW FAST $base_sram_read_ctrl_ports
+set_property SLEW FAST $ext_sram_read_ctrl_ports
 
 set base_sram_read_data_ports [get_ports -quiet {base_ram_data[*]}]
 set ext_sram_read_data_ports  [get_ports -quiet {ext_ram_data[*]}]
@@ -337,15 +343,21 @@ set base_sram_icache_capture_pins \
 # Output budgets cover FPGA clock-to-pad delay.  Return budgets cover only
 # pad-to-first-register delay; external SRAM tAA/tOE and PCB delay remain a
 # separate board-level part of the complete read-access window.
-set base_sram_launch_budget_ns 12.000
-set ext_sram_launch_budget_ns  14.000
-set base_sram_return_budget_ns  6.000
-set ext_sram_return_budget_ns   5.000
+set base_sram_read_addr_budget_ns 11.000
+set ext_sram_read_addr_budget_ns  12.500
+set base_sram_read_ctrl_budget_ns 12.000
+set ext_sram_read_ctrl_budget_ns  13.000
+set base_sram_return_budget_ns 6.000
+set ext_sram_return_budget_ns  5.000
 
-set_max_delay -datapath_only $base_sram_launch_budget_ns \
-    -from $sram_cpu_clk -to $base_sram_read_launch_ports
-set_max_delay -datapath_only $ext_sram_launch_budget_ns \
-    -from $sram_cpu_clk -to $ext_sram_read_launch_ports
+set_max_delay -datapath_only $base_sram_read_addr_budget_ns \
+    -from $sram_cpu_clk -to $base_sram_read_addr_ports
+set_max_delay -datapath_only $ext_sram_read_addr_budget_ns \
+    -from $sram_cpu_clk -to $ext_sram_read_addr_ports
+set_max_delay -datapath_only $base_sram_read_ctrl_budget_ns \
+    -from $sram_cpu_clk -to $base_sram_read_ctrl_ports
+set_max_delay -datapath_only $ext_sram_read_ctrl_budget_ns \
+    -from $sram_cpu_clk -to $ext_sram_read_ctrl_ports
 
 set_max_delay -datapath_only $base_sram_return_budget_ns \
     -from $base_sram_read_data_ports -to $sram_mem_capture_pins

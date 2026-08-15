@@ -164,122 +164,6 @@ module inst_buffer(
     end
   end
 
-  reg [44:0] next_front_bus_1_g0;
-  reg [44:0] next_front_bus_1_g1;
-  reg [44:0] next_front_bus_1_g2;
-  reg [44:0] next_front_bus_1_g3;
-  reg [44:0] next_front_bus_1_g4;
-  reg [40:0] next_front_bus_1_g5;
-
-  always @(*)
-  begin
-    next_front_bus_1_g0 = front_bus_1_g0;
-    if (pop_1)
-      next_front_bus_1_g0 = fifo_front_1[44:0];
-    else if (pop_0)
-    begin
-      if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g0 = fifo_front_0[44:0];
-      else if (!front_valid_1_r)
-        next_front_bus_1_g0 = fifo_front_1[44:0];
-    end
-    else if (!front_valid_0_r)
-      next_front_bus_1_g0 = fifo_front_1[44:0];
-    else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g0 = fifo_front_0[44:0];
-  end
-
-  always @(*)
-  begin
-    next_front_bus_1_g1 = front_bus_1_g1;
-    if (pop_1)
-      next_front_bus_1_g1 = fifo_front_1[89:45];
-    else if (pop_0)
-    begin
-      if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g1 = fifo_front_0[89:45];
-      else if (!front_valid_1_r)
-        next_front_bus_1_g1 = fifo_front_1[89:45];
-    end
-    else if (!front_valid_0_r)
-      next_front_bus_1_g1 = fifo_front_1[89:45];
-    else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g1 = fifo_front_0[89:45];
-  end
-
-  always @(*)
-  begin
-    next_front_bus_1_g2 = front_bus_1_g2;
-    if (pop_1)
-      next_front_bus_1_g2 = fifo_front_1[134:90];
-    else if (pop_0)
-    begin
-      if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g2 = fifo_front_0[134:90];
-      else if (!front_valid_1_r)
-        next_front_bus_1_g2 = fifo_front_1[134:90];
-    end
-    else if (!front_valid_0_r)
-      next_front_bus_1_g2 = fifo_front_1[134:90];
-    else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g2 = fifo_front_0[134:90];
-  end
-
-  always @(*)
-  begin
-    next_front_bus_1_g3 = front_bus_1_g3;
-    if (pop_1)
-      next_front_bus_1_g3 = fifo_front_1[179:135];
-    else if (pop_0)
-    begin
-      if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g3 = fifo_front_0[179:135];
-      else if (!front_valid_1_r)
-        next_front_bus_1_g3 = fifo_front_1[179:135];
-    end
-    else if (!front_valid_0_r)
-      next_front_bus_1_g3 = fifo_front_1[179:135];
-    else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g3 = fifo_front_0[179:135];
-  end
-
-  always @(*)
-  begin
-    next_front_bus_1_g4 = front_bus_1_g4;
-    if (pop_1)
-      next_front_bus_1_g4 = fifo_front_1[224:180];
-    else if (pop_0)
-    begin
-      if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g4 = fifo_front_0[224:180];
-      else if (!front_valid_1_r)
-        next_front_bus_1_g4 = fifo_front_1[224:180];
-    end
-    else if (!front_valid_0_r)
-      next_front_bus_1_g4 = fifo_front_1[224:180];
-    else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g4 = fifo_front_0[224:180];
-  end
-
-  always @(*)
-  begin
-    next_front_bus_1_g5 = front_bus_1_g5;
-    if (pop_1)
-      next_front_bus_1_g5 = fifo_front_1[265:225];
-    else if (pop_0)
-    begin
-      if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g5 = fifo_front_0[265:225];
-      else if (!front_valid_1_r)
-        next_front_bus_1_g5 = fifo_front_1[265:225];
-    end
-    else if (!front_valid_0_r)
-      next_front_bus_1_g5 = fifo_front_1[265:225];
-    else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g5 = fifo_front_0[265:225];
-  end
-
-
   (* keep = "true", max_fanout = 48 *) wire front0_we_g0 = pop_0 || !front_valid_0_r;
   (* keep = "true", max_fanout = 48 *) wire front0_we_g1 = pop_0 || !front_valid_0_r;
   (* keep = "true", max_fanout = 48 *) wire front0_we_g2 = pop_0 || !front_valid_0_r;
@@ -287,57 +171,11 @@ module inst_buffer(
   (* keep = "true", max_fanout = 48 *) wire front0_we_g4 = pop_0 || !front_valid_0_r;
   (* keep = "true", max_fanout = 48 *) wire front0_we_g5 = pop_0 || !front_valid_0_r;
 
-  (* keep = "true", max_fanout = 48 *) wire front1_we_g0 =
-  pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* keep = "true", max_fanout = 48 *) wire front1_we_g1 =
-  pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* keep = "true", max_fanout = 48 *) wire front1_we_g2 =
-  pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* keep = "true", max_fanout = 48 *) wire front1_we_g3 =
-  pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* keep = "true", max_fanout = 48 *) wire front1_we_g4 =
-  pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* keep = "true", max_fanout = 48 *) wire front1_we_g5 =
-  pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-
-  // Four independent final enables keep the hot address flops local to the
-  // consume cone instead of extending a wide payload CE net.
-  (* keep = "true", max_fanout = 8 *) wire front0_hot_raddr1_we =
-        pop_0 || !front_valid_0_r;
-  (* keep = "true", max_fanout = 8 *) wire front0_hot_raddr2_we =
-        pop_0 || !front_valid_0_r;
-  (* keep = "true", max_fanout = 8 *) wire front1_hot_raddr1_we =
-        pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* keep = "true", max_fanout = 8 *) wire front1_hot_raddr2_we =
-        pop_1 ||
-        (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
-        (!pop_0 &&
-         (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
-  (* max_fanout = 12 *) wire front1_hot_raddr2_bit0_next =
-        front1_hot_raddr2_we ?
-        next_front_bus_1_g3[HOT_RADDR2_LSB-135] :
-        front_raddr2_1_hot_r[0];
+  // head_step is already the exact number of FIFO entries moved into the
+  // two front slots.  A one-entry refill places fifo_front_0 in lane1; a
+  // two-entry refill places fifo_front_1 there.  Values written while lane1
+  // was invalid were previously unobservable, so keying the payload directly
+  // from head_step removes six duplicated consume/refill condition trees.
   always @(posedge clk)
   begin
     if (!resetn)
@@ -391,34 +229,51 @@ module inst_buffer(
         front_bus_0_g4 <= next_front_bus_0[224:180];
       if (front0_we_g5)
         front_bus_0_g5 <= next_front_bus_0[265:225];
-      if (front1_we_g0)
-        front_bus_1_g0 <= next_front_bus_1_g0;
-      if (front1_we_g1)
-        front_bus_1_g1 <= next_front_bus_1_g1;
-      if (front1_we_g2)
-        front_bus_1_g2 <= next_front_bus_1_g2;
-      if (front1_we_g3)
-        front_bus_1_g3 <= next_front_bus_1_g3;
-      if (front1_we_g4)
-        front_bus_1_g4 <= next_front_bus_1_g4;
-      if (front1_we_g5)
-        front_bus_1_g5 <= next_front_bus_1_g5;
-      if (front0_hot_raddr1_we)
-        front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
-      if (front0_hot_raddr2_we)
-      begin
-        front_raddr2_0_hot_r[4:2] <=
-             next_front_bus_0[HOT_RADDR2_LSB+2 +: 3];
-        front_raddr2_0_hot_bit1_r <= next_front_bus_0[HOT_RADDR2_LSB+1];
-        front_raddr2_0_hot_r[0] <= next_front_bus_0[HOT_RADDR2_LSB];
-      end
-      if (front1_hot_raddr1_we)
-        front_raddr1_1_hot_r <=
-             next_front_bus_1_g3[HOT_RADDR1_LSB-135 +: 5];
-      if (front1_hot_raddr2_we)
-        front_raddr2_1_hot_r[4:1] <=
-             next_front_bus_1_g3[HOT_RADDR2_LSB-134 +: 4];
-      front_raddr2_1_hot_r[0] <= front1_hot_raddr2_bit0_next;
+      case (head_step)
+        2'd1: begin
+          front_bus_1_g0 <= fifo_front_0[44:0];
+          front_bus_1_g1 <= fifo_front_0[89:45];
+          front_bus_1_g2 <= fifo_front_0[134:90];
+          front_bus_1_g3 <= fifo_front_0[179:135];
+          front_bus_1_g4 <= fifo_front_0[224:180];
+          front_bus_1_g5 <= fifo_front_0[265:225];
+          front_raddr1_1_hot_r <=
+               fifo_front_0[HOT_RADDR1_LSB +: 5];
+          front_raddr2_1_hot_r <=
+               fifo_front_0[HOT_RADDR2_LSB +: 5];
+        end
+        2'd2: begin
+          front_bus_1_g0 <= fifo_front_1[44:0];
+          front_bus_1_g1 <= fifo_front_1[89:45];
+          front_bus_1_g2 <= fifo_front_1[134:90];
+          front_bus_1_g3 <= fifo_front_1[179:135];
+          front_bus_1_g4 <= fifo_front_1[224:180];
+          front_bus_1_g5 <= fifo_front_1[265:225];
+          front_raddr1_1_hot_r <=
+               fifo_front_1[HOT_RADDR1_LSB +: 5];
+          front_raddr2_1_hot_r <=
+               fifo_front_1[HOT_RADDR2_LSB +: 5];
+        end
+        default: begin
+          front_bus_1_g0 <= front_bus_1_g0;
+          front_bus_1_g1 <= front_bus_1_g1;
+          front_bus_1_g2 <= front_bus_1_g2;
+          front_bus_1_g3 <= front_bus_1_g3;
+          front_bus_1_g4 <= front_bus_1_g4;
+          front_bus_1_g5 <= front_bus_1_g5;
+          front_raddr1_1_hot_r <= front_raddr1_1_hot_r;
+          front_raddr2_1_hot_r <= front_raddr2_1_hot_r;
+        end
+      endcase
+      // next_front_bus_0 already holds front_bus_0_r when lane0 does not
+      // advance.  Updating the hot mirrors unconditionally is therefore
+      // functionally identical, while avoiding a long backend-allowin path
+      // on the CE pins of these replicated address flops.
+      front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
+      front_raddr2_0_hot_r[4:2] <=
+           next_front_bus_0[HOT_RADDR2_LSB+2 +: 3];
+      front_raddr2_0_hot_bit1_r <= next_front_bus_0[HOT_RADDR2_LSB+1];
+      front_raddr2_0_hot_r[0] <= next_front_bus_0[HOT_RADDR2_LSB];
     end
   end
 
