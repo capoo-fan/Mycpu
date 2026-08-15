@@ -34,8 +34,8 @@ module EXE_stage(
   reg         es_valid_0;
   reg  [31:0] es_pc_0;
   (* max_fanout = 8 *) reg [11:0] es_alu_op_0;
-  (* max_fanout = 4 *) reg [31:0] es_alu_src1_0;
-  (* max_fanout = 4 *) reg [31:0] es_alu_src2_0;
+  (* max_fanout = 8 *) reg [31:0] es_alu_src1_0;
+  (* max_fanout = 8 *) reg [31:0] es_alu_src2_0;
   (* max_fanout = 8 *) reg [31:0] es_rkd_value_0;
   reg         es_store_data_late_0;
   reg  [ 4:0] es_store_data_src_0;
@@ -69,8 +69,8 @@ module EXE_stage(
   reg         es_valid_1;
   reg  [31:0] es_pc_1;
   (* max_fanout = 8 *) reg [11:0] es_alu_op_1;
-  (* max_fanout = 4 *) reg [31:0] es_alu_src1_1;
-  (* max_fanout = 4 *) reg [31:0] es_alu_src2_1;
+  (* max_fanout = 8 *) reg [31:0] es_alu_src1_1;
+  (* max_fanout = 8 *) reg [31:0] es_alu_src2_1;
   (* max_fanout = 8 *) reg [31:0] es_rkd_value_1;
   reg         es_res_from_mem_1;
   reg         es_gr_we_1;
