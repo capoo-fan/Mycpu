@@ -221,6 +221,14 @@ module MEM_stage(
   wire es_redirect_0_raw = es_to_ms_valid_0 && es_is_bj_0 &&
        es_redirect_miss_0;
   wire es_lane1_eff_valid = es_to_ms_valid_1 && !es_redirect_0_raw;
+  // lane1 的数据选择控制本身没有提交/访存副作用；真正的有效位和
+  // WAIT_DATA 仍由 es_lane1_eff_valid 精确杀错路。让这些选择寄存器
+  // 观察原始访存类别，可避免 lane0 分支目标加法/比较链继续驱动
+  // MEM 的高扇出地址、写数据选择副本。
+  wire es_lane0_mem_op_raw = es_to_ms_valid_0 &&
+       (es_res_from_mem_0 || es_mem_we_0);
+  wire es_lane1_mem_op_raw = es_to_ms_valid_1 &&
+       (es_res_from_mem_1 || es_mem_we_1);
 
   wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0;
 
@@ -399,9 +407,12 @@ module MEM_stage(
   // 受控 Load 返回拍唤醒：只对片上 SRAM 的普通 lane0 Load 产生一次
   // 瞬时事件。ISSUE 复用普通 MEM 前递中的目的 tag 做精确 RAW
   // 放行，数据单独直达 EX 输入寄存器，不进入宽前递网络。
-  assign load_wakeup_valid = !select_lane1 && ms_valid_0 && ms_fast_ready &&
-       ms_res_from_mem_0 && ms_gr_we_0 && (ms_dest_0 != 5'b0) &&
-       ms_addr_is_sram_q;
+  // data_sram_fast_ready 只由桥接器已经接受的 BaseRAM/ExtRAM data-read
+  // 事务产生；store、取指和 UART 都不会拉高它。响应期间 MEM 又不会
+  // 换包，因此这里只需排除 lane1，相同的 producer valid/dest 条件已
+  // 包含在 ISSUE 的 ms*_hit 比较中。去掉重复门控可缩短返回拍唤醒到
+  // InstBuffer consume 的组合回环，不改变任何可见唤醒事件。
+  assign load_wakeup_valid = !select_lane1 && data_sram_fast_ready;
   assign load_wakeup_data = ms_load_result_0;
 
   // 特殊结果只进入 WB；load 的 ISSUE 前递只能使用已经寄存的
@@ -535,29 +546,19 @@ module MEM_stage(
     begin
       ms_valid_0 <= es_to_ms_valid_0;
       ms_valid_1 <= es_lane1_eff_valid;
-      ms_lane0_mem_op <= es_to_ms_valid_0 &&
-           (es_res_from_mem_0 || es_mem_we_0);
-      ms_lane1_mem_op <= es_lane1_eff_valid &&
-           (es_res_from_mem_1 || es_mem_we_1);
-      ms_selected_mem_we_q <= (es_to_ms_valid_0 &&
-           (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
-           (es_lane1_eff_valid &&
-           (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
-      ms_selected_mem_we_ready_q <= (es_to_ms_valid_0 &&
-           (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
-           (es_lane1_eff_valid &&
-           (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
-      ms_selected_target_ext_ready_q <= (es_to_ms_valid_0 &&
-           (es_res_from_mem_0 || es_mem_we_0)) ? es_final_result_0[22] :
-           (es_lane1_eff_valid &&
-           (es_res_from_mem_1 || es_mem_we_1)) ? es_final_result_1[22] : 1'b0;
+      ms_lane0_mem_op <= es_lane0_mem_op_raw;
+      ms_lane1_mem_op <= es_lane1_mem_op_raw;
+      ms_selected_mem_we_q <= es_lane0_mem_op_raw ? es_mem_we_0 :
+           es_lane1_mem_op_raw ? es_mem_we_1 : 1'b0;
+      ms_selected_mem_we_ready_q <= es_lane0_mem_op_raw ? es_mem_we_0 :
+           es_lane1_mem_op_raw ? es_mem_we_1 : 1'b0;
+      ms_selected_target_ext_ready_q <= es_lane0_mem_op_raw ?
+           es_final_result_0[22] : es_lane1_mem_op_raw ?
+           es_final_result_1[22] : 1'b0;
       ms_addr_is_sram_0_q <= es_addr_is_sram_0;
       ms_addr_is_sram_1_q <= es_addr_is_sram_1;
-      ms_lane1_mem_op_ctrl <= es_lane1_eff_valid &&
-           (es_res_from_mem_1 || es_mem_we_1);
-      ms_select_lane1_q <= !(es_to_ms_valid_0 &&
-           (es_res_from_mem_0 || es_mem_we_0)) &&
-           es_lane1_eff_valid && (es_res_from_mem_1 || es_mem_we_1);
+      ms_lane1_mem_op_ctrl <= es_lane1_mem_op_raw;
+      ms_select_lane1_q <= !es_lane0_mem_op_raw && es_lane1_mem_op_raw;
     end
     else if (advance_to_lane1)
     begin

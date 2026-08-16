@@ -796,7 +796,9 @@ module ISSUE_stage(
 
   wire [31:0] ds_alu_src1_1 = src1_is_pc_1  ? ds_pc_1 : rj_value_1;
   wire [31:0] ds_alu_src2_1 = src2_is_imm_1 ? imm_1   : rkd_value_1;
-  wire [31:0] ds_rkd_value_1 = inst_jirl_1 ? rj_value_1 : rkd_value_1;
+  // JIRL/BL 不允许进入 lane1；有效 lane1 包中该选择恒取 rkd。
+  // 去掉无效 JIRL 数据 mux，缩短 regfile -> EX 的关键路径。
+  wire [31:0] ds_rkd_value_1 = rkd_value_1;
 
   function [3:0] make_br_op;
     input inst_beq;
@@ -829,7 +831,7 @@ module ISSUE_stage(
 
   wire [ 3:0] ds_br_op_1   = make_br_op(inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1,
                                         inst_bltu_1, inst_bgeu_1, inst_jirl_1, inst_bl_1, inst_b_1);
-  wire [31:0] ds_br_offs_1 = inst_jirl_1 ? jirl_offs_1 : br_offs_1;
+  wire [31:0] ds_br_offs_1 = br_offs_1;
 
   assign ds_to_es_bus_0 = {store_data_late_0,
                            src_raddr2_0,

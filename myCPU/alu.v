@@ -110,9 +110,9 @@ module alu #(
   // alu_result 仍送往 MEM/WB，因而不改变流水级或提交语义。
   assign alu_fast_result = add_sub_result;
 
-  // final result mux
-  assign alu_result = ({32{op_add|op_sub}} & add_sub_result)
-         | ({32{op_slt       }} & slt_result)
+  // 非 ADD/SUB 结果树。ADD/SUB 在 EX 中与 alu_fast_result 只做一次
+  // 最终选择，避免快速前递旁路被重新并入这棵宽结果归并树。
+  assign alu_result = ({32{op_slt       }} & slt_result)
          | ({32{op_sltu      }} & sltu_result)
          | ({32{op_and       }} & and_result)
          | ({32{op_nor       }} & nor_result)
