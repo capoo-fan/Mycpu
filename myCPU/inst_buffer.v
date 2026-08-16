@@ -334,6 +334,17 @@ module inst_buffer(
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+
+  // The lane0 hot-address mirrors used to take their D input from
+  // next_front_bus_0.  That made the ISSUE consume decision pass through the
+  // wide payload mux and then through a second mirror mux before reaching the
+  // replicated hot-address flops.  Select the identical entry directly so the
+  // pop feedback loop has only one narrow mux after ISSUE.  This changes no
+  // queue state or issue condition and therefore adds no pipeline bubble.
+  wire [`IBUF_ENTRY_BUS_WD-1:0] front0_hot_bus_next =
+        pop_1 ? fifo_front_0 :
+        ((pop_0 && front_valid_1_r) ? front_bus_1_r : fifo_front_0);
+
   (* max_fanout = 12 *) wire front1_hot_raddr2_bit0_next =
         front1_hot_raddr2_we ?
         next_front_bus_1_g3[HOT_RADDR2_LSB-135] :
@@ -404,13 +415,16 @@ module inst_buffer(
       if (front1_we_g5)
         front_bus_1_g5 <= next_front_bus_1_g5;
       if (front0_hot_raddr1_we)
-        front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
+        front_raddr1_0_hot_r <=
+             front0_hot_bus_next[HOT_RADDR1_LSB +: 5];
       if (front0_hot_raddr2_we)
       begin
         front_raddr2_0_hot_r[4:2] <=
-             next_front_bus_0[HOT_RADDR2_LSB+2 +: 3];
-        front_raddr2_0_hot_bit1_r <= next_front_bus_0[HOT_RADDR2_LSB+1];
-        front_raddr2_0_hot_r[0] <= next_front_bus_0[HOT_RADDR2_LSB];
+             front0_hot_bus_next[HOT_RADDR2_LSB+2 +: 3];
+        front_raddr2_0_hot_bit1_r <=
+             front0_hot_bus_next[HOT_RADDR2_LSB+1];
+        front_raddr2_0_hot_r[0] <=
+             front0_hot_bus_next[HOT_RADDR2_LSB];
       end
       if (front1_hot_raddr1_we)
         front_raddr1_1_hot_r <=

@@ -194,3 +194,5 @@ python3 sim/run.py sdk/software/examples/supervisor/sim/suite.json --prepare
 
 - **模块化设计**：每个功能模块（如 IF、ID、EX、MEM、WB）应独立开发和测试，确保接口清晰。
 - 具体架构需要参考 mycpu_ref 下的 设计参考.pdf 文档，确保实现细节与设计规范一致。。
+
+WNS >= 0 应当在完整、正确且与设计功能一致的时序约束条件下获得。不得通过不符合实际设计时序语义的 set_false_path、set_multicycle_path、set_clock_groups、set_max_delay 等约束人为排除或放宽关键时序路径。
