@@ -27,7 +27,7 @@ module thinpad_sram_uart_bridge(
     output wire        data_sram_fast_ready,
     output wire        data_sram_fast_data_ok,
     output wire [31:0] data_sram_fast_rdata,
-    output wire        data_sram_store_ready,
+    output wire [ 1:0] data_sram_store_ready,
 
     output wire [19:0] base_ram_addr,
     output wire [31:0] base_ram_wdata,
@@ -376,8 +376,9 @@ module thinpad_sram_uart_bridge(
     // BaseRAM/ExtRAM 是连续的两个 4 MiB 窗口，bit22 直接选择对应的
     // posted-store 槽。该信号只反映槽状态，不穿过请求、UART 或响应
     // OR 树，供 MEM 在已确认物理地址属于 SRAM 后快速退休 store。
-    assign data_sram_store_ready = data_sram_addr[22] ?
-                                   ext_store_ready : base_store_ready;
+    // 两个 bank 的槽状态分别返回；由 MEM 内预存的 bank 位本地选择，
+    // 避免 address[22] 从 MEM 跨桥接器再回到全流水 allowin 控制锥。
+    assign data_sram_store_ready = {ext_store_ready, base_store_ready};
 
     wire unused_cpu_bus = inst_sram_size[0] | inst_sram_size[1] |
                           (|inst_sram_wstrb) | (|inst_sram_wdata) |

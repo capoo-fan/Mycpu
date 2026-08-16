@@ -67,7 +67,7 @@ module mem_timing_cut_tb;
     .data_sram_size(data_size), .data_sram_wstrb(data_wstrb),
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_is_sram(data_addr_is_sram),
-    .data_sram_store_ready(1'b1),
+    .data_sram_store_ready(2'b11),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata)
   );

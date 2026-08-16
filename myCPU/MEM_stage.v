@@ -42,7 +42,7 @@ module MEM_stage(
     output wire [31:0]                  data_sram_addr,
     output wire [31:0]                  data_sram_wdata,
     input  wire                         data_sram_addr_is_sram,
-    input  wire                         data_sram_store_ready,
+    input  wire [ 1:0]                  data_sram_store_ready,
     input  wire                         data_sram_addr_ok,
     input  wire                         data_sram_data_ok,
     input  wire [31:0]                  data_sram_rdata,
@@ -94,6 +94,14 @@ module MEM_stage(
   reg         ms_lane0_mem_op;
   reg         ms_lane1_mem_op;
   reg         ms_selected_mem_we_q;
+  // posted-store ready 回环使用独立的物理副本，避免 data_sram_wr 的
+  // 外设长线把 MEM -> EX -> ISSUE -> InstBuffer 控制锥拖到桥接器区域。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 4 *)
+  reg         ms_selected_mem_we_ready_q;
+  // 桥接器分别返回 BaseRAM/ExtRAM posted-store 槽状态；当前 bank 在
+  // 进入 MEM 时预存，ready 回环不再穿过 data_sram_addr[22] 长线。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 4 *)
+  reg         ms_selected_target_ext_ready_q;
   reg         ms_addr_is_sram_0_q;
   reg         ms_addr_is_sram_1_q;
   // lane1 访存状态的数据选择副本扇出很高；控制副本只服务双访存
@@ -279,8 +287,9 @@ module MEM_stage(
 
   // 桥接器在 addr_ok 当拍已将写请求锁存进寄存化 posted-store 槽；
   // store 因此无需等待后续 data_ok 即可退休。
-  wire posted_store_ready = data_sram_req && selected_mem_we &&
-       selected_addr_is_sram_q && data_sram_store_ready;
+  wire posted_store_ready = data_sram_req && ms_selected_mem_we_ready_q &&
+       selected_addr_is_sram_q &&
+       data_sram_store_ready[ms_selected_target_ext_ready_q];
   wire selected_mem_ready = mem_data_ready || ms_fast_ready ||
        posted_store_ready;
   wire phase_ready_go = ms_has_cacop ? cacop_ready_go :
@@ -346,7 +355,7 @@ module MEM_stage(
   // store 则不会置 rdata_buf_valid。
   assign data_sram_req   = ms_has_mem_op && !ms_data_pending &&
        !ms_rdata_buf_valid &&
-       (!selected_mem_we || selected_store_data_ready);
+       (!ms_selected_mem_we_ready_q || selected_store_data_ready);
   assign data_sram_wr    = selected_mem_we;
   assign data_sram_size  = ms_mem_size;
   assign data_sram_wstrb = selected_mem_we ? ms_st_strb : 4'b0;
@@ -501,6 +510,8 @@ module MEM_stage(
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= 1'b0;
       ms_selected_mem_we_q <= 1'b0;
+      ms_selected_mem_we_ready_q <= 1'b0;
+      ms_selected_target_ext_ready_q <= 1'b0;
       ms_addr_is_sram_0_q <= 1'b0;
       ms_addr_is_sram_1_q <= 1'b0;
       ms_lane1_mem_op_ctrl <= 1'b0;
@@ -513,6 +524,8 @@ module MEM_stage(
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= 1'b0;
       ms_selected_mem_we_q <= 1'b0;
+      ms_selected_mem_we_ready_q <= 1'b0;
+      ms_selected_target_ext_ready_q <= 1'b0;
       ms_addr_is_sram_0_q <= 1'b0;
       ms_addr_is_sram_1_q <= 1'b0;
       ms_lane1_mem_op_ctrl <= 1'b0;
@@ -530,6 +543,14 @@ module MEM_stage(
            (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
            (es_lane1_eff_valid &&
            (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
+      ms_selected_mem_we_ready_q <= (es_to_ms_valid_0 &&
+           (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
+           (es_lane1_eff_valid &&
+           (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
+      ms_selected_target_ext_ready_q <= (es_to_ms_valid_0 &&
+           (es_res_from_mem_0 || es_mem_we_0)) ? es_final_result_0[22] :
+           (es_lane1_eff_valid &&
+           (es_res_from_mem_1 || es_mem_we_1)) ? es_final_result_1[22] : 1'b0;
       ms_addr_is_sram_0_q <= es_addr_is_sram_0;
       ms_addr_is_sram_1_q <= es_addr_is_sram_1;
       ms_lane1_mem_op_ctrl <= es_lane1_eff_valid &&
@@ -545,6 +566,8 @@ module MEM_stage(
       ms_lane0_mem_op <= 1'b0;
       ms_lane1_mem_op <= ms_lane1_mem_op;
       ms_selected_mem_we_q <= ms_mem_we_1;
+      ms_selected_mem_we_ready_q <= ms_mem_we_1;
+      ms_selected_target_ext_ready_q <= ms_alu_result_1[22];
       ms_lane1_mem_op_ctrl <= ms_lane1_mem_op_ctrl;
       ms_select_lane1_q <= 1'b1;
     end

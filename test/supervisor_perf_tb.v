@@ -54,7 +54,7 @@ module supervisor_perf_tb;
   wire        data_fast_data_ok;
   wire        data_fast_ready;
   wire [31:0] data_fast_rdata;
-  wire        data_store_ready;
+  wire [1:0]  data_store_ready;
 
   wire [19:0] base_addr;
   wire [31:0] base_wdata;

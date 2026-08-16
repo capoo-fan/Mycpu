@@ -183,6 +183,9 @@ module ISSUE_stage(
 
   reg        ms_wait_valid_0;
   reg [4:0]  ms_wait_dest_0;
+  // InstBuffer consume/pop 回环使用独立目的寄存器副本，隔离前递选择锥。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg [4:0]  ms_wait_dest_0_consume;
   reg        ms_wait_valid_1;
   reg [4:0]  ms_wait_dest_1;
 
@@ -192,6 +195,7 @@ module ISSUE_stage(
     begin
       ms_wait_valid_0 <= 1'b0;
       ms_wait_dest_0  <= 5'b0;
+      ms_wait_dest_0_consume <= 5'b0;
       ms_wait_valid_1 <= 1'b0;
       ms_wait_dest_1  <= 5'b0;
     end
@@ -201,6 +205,9 @@ module ISSUE_stage(
                          !es_bus_fwd_valid_0;
       ms_wait_dest_0  <= (es_to_ms_valid_0 && es_bus_gr_we_0 &&
                           !es_bus_fwd_valid_0) ? es_bus_dest_0 : 5'b0;
+      ms_wait_dest_0_consume <=
+                          (es_to_ms_valid_0 && es_bus_gr_we_0 &&
+                           !es_bus_fwd_valid_0) ? es_bus_dest_0 : 5'b0;
       ms_wait_valid_1 <= es_to_ms_valid_1 && es_bus_gr_we_1 &&
                          !es_bus_fwd_valid_1;
       ms_wait_dest_1  <= (es_to_ms_valid_1 && es_bus_gr_we_1 &&
@@ -216,6 +223,14 @@ module ISSUE_stage(
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg        es_gr_we_0;
   reg        es_fwd_valid_0;
+  // lane0 consume/pop RAW 锥使用完整的低扇出控制副本；与下面的目的
+  // 标签副本共同留在 InstBuffer 邻近区域，避免回接 forwarding 锥。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg        es_valid_0_consume;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg        es_gr_we_0_consume;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 8 *)
+  reg        es_fwd_valid_0_consume;
   reg        es_res_from_mem_0;
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0]  es_dest_0;
@@ -243,6 +258,9 @@ module ISSUE_stage(
       es_valid_0        <= 1'b0;
       es_gr_we_0        <= 1'b0;
       es_fwd_valid_0    <= 1'b0;
+      es_valid_0_consume <= 1'b0;
+      es_gr_we_0_consume <= 1'b0;
+      es_fwd_valid_0_consume <= 1'b0;
       es_res_from_mem_0 <= 1'b0;
       es_dest_0         <= 5'b0;
       es_dest_0_consume <= 5'b0;
@@ -257,6 +275,11 @@ module ISSUE_stage(
       es_valid_0        <= ds_to_es_valid_0;
       es_gr_we_0        <= ds_to_es_valid_0 && gr_we_0;
       es_fwd_valid_0    <= ds_to_es_valid_0 && gr_we_0 &&
+                           !res_from_mem_0 &&
+                           !is_cpucfg_0 && !is_cacop_0 && !is_csr_0;
+      es_valid_0_consume <= ds_to_es_valid_0;
+      es_gr_we_0_consume <= ds_to_es_valid_0 && gr_we_0;
+      es_fwd_valid_0_consume <= ds_to_es_valid_0 && gr_we_0 &&
                            !res_from_mem_0 &&
                            !is_cpucfg_0 && !is_cacop_0 && !is_csr_0;
       es_res_from_mem_0 <= ds_to_es_valid_0 && res_from_mem_0;
@@ -517,16 +540,20 @@ module ISSUE_stage(
        es_valid_1 && es_gr_we_1 && (es_dest_1_consume != 5'b0) &&
        (es_dest_1_consume == src_raddr2_1);
   wire rj0_hit_es0_for_consume = src0_rj_valid_for_consume &&
-       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       es_valid_0_consume && es_gr_we_0_consume &&
+       (es_dest_0_consume != 5'b0) &&
        (es_dest_0_consume == src_raddr1_0);
   wire rkd0_hit_es0_for_consume = src0_rkd_valid_for_consume &&
-       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       es_valid_0_consume && es_gr_we_0_consume &&
+       (es_dest_0_consume != 5'b0) &&
        (es_dest_0_consume == src_raddr2_0);
   wire rj1_hit_es0_for_consume = src1_rj_valid_for_consume &&
-       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       es_valid_0_consume && es_gr_we_0_consume &&
+       (es_dest_0_consume != 5'b0) &&
        (es_dest_0_consume == src_raddr1_1);
   wire rkd1_hit_es0_for_consume = src1_rkd_valid_for_consume &&
-       es_valid_0 && es_gr_we_0 && (es_dest_0_consume != 5'b0) &&
+       es_valid_0_consume && es_gr_we_0_consume &&
+       (es_dest_0_consume != 5'b0) &&
        (es_dest_0_consume == src_raddr2_1);
   wire rj0_wait_es1_for_consume = rj0_hit_es1_for_consume &&
        !es_fwd_valid_1;
@@ -539,27 +566,27 @@ module ISSUE_stage(
 
   wire rj0_wait_ms0_for_consume = src0_rj_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
-       (ms_wait_dest_0 == src_raddr1_0) &&
+       (ms_wait_dest_0_consume == src_raddr1_0) &&
        !load_wakeup_usable_0;
   wire rj0_wait_ms1_for_consume = src0_rj_valid_for_consume &&
        ms_wait_valid_1 && !ms_fwd_valid_1 &&
        (ms_wait_dest_1 == src_raddr1_0);
   wire rkd0_wait_ms0_for_consume = src0_rkd_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
-       (ms_wait_dest_0 == src_raddr2_0) &&
+       (ms_wait_dest_0_consume == src_raddr2_0) &&
        !load_wakeup_usable_0;
   wire rkd0_wait_ms1_for_consume = src0_rkd_valid_for_consume &&
        ms_wait_valid_1 && !ms_fwd_valid_1 &&
        (ms_wait_dest_1 == src_raddr2_0);
   wire rj1_wait_ms0_for_consume = src1_rj_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
-       (ms_wait_dest_0 == src_raddr1_1);
+       (ms_wait_dest_0_consume == src_raddr1_1);
   wire rj1_wait_ms1_for_consume = src1_rj_valid_for_consume &&
        ms_wait_valid_1 && !ms_fwd_valid_1 &&
        (ms_wait_dest_1 == src_raddr1_1);
   wire rkd1_wait_ms0_for_consume = src1_rkd_valid_for_consume &&
        ms_wait_valid_0 && !ms_fwd_valid_0 &&
-       (ms_wait_dest_0 == src_raddr2_1);
+       (ms_wait_dest_0_consume == src_raddr2_1);
   wire rkd1_wait_ms1_for_consume = src1_rkd_valid_for_consume &&
        ms_wait_valid_1 && !ms_fwd_valid_1 &&
        (ms_wait_dest_1 == src_raddr2_1);
@@ -611,12 +638,12 @@ module ISSUE_stage(
   wire mul0_dep_es_for_consume = is_mul_0 &&
        ((es_fwd_valid_1 &&
          (rj0_hit_es1_for_consume || rkd0_hit_es1_for_consume)) ||
-        (es_fwd_valid_0 &&
+        (es_fwd_valid_0_consume &&
          (rj0_hit_es0_for_consume || rkd0_hit_es0_for_consume)));
   wire mul1_dep_es_for_consume = is_mul_1 &&
        ((es_fwd_valid_1 &&
          (rj1_hit_es1_for_consume || rkd1_hit_es1_for_consume)) ||
-        (es_fwd_valid_0 &&
+        (es_fwd_valid_0_consume &&
          (rj1_hit_es0_for_consume || rkd1_hit_es0_for_consume)));
   // 不保留人为的 stall 组合边界，让综合器把低扇出的 ready 条件直接
   // 吸收到两路 fire LUT 中，少走一级 stall -> fire 级联。
@@ -725,6 +752,10 @@ module ISSUE_stage(
                 $fatal(1, "lane1 consume destination mirror diverged");
               if (es_dest_0_consume !== es_dest_0)
                 $fatal(1, "lane0 consume destination mirror diverged");
+              if ((es_valid_0_consume !== es_valid_0) ||
+                  (es_gr_we_0_consume !== es_gr_we_0) ||
+                  (es_fwd_valid_0_consume !== es_fwd_valid_0))
+                $fatal(1, "lane0 consume control mirrors diverged");
               if (es_allowin && !br_taken &&
                   ((ex_wait_valid_0 !==
                     (es_valid_0 && es_gr_we_0 && !es_fwd_valid_0 &&

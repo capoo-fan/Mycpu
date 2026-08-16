@@ -211,9 +211,20 @@ module EXE_stage(
        es_is_mul_1 ?
        (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
        alu_result_1;
+  // ADD/SUB 同拍前递的 bit7 曾是唯一失败端点。仅为现有前递总线
+  // 的低 8 位保留局部加法链，不增加并行接口或额外消费者扇出。
+  wire lane1_fwd_sub_0 = es_alu_op_0[1];
+  (* keep = "true", max_fanout = 4 *)
+  wire [7:0] lane1_fwd_add_b_0 = lane1_fwd_sub_0 ?
+       ~es_alu_src2_0[7:0] : es_alu_src2_0[7:0];
+  (* keep = "true", max_fanout = 4 *)
+  wire [7:0] lane1_fwd_add_result_0 = es_alu_src1_0[7:0] +
+       lane1_fwd_add_b_0 + lane1_fwd_sub_0;
+  wire [31:0] alu_fast_result_0_timing =
+       {alu_fast_result_0[31:8], lane1_fwd_add_result_0};
   wire [31:0] es_fwd_result_0 = es_is_mul_0 ? es_mul_result_0 :
        ((es_alu_op_0[0] || es_alu_op_0[1]) ?
-        alu_fast_result_0 : alu_result_0);
+        alu_fast_result_0_timing : alu_result_0);
   wire [31:0] es_fwd_result_1 = es_is_mul_1 ?
        (mul_result_hold_valid ? mul_result_hold_1 : mul_product_1) :
        ((es_alu_op_1[0] || es_alu_op_1[1]) ?

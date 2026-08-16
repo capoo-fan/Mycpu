@@ -60,7 +60,7 @@ module supervisor_boot_tb;
   reg [31:0] ext_mem  [0:1048575];
   wire [31:0] base_rdata = base_mem[base_addr];
   wire [31:0] ext_rdata  = ext_mem[ext_addr];
-  wire        data_store_ready;
+  wire [1:0]  data_store_ready;
 
   reg [7:0] tx_bytes [0:511];
   integer tx_count;
