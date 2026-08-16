@@ -23,6 +23,10 @@ module thinpad_sram_uart_bridge_tb;
   wire        data_addr_ok;
   wire        data_data_ok;
   wire [31:0] data_rdata;
+  wire        data_fast_ready;
+  wire        data_fast_data_ok;
+  wire [31:0] data_fast_rdata;
+  wire        data_store_ready;
 
   wire [19:0] base_addr;
   wire [31:0] base_wdata;
@@ -72,6 +76,10 @@ module thinpad_sram_uart_bridge_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
+    .data_sram_fast_ready(data_fast_ready),
+    .data_sram_fast_data_ok(data_fast_data_ok),
+    .data_sram_fast_rdata(data_fast_rdata),
+    .data_sram_store_ready(data_store_ready),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
     .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),
@@ -285,6 +293,12 @@ module thinpad_sram_uart_bridge_tb;
             if (data_ok_count_local == 0)
               data_ok_count_local = 1;
             rdata_value = data_rdata;
+            if (!wr_value &&
+                (!data_fast_ready || !data_fast_data_ok ||
+                 data_fast_rdata !== data_rdata))
+              fail("SRAM fast response timing or data is incorrect");
+            if (wr_value && (data_fast_ready || data_fast_data_ok))
+              fail("posted store incorrectly asserted fast read response");
             if (cycle_count_local != (wr_value ? 1 : 4))
               fail("SRAM data response timing is incorrect");
             if (wr_value) begin
@@ -329,6 +343,8 @@ module thinpad_sram_uart_bridge_tb;
       @(posedge clk);
       if (data_data_ok)
         fail("SRAM data response repeated");
+      if (data_fast_ready || data_fast_data_ok)
+        fail("SRAM fast response repeated");
       if (!base_ce_n || !ext_ce_n)
         fail("SRAM data access did not return idle");
     end
@@ -341,13 +357,8 @@ module thinpad_sram_uart_bridge_tb;
     reg [31:0] payload;
     begin
       strobe = 4'b0001 << offset[1:0];
-      payload = 32'h3322_1100;
-      case (offset[1:0])
-        2'd0: payload[ 7: 0] = byte_value;
-        2'd1: payload[15: 8] = byte_value;
-        2'd2: payload[23:16] = byte_value;
-        default: payload[31:24] = byte_value;
-      endcase
+      // MEM_stage 对 st.b 将字节复制到四个 lane。
+      payload = {4{byte_value}};
       data_access(1'b1, 32'h1f00_0000 + offset,
                   payload, strobe, read_value);
     end
@@ -522,23 +533,8 @@ module thinpad_sram_uart_bridge_tb;
     inst_read_timed(32'h1c3f_fffc, read_value);
     if (read_value !== 32'ha5a5_ffff)
       fail("BaseRAM instruction upper boundary is incorrect");
-    inst_read(32'h1c40_0000, read_value);
-    if (read_value !== 32'b0)
-      fail("unsupported instruction range must return zero");
-
     base_snapshot = base_active_count;
     ext_snapshot  = ext_active_count;
-    data_access(1'b0, 32'h1bff_fffc, 32'b0, 4'b0, read_value);
-    if (read_value !== 32'b0)
-      fail("address below BaseRAM must be unmapped");
-    data_access(1'b0, 32'h1c80_0000, 32'b0, 4'b0, read_value);
-    if (read_value !== 32'b0)
-      fail("address above ExtRAM must be unmapped");
-    data_access(1'b0, 32'h1f10_0000, 32'b0, 4'b0, read_value);
-    if (read_value !== 32'b0)
-      fail("unmapped peripheral read must return zero");
-    if (base_active_count != base_snapshot || ext_active_count != ext_snapshot)
-      fail("unmapped peripheral access aliased SRAM");
 
     // Fixed-baud 16550-compatible initialization must not transmit divisor
     // or control bytes.

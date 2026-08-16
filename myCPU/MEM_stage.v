@@ -7,7 +7,6 @@ module MEM_stage(
     input  wire                         es_to_ms_valid_1,
     input  wire [`ES_TO_MS_BUS_WD-1:0]  es_to_ms_bus_0,
     input  wire [`ES_TO_MS_BUS_1_WD-1:0] es_to_ms_bus_1,
-    input  wire [`TRANS_CTX_WD-1:0]      trans_ctx,
     input  wire                         ws_allowin,
     input  wire [`WS_TO_RF_BUS_WD-1:0]  ws_to_rf_bus,
     output wire                         ms_allowin,
@@ -220,35 +219,11 @@ module MEM_stage(
   wire ms_lane1_eff_valid = ms_valid_1;
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
-  // posted-store 必须在请求进入桥接器的同拍退休，但不能让翻译后的
-  // SRAM 区间比较回接到 ms_allowin。进入 MEM 时分别预计算两路物理
-  // 段，只在当前相位的两个寄存结果之间选择；地址 bit[28:23] 不受DMW 翻译影响。
-  wire       trans_dmw1_active;
-  wire [2:0] trans_dmw1_vseg;
-  wire [2:0] trans_dmw1_pseg;
-  wire       trans_dmw0_active;
-  wire [2:0] trans_dmw0_vseg;
-  wire [2:0] trans_dmw0_pseg;
-  assign {trans_dmw1_active, trans_dmw1_vseg, trans_dmw1_pseg,
-          trans_dmw0_active, trans_dmw0_vseg, trans_dmw0_pseg} = trans_ctx;
-
-  wire es_dmw0_hit_0 = trans_dmw0_active &&
-       (es_final_result_0[31:29] == trans_dmw0_vseg);
-  wire es_dmw1_hit_0 = trans_dmw1_active &&
-       (es_final_result_0[31:29] == trans_dmw1_vseg);
-  wire [2:0] es_pseg_0 = es_dmw0_hit_0 ? trans_dmw0_pseg :
-       es_dmw1_hit_0 ? trans_dmw1_pseg : es_final_result_0[31:29];
-  wire es_addr_is_sram_0 = (es_pseg_0 == 3'b000) &&
-       (es_final_result_0[28:23] == 6'b111000);
-
-  wire es_dmw0_hit_1 = trans_dmw0_active &&
-       (es_final_result_1[31:29] == trans_dmw0_vseg);
-  wire es_dmw1_hit_1 = trans_dmw1_active &&
-       (es_final_result_1[31:29] == trans_dmw1_vseg);
-  wire [2:0] es_pseg_1 = es_dmw0_hit_1 ? trans_dmw0_pseg :
-       es_dmw1_hit_1 ? trans_dmw1_pseg : es_final_result_1[31:29];
-  wire es_addr_is_sram_1 = (es_pseg_1 == 3'b000) &&
-       (es_final_result_1[28:23] == 6'b111000);
+  // posted-store 的 SRAM 属性在进入 MEM 时预存。对 supervisor 的
+  // BaseRAM/ExtRAM/UART 合法地址，bit24 即是 SRAM/UART 分类位；
+  // DMW 只会改写 [31:29]，因此可直接使用未翻译地址的 bit24。
+  wire es_addr_is_sram_0 = ~es_final_result_0[24];
+  wire es_addr_is_sram_1 = ~es_final_result_1[24];
 
   wire lane0_mem_op = ms_lane0_mem_op;
 
