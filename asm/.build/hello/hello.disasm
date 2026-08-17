@@ -1,0 +1,12 @@
+
+/Users/qianfu/Mycpu/asm/.build/hello/hello.elf:     file format elf32-loongarch
+
+
+Disassembly of section .text:
+
+80100000 <_start>:
+80100000:	142468ac 	lu12i.w	$r12,74565(0x12345)
+80100004:	0399e18c 	ori	$r12,$r12,0x678
+80100008:	1500e00d 	lu12i.w	$r13,-522496(0x80700)
+8010000c:	298001ac 	st.w	$r12,$r13,0
+80100010:	4c000020 	jirl	$r0,$r1,0
