@@ -336,10 +336,21 @@ module inst_buffer(
         pop_1 ? fifo_front_0 :
         ((pop_0 && front_valid_1_r) ? front_bus_1_r : fifo_front_0);
 
-  (* max_fanout = 12 *) wire front1_hot_raddr2_bit0_next =
-        front1_hot_raddr2_we ?
-        next_front_bus_1_g3[HOT_RADDR2_LSB-135] :
-        front_raddr2_1_hot_r[0];
+  // lane1 hot 地址只在 refill 时使用 FIFO 头项。直接在 10-bit 窄字段上
+  // 完成选择，避免 ISSUE pop/RAW 控制先穿过 45-bit payload next mux，
+  // 再到 hot 镜像寄存器。front1_hot_*_we 为 0 时该值不被采样。
+  wire [9:0] fifo_front_0_hot_addrs =
+        {fifo_front_0[HOT_RADDR1_LSB +: 5],
+         fifo_front_0[HOT_RADDR2_LSB +: 5]};
+  wire [9:0] fifo_front_1_hot_addrs =
+        {fifo_front_1[HOT_RADDR1_LSB +: 5],
+         fifo_front_1[HOT_RADDR2_LSB +: 5]};
+  (* max_fanout = 12 *) wire [9:0] front1_hot_addrs_next =
+        pop_1 ? fifo_front_1_hot_addrs :
+        pop_0 ? (front_valid_1_r ? fifo_front_0_hot_addrs :
+                                   fifo_front_1_hot_addrs) :
+        !front_valid_0_r ? fifo_front_1_hot_addrs :
+                           fifo_front_0_hot_addrs;
   always @(posedge clk)
   begin
     if (!resetn)
@@ -419,11 +430,9 @@ module inst_buffer(
       end
       if (front1_hot_raddr1_we)
         front_raddr1_1_hot_r <=
-             next_front_bus_1_g3[HOT_RADDR1_LSB-135 +: 5];
+             front1_hot_addrs_next[9:5];
       if (front1_hot_raddr2_we)
-        front_raddr2_1_hot_r[4:1] <=
-             next_front_bus_1_g3[HOT_RADDR2_LSB-134 +: 4];
-      front_raddr2_1_hot_r[0] <= front1_hot_raddr2_bit0_next;
+        front_raddr2_1_hot_r <= front1_hot_addrs_next[4:0];
     end
   end
 

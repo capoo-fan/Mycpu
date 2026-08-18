@@ -62,6 +62,13 @@ module MEM_stage(
   reg  [ 1:0] ms_wait_kind;
 
   reg         ms_result_forwardable_0;
+  // 在 EX->MEM 边界预解码结果类别。ISSUE 的 RAW 放行不再由
+  // ms_res_from_mem_0 与 ready 在同拍组合判断，切断该控制位到
+  // InstBuffer consume/CE 的长回环；两位与原判定严格等价。
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 12 *)
+  reg         ms_nonload_forwardable_0;
+  (* keep = "true", equivalent_register_removal = "no", max_fanout = 12 *)
+  reg         ms_load_forwardable_0;
   reg  [31:0] ms_pc_0;
   reg  [31:0] ms_alu_result_0;
   reg  [31:0] ms_rkd_value_0;
@@ -399,8 +406,8 @@ module MEM_stage(
   // ms_rdata_buf。ms_final_rdata 虽可在完成拍读取 SRAM 返回值，
   // 但 ms_fwd_valid_0 此时保持为 0，避免外部 SRAM 返回路径在
   // 同一周期穿过 MEM 前递网到达年轻指令的 EX 输入。
-  wire ms_fwd_valid_0 = ms_result_forwardable_0 &&
-       (!ms_res_from_mem_0 || mem_data_ready);
+  wire ms_fwd_valid_0 = ms_nonload_forwardable_0 ||
+       (ms_load_forwardable_0 && mem_data_ready);
   wire [31:0] ms_load_result_0_fwd = load_result(
        ms_alu_result_0, ms_rdata_buf,
        ms_ld_byte_0, ms_ld_half_0, ms_ld_sign_ext_0);
@@ -643,6 +650,8 @@ module MEM_stage(
     if (reset)
     begin
       ms_result_forwardable_0 <= 1'b0;
+      ms_nonload_forwardable_0 <= 1'b0;
+      ms_load_forwardable_0 <= 1'b0;
       ms_pc_0           <= 32'b0;
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;
@@ -712,6 +721,10 @@ module MEM_stage(
       if (es_to_ms_valid_0)
       begin
         ms_result_forwardable_0 <= es_result_forwardable_0;
+        ms_nonload_forwardable_0 <=
+             es_result_forwardable_0 && !es_res_from_mem_0;
+        ms_load_forwardable_0 <=
+             es_result_forwardable_0 && es_res_from_mem_0;
         ms_pc_0           <= es_pc_0;
         ms_alu_result_0   <= es_final_result_0;
         ms_rkd_value_0    <= incoming_store_data;
@@ -743,6 +756,8 @@ module MEM_stage(
       else
       begin
         ms_result_forwardable_0 <= 1'b0;
+        ms_nonload_forwardable_0 <= 1'b0;
+        ms_load_forwardable_0 <= 1'b0;
         ms_gr_we_0        <= 1'b0;
         ms_mem_we_0       <= 1'b0;
         ms_store_data_ready_0 <= 1'b1;
@@ -788,6 +803,8 @@ module MEM_stage(
     else if (advance_to_lane1)
     begin
       ms_result_forwardable_0 <= 1'b0;
+      ms_nonload_forwardable_0 <= 1'b0;
+      ms_load_forwardable_0 <= 1'b0;
       ms_gr_we_0        <= 1'b0;
       ms_mem_we_0       <= 1'b0;
       ms_res_from_mem_0 <= 1'b0;
