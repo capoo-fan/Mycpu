@@ -287,33 +287,30 @@ module inst_buffer(
   (* keep = "true", max_fanout = 48 *) wire front0_we_g4 = pop_0 || !front_valid_0_r;
   (* keep = "true", max_fanout = 48 *) wire front0_we_g5 = pop_0 || !front_valid_0_r;
 
+  // pop_1 蕴含 pop_0。若 FIFO 非空，下面的 pop_0 分支已经装入新
+  // front1；若 FIFO 为空，front1 将变为 invalid，无需改写 payload。
+  // 因而不让较长的 lane1 发射判定直接驱动这些宽寄存器的 CE。
   (* keep = "true", max_fanout = 48 *) wire front1_we_g0 =
-  pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
   (* keep = "true", max_fanout = 48 *) wire front1_we_g1 =
-  pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
   (* keep = "true", max_fanout = 48 *) wire front1_we_g2 =
-  pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
   (* keep = "true", max_fanout = 48 *) wire front1_we_g3 =
-  pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
   (* keep = "true", max_fanout = 48 *) wire front1_we_g4 =
-  pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
   (* keep = "true", max_fanout = 48 *) wire front1_we_g5 =
-  pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
@@ -325,15 +322,20 @@ module inst_buffer(
   (* keep = "true", max_fanout = 8 *) wire front0_hot_raddr2_we =
         pop_0 || !front_valid_0_r;
   (* keep = "true", max_fanout = 8 *) wire front1_hot_raddr1_we =
-        pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
   (* keep = "true", max_fanout = 8 *) wire front1_hot_raddr2_we =
-        pop_1 ||
         (pop_0 && (!front_valid_1_r || (cnt != CNT_ZERO))) ||
         (!pop_0 &&
          (!front_valid_0_r || (!front_valid_1_r && (cnt != CNT_ZERO))));
+
+  // hot 地址镜像直接选择将进入 front0 的窄字段，避免 ISSUE consume
+  // 回环再次穿过完整 payload mux；FIFO 状态与发射条件保持不变。
+  wire [`IBUF_ENTRY_BUS_WD-1:0] front0_hot_bus_next =
+        pop_1 ? fifo_front_0 :
+        ((pop_0 && front_valid_1_r) ? front_bus_1_r : fifo_front_0);
+
   (* max_fanout = 12 *) wire front1_hot_raddr2_bit0_next =
         front1_hot_raddr2_we ?
         next_front_bus_1_g3[HOT_RADDR2_LSB-135] :
@@ -404,13 +406,16 @@ module inst_buffer(
       if (front1_we_g5)
         front_bus_1_g5 <= next_front_bus_1_g5;
       if (front0_hot_raddr1_we)
-        front_raddr1_0_hot_r <= next_front_bus_0[HOT_RADDR1_LSB +: 5];
+        front_raddr1_0_hot_r <=
+             front0_hot_bus_next[HOT_RADDR1_LSB +: 5];
       if (front0_hot_raddr2_we)
       begin
         front_raddr2_0_hot_r[4:2] <=
-             next_front_bus_0[HOT_RADDR2_LSB+2 +: 3];
-        front_raddr2_0_hot_bit1_r <= next_front_bus_0[HOT_RADDR2_LSB+1];
-        front_raddr2_0_hot_r[0] <= next_front_bus_0[HOT_RADDR2_LSB];
+             front0_hot_bus_next[HOT_RADDR2_LSB+2 +: 3];
+        front_raddr2_0_hot_bit1_r <=
+             front0_hot_bus_next[HOT_RADDR2_LSB+1];
+        front_raddr2_0_hot_r[0] <=
+             front0_hot_bus_next[HOT_RADDR2_LSB];
       end
       if (front1_hot_raddr1_we)
         front_raddr1_1_hot_r <=

@@ -52,10 +52,10 @@ module thinpad_sram_uart_bridge(
     output wire        uart_tx_start,
     output wire [7:0]  uart_tx_data
 );
-    // 固定三态异步 SRAM 读周期：接受拍、一个访问拍、DONE 响应拍。
-    // 写仍由 posted-store 槽以每拍一笔的吞吐率排空。
+ 
     localparam [1:0] S_IDLE    = 2'd0;
     localparam [1:0] S_ACCESS0 = 2'd1;
+    localparam [1:0] S_PREFETCH = 2'd2;
     localparam [1:0] S_DONE    = 2'd3;
 
     // supervisor 只会产生 BaseRAM/ExtRAM/UART 合法地址。DMW 只改写
@@ -70,7 +70,12 @@ module thinpad_sram_uart_bridge(
     reg         base_fast_data_ok_reg;
     (* keep = "true", equivalent_register_removal = "no" *)
     reg         base_fast_ready_reg;
-    reg  [31:0] base_addr_reg;
+    reg  [19:0] base_addr_reg;
+
+    // 极小 BaseRAM 顺序预取器。只增加最后需求读地址和一个 pending
+    // 位；S_PREFETCH 直接保持异步 SRAM，不设置数据/tag 缓冲。
+    reg  [19:0] base_last_data_word;
+    reg         base_prefetch_pending;
 
     // 单入口寄存化 posted-store。接受请求时只写入本地寄存器；下一
     // 个完整周期再驱动异步 SRAM。排空拍允许同时接收下一笔 store，
@@ -89,6 +94,11 @@ module thinpad_sram_uart_bridge(
     wire base_store_accept = base_data_store & base_store_ready;
     wire base_data_read  = base_data_req & ~data_sram_wr;
     wire base_inst_req   = inst_sram_req & ~inst_sram_wr;
+
+    wire [19:0] base_data_word = data_sram_addr[21:2];
+    wire base_prefetch_hit_accept = (base_state == S_PREFETCH) &&
+         base_data_read && (base_data_word == base_addr_reg);
+
     wire base_grant_data = (base_state == S_IDLE) & ~base_store_valid &
                            base_data_read;
     wire base_grant_inst = (base_state == S_IDLE) & ~base_store_valid &
@@ -96,8 +106,22 @@ module thinpad_sram_uart_bridge(
     wire base_grant      = base_grant_data | base_grant_inst;
     wire base_done       = (base_state == S_DONE);
 
-    wire [31:0] base_cur_addr  = base_grant_data ? data_sram_addr  :
-                                 base_grant_inst ? inst_sram_addr  : base_addr_reg;
+    // 所有真实请求均优先于预取。常规读的 DONE 拍若端口空闲，可直接
+    // 把候选地址送入下一访问拍，省去一个空闲气泡。
+    wire base_prefetch_launch_done =
+         (base_state == S_DONE) && !base_store_valid &&
+         !base_data_read && !base_data_store && !base_inst_req &&
+         base_prefetch_pending;
+    wire base_prefetch_launch = base_prefetch_launch_done;
+    wire base_data_read_accept = base_grant_data |
+                                 base_prefetch_hit_accept;
+    wire base_seq_match = !(&base_last_data_word) &&
+         (base_data_word == (base_last_data_word + 20'd1));
+    wire [19:0] base_prefetch_next_word = base_last_data_word + 20'd1;
+
+    wire [19:0] base_cur_word = base_grant_data ? base_data_word :
+         base_grant_inst ? inst_sram_addr[21:2] :
+         base_addr_reg;
     wire        base_read_active = base_grant | (base_state != S_IDLE);
     wire        base_active    = base_store_drain | base_read_active;
 
@@ -107,7 +131,10 @@ module thinpad_sram_uart_bridge(
             base_client_data <= 1'b0;
             base_fast_data_ok_reg <= 1'b0;
             base_fast_ready_reg <= 1'b0;
-            base_addr_reg    <= 32'b0;
+            base_addr_reg    <= 20'b0;
+            // 复用最后一个不可顺序跨越的 word 作为无历史哨兵。
+            base_last_data_word <= 20'hfffff;
+            base_prefetch_pending <= 1'b0;
             base_store_valid <= 1'b0;
             base_store_addr  <= 32'b0;
             base_store_wdata <= 32'b0;
@@ -123,15 +150,34 @@ module thinpad_sram_uart_bridge(
                 base_store_addr  <= data_sram_addr;
                 base_store_wdata <= data_sram_wdata;
                 base_store_wstrb <= data_sram_wstrb;
+                // 无数据 cache 一致性协议，因此任意 BaseRAM 写都丢弃
+                // 顺序历史和候选；S_PREFETCH 同拍转回 IDLE 后再排空写。
+                base_last_data_word <= 20'hfffff;
+                base_prefetch_pending <= 1'b0;
             end else if (base_store_drain) begin
                 base_store_valid <= 1'b0;
             end
+
+            if (!base_store_accept && base_data_read_accept) begin
+                base_last_data_word <= base_data_word;
+                if (base_seq_match) begin
+                    base_prefetch_pending <= 1'b1;
+                end else begin
+                    base_prefetch_pending <= 1'b0;
+                end
+            end
+
+            if (!base_store_accept && base_prefetch_launch) begin
+                base_prefetch_pending <= 1'b0;
+            end
+
             case (base_state)
                 S_IDLE: begin
                     if (base_grant) begin
                         base_state       <= S_ACCESS0;
                         base_client_data <= base_grant_data;
-                        base_addr_reg    <= base_grant_data ? data_sram_addr  : inst_sram_addr;
+                        base_addr_reg    <= base_grant_data ? data_sram_addr[21:2] :
+                                                            inst_sram_addr[21:2];
                     end
                 end
 
@@ -141,8 +187,29 @@ module thinpad_sram_uart_bridge(
                     base_fast_ready_reg <= base_client_data;
                 end
 
+                S_PREFETCH: begin
+                    if (base_prefetch_hit_accept) begin
+                        // 地址已经稳定访问至少一个完整周期；接受拍后
+                        // 保持地址到 DONE，复用普通读的 raw-rdata 返回。
+                        base_state <= S_DONE;
+                        base_client_data <= 1'b1;
+                        base_fast_data_ok_reg <= 1'b1;
+                        base_fast_ready_reg <= 1'b1;
+                    end else if (base_data_read || base_data_store ||
+                                 base_inst_req || base_store_valid) begin
+                        base_state <= S_IDLE;
+                        base_client_data <= 1'b0;
+                    end
+                end
+
                 S_DONE: begin
-                    base_state <= S_IDLE;
+                    if (base_prefetch_launch_done) begin
+                        base_state       <= S_PREFETCH;
+                        base_client_data <= 1'b0;
+                        base_addr_reg    <= base_prefetch_next_word;
+                    end else begin
+                        base_state <= S_IDLE;
+                    end
                 end
 
                 default: begin
@@ -153,7 +220,7 @@ module thinpad_sram_uart_bridge(
     end
 
     assign base_ram_addr  = base_store_drain ? base_store_addr[21:2] :
-                            base_read_active ? base_cur_addr[21:2] : 20'b0;
+                            base_read_active ? base_cur_word : 20'b0;
     assign base_ram_wdata = base_store_drain ? base_store_wdata : 32'b0;
     assign base_ram_be_n  = base_store_drain ? ~base_store_wstrb :
                             base_read_active ? 4'b0000 : 4'b1111;
@@ -161,7 +228,8 @@ module thinpad_sram_uart_bridge(
     assign base_ram_oe_n  = ~base_read_active;
     assign base_ram_we_n  = ~base_store_drain;
 
-    wire base_data_addr_ok = base_store_accept | base_grant_data;
+    wire base_data_addr_ok = base_store_accept | base_grant_data |
+                             base_prefetch_hit_accept;
     wire base_data_data_ok = base_store_resp_valid |
                              (base_done & base_client_data);
     wire base_inst_data_ok = base_done & ~base_client_data;

@@ -15,7 +15,7 @@ module thinpad_top(
     output wire [7:0]  dpy1,
 
     // BaseRAM
-    inout  wire [31:0] base_ram_data,
+    (* IBUF_LOW_PWR = "FALSE" *) inout wire [31:0] base_ram_data,
     output wire [19:0] base_ram_addr,
     output wire [3:0]  base_ram_be_n,
     output wire        base_ram_ce_n,
@@ -23,7 +23,7 @@ module thinpad_top(
     output wire        base_ram_we_n,
 
     // ExtRAM
-    inout  wire [31:0] ext_ram_data,
+    (* IBUF_LOW_PWR = "FALSE" *) inout wire [31:0] ext_ram_data,
     output wire [19:0] ext_ram_addr,
     output wire [3:0]  ext_ram_be_n,
     output wire        ext_ram_ce_n,
@@ -55,7 +55,7 @@ module thinpad_top(
 );
 
 
-localparam integer CPU_CLK_FREQ = 153000000;
+localparam integer CPU_CLK_FREQ = 148000000;
 
 
 wire cpu_clk;

@@ -208,15 +208,12 @@ module MEM_stage(
   assign csr_busy = ms_valid_0 && ms_is_csr_0;
   assign cacop_busy = ms_valid_0 && ms_is_cacop_0;
 
-  // lane0 的误预测在进入 MEM 时已经杀掉 lane1，避免分支恢复信号继续
-  // 参与访存选择和全流水级反压。
-  wire es_redirect_0_raw = es_to_ms_valid_0 && es_is_bj_0 &&
-       es_redirect_miss_0;
-  wire es_lane1_eff_valid = es_to_ms_valid_1 && !es_redirect_0_raw;
-
   wire ms_redirect_0_raw = ms_valid_0 && ms_is_bj_0 && ms_redirect_miss_0;
 
-  wire ms_lane1_eff_valid = ms_valid_1;
+  // lane0 的误预测结果随分支进入 MEM 后再屏蔽同包 lane1。这样不改变
+  // 错误路径指令的可见行为，同时切断分支目标加法/比较到 MEM 控制
+  // 寄存器的组合路径。
+  wire ms_lane1_eff_valid = ms_valid_1 && !ms_redirect_0_raw;
   wire ms_redirect_1_raw = ms_lane1_eff_valid && ms_is_bj_1 && ms_redirect_miss_1;
 
   // posted-store 的 SRAM 属性在进入 MEM 时预存。对 supervisor 的
@@ -252,7 +249,10 @@ module MEM_stage(
        1'b1 : ms_store_data_ready_0;
 
   // WAIT_DATA/WAIT_CACOP 分别是唯一 bit0/bit1 为 1 的可达编码。
-  wire ms_has_mem_op = ms_wait_kind[0];
+  // wait_kind 已在包进入 MEM 时记录当前访存相位。只有 lane0 分支
+  // 误预测会让同包 lane1 失效；直接用该条件屏蔽，避免 select_lane1
+  // 和 ms_valid_1 穿过 data_req/ready 再接回 ISSUE consume 长回环。
+  wire ms_has_mem_op = ms_wait_kind[0] && !ms_redirect_0_raw;
   wire ms_has_cacop = ms_wait_kind[1];
   wire dual_mem_phase_0 = lane0_mem_op && ms_lane1_mem_op_ctrl;
 
@@ -274,7 +274,7 @@ module MEM_stage(
   wire ms_fast_data_ok = ms_response_waiting && data_sram_fast_data_ok;
   wire mem_data_ready = ms_rdata_buf_valid;
 
-  wire packet_valid = ms_valid_0 || ms_valid_1;
+  wire packet_valid = ms_valid_0 || ms_lane1_eff_valid;
   wire cacop_ready_go = cacop_req_sent && icacop_done;
 
   // 桥接器在 addr_ok 当拍已将写请求锁存进寄存化 posted-store 槽；
@@ -521,22 +521,22 @@ module MEM_stage(
     else if (ms_allowin)
     begin
       ms_valid_0 <= es_to_ms_valid_0;
-      ms_valid_1 <= es_lane1_eff_valid;
+      ms_valid_1 <= es_to_ms_valid_1;
       ms_lane0_mem_op <= es_to_ms_valid_0 &&
            (es_res_from_mem_0 || es_mem_we_0);
-      ms_lane1_mem_op <= es_lane1_eff_valid &&
+      ms_lane1_mem_op <= es_to_ms_valid_1 &&
            (es_res_from_mem_1 || es_mem_we_1);
       ms_selected_mem_we_q <= (es_to_ms_valid_0 &&
            (es_res_from_mem_0 || es_mem_we_0)) ? es_mem_we_0 :
-           (es_lane1_eff_valid &&
+           (es_to_ms_valid_1 &&
            (es_res_from_mem_1 || es_mem_we_1)) ? es_mem_we_1 : 1'b0;
       ms_addr_is_sram_0_q <= es_addr_is_sram_0;
       ms_addr_is_sram_1_q <= es_addr_is_sram_1;
-      ms_lane1_mem_op_ctrl <= es_lane1_eff_valid &&
+      ms_lane1_mem_op_ctrl <= es_to_ms_valid_1 &&
            (es_res_from_mem_1 || es_mem_we_1);
       ms_select_lane1_q <= !(es_to_ms_valid_0 &&
            (es_res_from_mem_0 || es_mem_we_0)) &&
-           es_lane1_eff_valid && (es_res_from_mem_1 || es_mem_we_1);
+           es_to_ms_valid_1 && (es_res_from_mem_1 || es_mem_we_1);
     end
     else if (advance_to_lane1)
     begin
@@ -562,7 +562,7 @@ module MEM_stage(
       else if (es_to_ms_valid_0 &&
                (es_res_from_mem_0 || es_mem_we_0))
         ms_wait_kind <= WAIT_DATA;
-      else if (es_lane1_eff_valid &&
+      else if (es_to_ms_valid_1 &&
                (es_res_from_mem_1 || es_mem_we_1))
         ms_wait_kind <= WAIT_DATA;
       else

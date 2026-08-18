@@ -364,6 +364,38 @@ module thinpad_sram_uart_bridge_tb;
     end
   endtask
 
+  task base_prefetch_hit_access;
+    input [31:0] addr_value;
+    output [31:0] rdata_value;
+    begin
+      @(negedge clk);
+      data_req   = 1'b1;
+      data_wr    = 1'b0;
+      data_addr  = addr_value;
+      data_wdata = 32'b0;
+      data_wstrb = 4'b0;
+
+      // 单槽命中在这一上升沿接受；数据经桥接器寄存后，在紧随的
+      // 半周期稳定，供 CPU 在下一上升沿完成该 load。
+      @(posedge clk);
+      if (!data_addr_ok)
+        fail("BaseRAM prefetch hit was not accepted immediately");
+      @(negedge clk);
+      data_req = 1'b0;
+      if (!data_data_ok || !data_fast_ready || !data_fast_data_ok)
+        fail("BaseRAM prefetch hit did not produce registered fast response");
+      if (data_fast_rdata !== data_rdata)
+        fail("BaseRAM prefetch fast and normal response data differ");
+      rdata_value = data_rdata;
+
+      @(posedge clk);
+      #1;
+      if (data_data_ok || data_fast_ready || data_fast_data_ok)
+        fail("BaseRAM prefetch hit response repeated");
+      data_addr = 32'b0;
+    end
+  endtask
+
   task inst_read;
     input [31:0] addr_value;
     output [31:0] rdata_value;
@@ -626,6 +658,28 @@ module thinpad_sram_uart_bridge_tb;
 
     if (base_active_count != base_snapshot || ext_active_count != ext_snapshot)
       fail("UART access aliased SRAM");
+
+    // 两个连续 BaseRAM 数据读训练 +4 步长；第三个字应由单槽在
+    // 一个阻塞拍内返回。指令读不参与训练，BaseRAM 写已在前面清空
+    // 过顺序历史。
+    data_access(1'b0, 32'h1c00_0100, 32'b0, 4'b0, read_value);
+    if (read_value !== 32'ha5a5_0040)
+      fail("BaseRAM prefetch training read 0 is incorrect");
+    data_access(1'b0, 32'h1c00_0104, 32'b0, 4'b0, read_value);
+    if (read_value !== 32'ha5a5_0041)
+      fail("BaseRAM prefetch training read 1 is incorrect");
+    cycles = 0;
+    while (dut.base_state != 2'd2) begin
+      @(posedge clk);
+      cycles = cycles + 1;
+      if (cycles > 8)
+        fail("BaseRAM sequential prefetch was not installed");
+    end
+    if (dut.base_addr_reg !== 20'h00042)
+      fail("BaseRAM sequential prefetch address is incorrect");
+    base_prefetch_hit_access(32'h1c00_0108, read_value);
+    if (read_value !== 32'ha5a5_0042)
+      fail("BaseRAM sequential prefetch data is incorrect");
 
     $display("PASS thinpad_sram_uart_bridge_tb");
     $finish;
