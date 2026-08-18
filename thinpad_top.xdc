@@ -1,18 +1,16 @@
-set sram_read_launch_ports [get_ports -quiet {
+set base_sram_read_launch_ports [get_ports -quiet {
     base_ram_addr[*]
     base_ram_be_n[*]
     base_ram_ce_n
     base_ram_oe_n
 
+}]
+set ext_sram_read_launch_ports [get_ports -quiet {
     ext_ram_addr[*]
     ext_ram_be_n[*]
     ext_ram_ce_n
     ext_ram_oe_n
 }]
-
-# 使用最快的输出转换速率，让地址/控制更早稳定
-set_property SLEW FAST $sram_read_launch_ports
-
 
 #Clock
 set_property -dict {PACKAGE_PIN K21 IOSTANDARD LVCMOS33} [get_ports clk_50M] ;#50MHz main clock in
@@ -299,7 +297,13 @@ set_property -dict {PACKAGE_PIN AD23 IOSTANDARD LVCMOS33} [get_ports ext_ram_ce_
 set_property -dict {PACKAGE_PIN AB19 IOSTANDARD LVCMOS33} [get_ports ext_ram_oe_n]
 set_property -dict {PACKAGE_PIN AD19 IOSTANDARD LVCMOS33} [get_ports ext_ram_we_n]
 
+# Advance address, byte-enable, CE and OE arrival at each asynchronous SRAM.
+# This improves the physical read-access margin without changing the clock.
+set_property SLEW FAST $base_sram_read_launch_ports
+set_property SLEW FAST $ext_sram_read_launch_ports
+set_property DRIVE 16 $base_sram_read_launch_ports
+set_property DRIVE 16 $ext_sram_read_launch_ports
+
 set_property CFGBVS VCCO [current_design]
 set_property CONFIG_VOLTAGE 3.3 [current_design]
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
-

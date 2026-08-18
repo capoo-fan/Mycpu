@@ -52,11 +52,10 @@ module thinpad_sram_uart_bridge(
     output wire        uart_tx_start,
     output wire [7:0]  uart_tx_data
 );
-    // 固定四态保持原有异步 SRAM 读周期：接受拍、两个访问拍、
-    // DONE 响应拍。写仍由 posted-store 槽以每拍一笔的吞吐率排空。
+    // 固定三态异步 SRAM 读周期：接受拍、一个访问拍、DONE 响应拍。
+    // 写仍由 posted-store 槽以每拍一笔的吞吐率排空。
     localparam [1:0] S_IDLE    = 2'd0;
     localparam [1:0] S_ACCESS0 = 2'd1;
-    localparam [1:0] S_ACCESS1 = 2'd2;
     localparam [1:0] S_DONE    = 2'd3;
 
     // supervisor 只会产生 BaseRAM/ExtRAM/UART 合法地址。DMW 只改写
@@ -137,10 +136,6 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_ACCESS0: begin
-                    base_state <= S_ACCESS1;
-                end
-
-                S_ACCESS1: begin
                     base_state <= S_DONE;
                     base_fast_data_ok_reg <= base_client_data;
                     base_fast_ready_reg <= base_client_data;
@@ -235,10 +230,6 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_ACCESS0: begin
-                    ext_state <= S_ACCESS1;
-                end
-
-                S_ACCESS1: begin
                     ext_state <= S_DONE;
                     ext_fast_data_ok_reg <= 1'b1;
                     ext_fast_ready_reg <= 1'b1;
