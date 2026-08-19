@@ -127,3 +127,7 @@ supervisor/utility/mixed/mixed_signature.mif
 .venv
 
 doc
+
+build
+
+.build
