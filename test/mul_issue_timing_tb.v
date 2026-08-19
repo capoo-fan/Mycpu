@@ -32,6 +32,10 @@ module mul_issue_timing_tb;
   wire ds_to_es_valid_1;
   wire [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus_0;
   wire [`DS_TO_ES_BUS_1_WD-1:0] ds_to_es_bus_1;
+  wire [31:0] ds_mul_src1_0;
+  wire [31:0] ds_mul_src2_0;
+  wire [31:0] ds_mul_src1_1;
+  wire [31:0] ds_mul_src2_1;
   wire es_allowin;
   wire es_to_ms_valid_0;
   wire es_to_ms_valid_1;
@@ -88,6 +92,9 @@ module mul_issue_timing_tb;
     .front_raddr2_1_hot(front_raddr2_1_hot),
     .pop_0(pop_0), .pop_1(pop_1), .special_fire(),
     .br_taken(flush), .special_block(1'b0), .es_allowin(es_allowin),
+    .ms_allowin(ms_allowin),
+    .es_to_ms_valid_0(es_to_ms_valid_0),
+    .es_to_ms_valid_1(es_to_ms_valid_1),
     .es_fwd_bus_0(es_fwd_bus_0), .es_fwd_bus_1(es_fwd_bus_1),
     .ms_fwd_bus_0({`MS_FWD_BUS_WD{1'b0}}),
     .ms_fwd_bus_1({`MS_FWD_BUS_1_WD{1'b0}}),
@@ -96,7 +103,11 @@ module mul_issue_timing_tb;
     .ds_to_es_valid_0(ds_to_es_valid_0),
     .ds_to_es_valid_1(ds_to_es_valid_1),
     .ds_to_es_bus_0(ds_to_es_bus_0),
-    .ds_to_es_bus_1(ds_to_es_bus_1)
+    .ds_to_es_bus_1(ds_to_es_bus_1),
+    .ds_mul_src1_0(ds_mul_src1_0),
+    .ds_mul_src2_0(ds_mul_src2_0),
+    .ds_mul_src1_1(ds_mul_src1_1),
+    .ds_mul_src2_1(ds_mul_src2_1)
   );
 
   EXE_stage u_exe(
@@ -105,6 +116,10 @@ module mul_issue_timing_tb;
     .ds_to_es_valid_1(ds_to_es_valid_1),
     .ds_to_es_bus_0(ds_to_es_bus_0),
     .ds_to_es_bus_1(ds_to_es_bus_1),
+    .ds_mul_src1_0(ds_mul_src1_0),
+    .ds_mul_src2_0(ds_mul_src2_0),
+    .ds_mul_src1_1(ds_mul_src1_1),
+    .ds_mul_src2_1(ds_mul_src2_1),
     .flush(flush), .ms_allowin(ms_allowin),
     .load_wakeup_valid(1'b0), .load_wakeup_data(32'b0),
     .es_allowin(es_allowin),
@@ -339,6 +354,115 @@ module mul_issue_timing_tb;
     ms_allowin = 1'b1;
     expect_pop(1'b1, 1'b1,
                "MEM release did not enable paired-multiply consumers");
+
+    // A stale lane1 payload must not make a lone lane0 multiply look like a
+    // pipelineable pair; otherwise ISSUE would pop an instruction for which
+    // the tail slot captures no valid packet.
+    reset_dut();
+    inst_0 = make_mul(5'd2, 5'd7, 5'd8);
+    inst_1 = make_mul(5'd3, 5'd9, 5'd10);
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
+    expect_pop(1'b1, 1'b1, "stale-payload setup pair did not issue");
+    @(posedge clk);
+    @(negedge clk);
+    inst_0 = make_mul(5'd4, 5'd11, 5'd12);
+    front_valid_1 = 1'b0;
+    expect_pop(1'b0, 1'b0,
+               "invalid lane1 payload opened the multiply tail slot");
+
+    // Two consecutive MUL+MUL packets must launch on adjacent edges.  The
+    // first packet remains the architectural head while the second occupies
+    // the private tail slot; after the first retires, the second result is
+    // immediately visible and may forward to both lanes.
+    reset_dut();
+    u_issue.u_regfile.rf[7]  = 32'hffff_fffe;
+    u_issue.u_regfile.rf[8]  = 32'h0000_0003;
+    u_issue.u_regfile.rf[9]  = 32'h0000_0007;
+    u_issue.u_regfile.rf[10] = 32'hffff_fffc;
+    u_issue.u_regfile.rf[11] = 32'h0000_0005;
+    u_issue.u_regfile.rf[12] = 32'h0000_0006;
+    u_issue.u_regfile.rf[13] = 32'hffff_fffd;
+    u_issue.u_regfile.rf[14] = 32'h0000_0008;
+    inst_0 = make_mul(5'd2, 5'd7, 5'd8);
+    inst_1 = make_mul(5'd3, 5'd9, 5'd10);
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
+    expect_pop(1'b1, 1'b1, "first pipelined MUL+MUL did not issue");
+    @(posedge clk);
+    @(negedge clk);
+    inst_0 = make_mul(5'd4, 5'd11, 5'd12);
+    inst_1 = make_mul(5'd5, 5'd13, 5'd14);
+    expect_pop(1'b1, 1'b1,
+               "second MUL+MUL did not launch on the adjacent edge");
+    @(posedge clk);
+    #1;
+    if (!u_exe.mul_tail_valid || u_exe.es_dest_0 !== 5'd2 ||
+        u_exe.mul_tail_dest_0 !== 5'd4)
+      fail("pipelined MUL+MUL metadata lost head/tail order");
+    @(negedge clk);
+    inst_0 = make_addi(5'd6, 5'd4);
+    inst_1 = make_addi(5'd7, 5'd5);
+    expect_pop(1'b0, 1'b0,
+               "consumer overtook the queued MUL+MUL packet");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_mul_result_0 !== 32'hffff_fffa ||
+        u_exe.mul_product_1 !== 32'hffff_ffe4 ||
+        !es_to_ms_valid_0 || !es_to_ms_valid_1)
+      fail("first pipelined MUL+MUL result was not aligned");
+    @(negedge clk);
+    expect_pop(1'b0, 1'b0,
+               "consumer entered while the tail still occupied EX ordering");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_dest_0 !== 5'd4 || u_exe.es_dest_1 !== 5'd5 ||
+        u_exe.es_mul_result_0 !== 32'h0000_001e ||
+        u_exe.mul_product_1 !== 32'hffff_ffe8 ||
+        u_exe.mul_tail_valid)
+      fail("second pipelined MUL+MUL did not promote with its result");
+    @(negedge clk);
+    expect_pop(1'b1, 1'b1,
+               "promoted MUL+MUL did not forward to both consumers");
+    @(posedge clk);
+    #1;
+    if (u_exe.es_alu_src1_0 !== 32'h0000_001e ||
+        u_exe.es_alu_src1_1 !== 32'hffff_ffe8)
+      fail("promoted MUL+MUL forwarding data was incorrect");
+
+    // Backpressure may hold both completed packets concurrently.  The head
+    // and tail result registers must preserve A then B until MEM resumes.
+    reset_dut();
+    inst_0 = make_mul(5'd2, 5'd7, 5'd8);
+    inst_1 = make_mul(5'd3, 5'd9, 5'd10);
+    front_valid_0 = 1'b1;
+    front_valid_1 = 1'b1;
+    expect_pop(1'b1, 1'b1, "backpressure head MUL+MUL did not issue");
+    @(posedge clk);
+    @(negedge clk);
+    inst_0 = make_mul(5'd4, 5'd11, 5'd12);
+    inst_1 = make_mul(5'd5, 5'd13, 5'd14);
+    expect_pop(1'b1, 1'b1, "backpressure tail MUL+MUL did not issue");
+    @(posedge clk);
+    @(negedge clk);
+    ms_allowin = 1'b0;
+    inst_0 = make_addi(5'd6, 5'd4);
+    inst_1 = make_addi(5'd7, 5'd5);
+    repeat (3) @(posedge clk);
+    #1;
+    if (!u_exe.mul_result_hold_valid ||
+        u_exe.mul_result_hold_0 !== 32'hffff_fffa ||
+        !u_exe.mul_tail_result_hold_valid ||
+        u_exe.mul_tail_pc_0 !== 32'h0000_001e)
+      fail("two completed MUL+MUL packets were not held under backpressure");
+    @(negedge clk);
+    ms_allowin = 1'b1;
+    @(posedge clk);
+    #1;
+    if (u_exe.es_dest_0 !== 5'd4 ||
+        u_exe.es_mul_result_0 !== 32'h0000_001e ||
+        u_exe.es_exec_result_1 !== 32'hffff_ffe8)
+      fail("held tail MUL+MUL result was not restored on promotion");
 
     // Flush has priority over a pending multiply and removes its hazard state.
     reset_dut();
