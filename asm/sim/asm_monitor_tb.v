@@ -386,18 +386,31 @@ module asm_monitor_tb;
     begin
       $display("RESULT entry=%h program_bytes=%0d", entry_addr,
                program_words * 4);
-      $display("========== PERFORMANCE SUMMARY ==========");
-      $display("SIM_PERF scope=G_TO_07 cycles=%0d instructions=%0d IPC=%.6f CPI=%.6f",
-               command_cycles, command_instr,
-               (command_cycles != 0) ?
-                 (command_instr * 1.0 / command_cycles) : 0.0,
-               (command_instr != 0) ?
-                 (command_cycles * 1.0 / command_instr) : 0.0);
-      $display("USER_PERF scope=PROGRAM_ONLY cycles=%0d instructions=%0d IPC=%.6f CPI=%.6f",
-               user_cycles, user_instr,
-               (user_cycles != 0) ? (user_instr * 1.0 / user_cycles) : 0.0,
-               (user_instr != 0) ? (user_cycles * 1.0 / user_instr) : 0.0);
-      $display("=========================================");
+      if ($test$plusargs("TOTAL_PERF_TABLE")) begin
+        $display("+----------+--------------+--------------+----------+----------+");
+        $display("| SCOPE    | CYCLES       | INST         | IPC      | CPI      |");
+        $display("+----------+--------------+--------------+----------+----------+");
+        $display("| G_TO_07  | %12d | %12d | %8.6f | %8.6f |",
+                 command_cycles, command_instr,
+                 (command_cycles != 0) ?
+                   (command_instr * 1.0 / command_cycles) : 0.0,
+                 (command_instr != 0) ?
+                   (command_cycles * 1.0 / command_instr) : 0.0);
+        $display("+----------+--------------+--------------+----------+----------+");
+      end else begin
+        $display("========== PERFORMANCE SUMMARY ==========");
+        $display("SIM_PERF scope=G_TO_07 cycles=%0d instructions=%0d IPC=%.6f CPI=%.6f",
+                 command_cycles, command_instr,
+                 (command_cycles != 0) ?
+                   (command_instr * 1.0 / command_cycles) : 0.0,
+                 (command_instr != 0) ?
+                   (command_cycles * 1.0 / command_instr) : 0.0);
+        $display("USER_PERF scope=PROGRAM_ONLY cycles=%0d instructions=%0d IPC=%.6f CPI=%.6f",
+                 user_cycles, user_instr,
+                 (user_cycles != 0) ? (user_instr * 1.0 / user_cycles) : 0.0,
+                 (user_instr != 0) ? (user_cycles * 1.0 / user_instr) : 0.0);
+        $display("=========================================");
+      end
       $display("MEM_WRITES count=%0d logged=%0d", write_count, write_log_count);
       for (n = 0; n < write_log_count; n = n + 1)
         $display("WRITE addr=%h data=%h", write_addr_log[n], write_data_log[n]);

@@ -6,8 +6,7 @@
 #   make check
 #   make clean
 
-TOOLCHAIN_DIR ?= /opt/loongarch-env/loongarch32r-toolchain/bin
-CROSS_COMPILE ?= $(TOOLCHAIN_DIR)/loongarch32r-linux-gnusf-
+CROSS_COMPILE ?= loongarch32r-linux-gnusf-
 CC := $(CROSS_COMPILE)gcc
 
 SRC ?= 2025.c
