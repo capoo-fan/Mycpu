@@ -2,12 +2,12 @@
 `default_nettype none
 `include "la32_arithmetic_ops.vh"
 
-// Unified contest-oriented arithmetic interface.
+// 面向竞赛的统一算术接口。
 //
-// OP_UDIV / OP_SDIV: result = quotient, auxiliary = remainder
-// OP_UMOD / OP_SMOD: result = remainder, auxiliary = quotient
-// OP_ISQRT:          result = floor(sqrt(a)), auxiliary = a - result^2
-// OP_GCD:            result = gcd(a, b), auxiliary = 0
+// OP_UDIV / OP_SDIV：result = 商，auxiliary = 余数
+// OP_UMOD / OP_SMOD：result = 余数，auxiliary = 商
+// OP_ISQRT：         result = floor(sqrt(a))，auxiliary = a - result^2
+// OP_GCD：           result = gcd(a, b)，auxiliary = 0
 module contest_arithmetic_unit (
     input  wire        clk,
     input  wire        resetn,
@@ -127,8 +127,7 @@ module contest_arithmetic_unit (
             else if (operation_is_gcd)
                 req_ready = gcd_req_ready;
             else
-                // Invalid operations are accepted and reported, preventing a
-                // malformed command from deadlocking its caller.
+                // 接受并报告无效操作，防止格式错误的命令使调用方死锁。
                 req_ready = 1'b1;
         end
     end

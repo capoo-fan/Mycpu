@@ -1,13 +1,14 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Unsigned 32-bit integer square root.
+// 无符号 32 位整数平方根。
 //
-// result = floor(sqrt(radicand))
-// remainder = radicand - result * result
+// 结果：result = floor(sqrt(radicand))
+// 平方余数：remainder = radicand - result * result
 //
-// The radix-4 digit-by-digit algorithm consumes two radicand bits per cycle,
-// so every normal request takes 16 iteration cycles.  No multiplier is used.
+// 四进制逐位算法每拍处理被开方数的两个比特，因此每个普通请求需要 16 轮迭代，
+// 且不使用乘法器。
+
 module la32_isqrt (
     input  wire        clk,
     input  wire        resetn,
@@ -26,8 +27,7 @@ module la32_isqrt (
     reg [4:0]  iteration;
     reg [31:0] radicand_shift;
     reg [15:0] root_work;
-    // The registered partial remainder fits in 32 bits.  Two more bits are
-    // added combinationally when the next radicand digit is shifted in.
+    // 寄存的部分余数可由 32 位表示；移入下一组被开方数位时，再由组合逻辑扩展两位。
     reg [31:0] remainder_work;
 
     wire [33:0] shifted_remainder =

@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Combinational LA32S shift/permutation core.
-// operation: 0=ROTR.W, 1=BITREV.W, 2=BITREV.4B, 3=REVB.2H,
-//            4=BYTEPICK.W.
+// LA32S 组合逻辑移位/重排核心。
+// 操作编码：0=ROTR.W，1=BITREV.W，2=BITREV.4B，3=REVB.2H，
+//           4=BYTEPICK.W。
 module la32_bit_permute (
     input  wire [2:0]  operation,
     input  wire [31:0] operand_a,
@@ -36,6 +36,7 @@ module la32_bit_permute (
         invalid_operation = 1'b0;
 
         case (operation)
+            // ROTR.W：将 operand_a 循环右移 shift_amount 位。
             OP_ROTR: begin
                 if (shift_amount == 5'd0)
                     result = operand_a;
@@ -44,11 +45,13 @@ module la32_bit_permute (
                              (operand_a << (6'd32 - shift_amount));
             end
 
+            // BITREV.W：反转 operand_a 中全部 32 位的排列顺序。
             OP_BITREV_W: begin
                 for (index = 0; index < 32; index = index + 1)
                     result[index] = operand_a[31-index];
             end
 
+            // BITREV.4B：分别反转 operand_a 四个字节内部的 8 位排列顺序。
             OP_BITREV_4B: begin
                 result[7:0]   = reverse_byte(operand_a[7:0]);
                 result[15:8]  = reverse_byte(operand_a[15:8]);
@@ -56,14 +59,15 @@ module la32_bit_permute (
                 result[31:24] = reverse_byte(operand_a[31:24]);
             end
 
+            // REVB.2H：分别交换 operand_a 两个半字内部的高、低字节。
             OP_REVB_2H:
                 result = {operand_a[23:16], operand_a[31:24],
                           operand_a[7:0],   operand_a[15:8]};
 
             OP_BYTEPICK_W: begin
-                // LA32S BYTEPICK.W concatenates rk behind rj and selects a
-                // four-byte window.  Here operand_a=rj, operand_b=rk and
-                // shift_amount[1:0]=sa2.
+                // BYTEPICK.W：从 operand_a 与 operand_b 的拼接值中选取连续四字节。
+                // LA32S BYTEPICK.W 将 rk 拼接在 rj 之后，并选择一个四字节窗口。
+                // 此处 operand_a=rj、operand_b=rk、shift_amount[1:0]=sa2。
                 case (shift_amount[1:0])
                     2'd0: result = operand_b;
                     2'd1: result = {operand_b[23:0], operand_a[31:24]};

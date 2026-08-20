@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Unsigned 32-bit greatest common divisor using Stein's binary GCD algorithm.
-// This avoids division and modulo hardware.  gcd(0, 0) is defined as zero.
+// GCD：将 req_a、req_b 视为无符号 32 位整数，使用二进制 GCD 算法求
+// 最大公约数；任一操作数为 0 时，结果为另一个操作数。
 module la32_gcd (
     input  wire        clk,
     input  wire        resetn,

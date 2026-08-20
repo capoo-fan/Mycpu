@@ -1,9 +1,12 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Iterative LSB-first CRC-32 / CRC-32C core matching LoongArch CRC semantics.
-// req_width: 0=8-bit message, 1=16-bit message, 2=32-bit message.
-// The initial working value is req_seed XOR zero-extended message.
+// 符合 LoongArch CRC 语义、最低位优先的迭代式 CRC-32/CRC-32C 核心。
+// req_castagnoli=0 对应 CRC32.{B/H/W}，使用 IEEE 802.3 多项式；
+// req_castagnoli=1 对应 CRC32C.{B/H/W}，使用 Castagnoli 多项式。
+// req_width：0=.B，仅处理 req_message[7:0]；1=.H，仅处理 req_message[15:0]；
+//            2=.W，处理完整的 req_message[31:0]。
+// 初始工作值为 req_seed 与零扩展消息的异或结果。
 module la32_crc32 (
     input  wire        clk,
     input  wire        resetn,

@@ -2,12 +2,13 @@
 `default_nettype none
 `include "la32_arithmetic_ops.vh"
 
-// Adapter matching Template/Map/accelerator_logic.v's per-element interface.
-// OPERATION is one of contest_arithmetic_unit's operation codes.  For ISQRT,
-// OPERAND_B is ignored; for DIV/MOD it supplies the constant second operand.
+// 与 Template/Map/accelerator_logic.v 逐元素接口匹配的适配器。
+// OPERATION 取 contest_arithmetic_unit 的操作码之一。执行 ISQRT 时忽略
+// OPERAND_B；执行 DIV/MOD 时，OPERAND_B 提供固定的第二操作数。
 module arithmetic_map_adapter #(
     parameter [2:0]  OPERATION = `LA32_ARITH_OP_ISQRT,
-    parameter [31:0] OPERAND_B = 32'd1
+    parameter [31:0] OPERAND_B = 32'd1,
+    parameter        USE_AUXILIARY = 1'b0
 )(
     input  wire        clk,
     input  wire        resetn,
@@ -20,26 +21,21 @@ module arithmetic_map_adapter #(
     output wire [31:0] out_data
 );
 
-    wire [31:0] unused_auxiliary;
-    wire unused_divide_by_zero;
-    wire unused_overflow;
-    wire unused_invalid_operation;
-
-    contest_arithmetic_unit u_arithmetic_unit (
-        .clk                   (clk),
-        .resetn                (resetn),
-        .req_valid             (in_valid),
-        .req_ready             (in_ready),
-        .req_operation         (OPERATION),
-        .req_operand_a         (in_data),
-        .req_operand_b         (OPERAND_B),
-        .rsp_valid             (out_valid),
-        .rsp_ready             (1'b1),
-        .rsp_result            (out_data),
-        .rsp_auxiliary         (unused_auxiliary),
-        .rsp_divide_by_zero    (unused_divide_by_zero),
-        .rsp_overflow          (unused_overflow),
-        .rsp_invalid_operation (unused_invalid_operation)
+    // 兼容旧的 3 位算术操作码；所有新接入统一直接使用 accelerator_logic。
+    accelerator_logic #(
+        .OPERATION       ({5'b0, OPERATION}),
+        .OPERAND_B       (OPERAND_B),
+        .CONTROL_LSB     (5'b0),
+        .CONTROL_MSB     (5'b0),
+        .USE_AUXILIARY   (USE_AUXILIARY)
+    ) u_accelerator_logic (
+        .clk       (clk),
+        .resetn    (resetn),
+        .in_valid  (in_valid),
+        .in_ready  (in_ready),
+        .in_data   (in_data),
+        .out_valid (out_valid),
+        .out_data  (out_data)
     );
 
 endmodule

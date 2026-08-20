@@ -2,12 +2,12 @@
 `default_nettype none
 `include "la32_function_ops.vh"
 
-// Unified reusable function unit for contest accelerators.
+// 面向竞赛加速器的统一可复用功能单元。
 //
-// Fast bit/field/logic operations are registered on request acceptance.
-// Division, square root, GCD, full multiply and CRC use their dedicated cores.
-// At most one request is active, and every accepted request produces exactly
-// one response that remains stable until rsp_ready is asserted.
+// 快速位操作、位域操作和逻辑操作在请求被接受时寄存结果。
+// 除法、平方根、最大公约数、全宽乘法和 CRC 分别使用专用运算核心。
+// 同一时间最多处理一个请求；每个已接受请求恰好产生一个响应，且响应保持稳定，
+// 直到 rsp_ready 有效。
 module contest_function_unit (
     input  wire        clk,
     input  wire        resetn,
@@ -68,7 +68,7 @@ module contest_function_unit (
     wire request_fire = req_valid && req_ready;
 
     // ---------------------------------------------------------------------
-    // Existing arithmetic unit
+    // 现有算术单元
     // ---------------------------------------------------------------------
     wire        arithmetic_req_ready;
     wire        arithmetic_rsp_valid;
@@ -100,7 +100,7 @@ module contest_function_unit (
     );
 
     // ---------------------------------------------------------------------
-    // Fast combinational cores
+    // 快速组合逻辑核心
     // ---------------------------------------------------------------------
     wire [31:0] count_result;
     wire count_invalid_operation;
@@ -150,7 +150,7 @@ module contest_function_unit (
     );
 
     // ---------------------------------------------------------------------
-    // Full multiplier
+    // 全宽乘法器
     // ---------------------------------------------------------------------
     wire        multiply_req_ready;
     wire        multiply_rsp_valid;
@@ -173,7 +173,7 @@ module contest_function_unit (
     );
 
     // ---------------------------------------------------------------------
-    // CRC core
+    // CRC 核心
     // ---------------------------------------------------------------------
     reg  [1:0] crc_request_width;
     wire       crc_req_ready;
@@ -214,7 +214,7 @@ module contest_function_unit (
     );
 
     // ---------------------------------------------------------------------
-    // Request selection and response collection
+    // 请求选择与响应汇集
     // ---------------------------------------------------------------------
     always @(*) begin
         req_ready = 1'b0;
@@ -227,7 +227,7 @@ module contest_function_unit (
             else if (operation_is_crc)
                 req_ready = crc_req_ready;
             else
-                // Fast and invalid operations are consumed immediately.
+                // 快速操作和无效操作立即被接收。
                 req_ready = 1'b1;
         end
     end

@@ -1,9 +1,11 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Registered 32x32 -> 64-bit multiplier.
-// req_signed=0 implements MUL.W + MULH.WU semantics.
-// req_signed=1 implements MUL.W + MULH.W semantics.
+// 带寄存器的 32x32→64 位乘法器。
+// req_signed=0：将两个操作数视为无符号数；rsp_product[31:0] 对应 MUL.W，
+//               rsp_product[63:32] 对应 MULH.WU。
+// req_signed=1：将两个操作数视为有符号补码；rsp_product[31:0] 对应 MUL.W，
+//               rsp_product[63:32] 对应 MULH.W。
 module la32_mul_full (
     input  wire        clk,
     input  wire        resetn,

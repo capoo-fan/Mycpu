@@ -1,11 +1,10 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// 32-bit iterative divider for LA32-style integer operands.
+// 用于 LA32 风格整数操作数的 32 位迭代除法器。
 //
-// One request produces quotient and remainder together, so DIV and MOD can
-// share the same hardware.  The datapath uses restoring division and contains
-// no synthesizable '/' or '%' operator.
+// 一个请求同时产生商和余数，因此 DIV 与 MOD 可以复用同一套硬件。数据通路采用
+// 恢复余数除法，不包含可综合的“/”或“%”运算符。
 module la32_divmod (
     input  wire        clk,
     input  wire        resetn,
@@ -28,11 +27,10 @@ module la32_divmod (
     reg [5:0]  iteration;
     reg [31:0] divisor_mag;
     reg [31:0] dividend_shift;
-    // Only the lower 31 partial-quotient bits feed the next iteration.  The
-    // final MSB is formed by next_quotient on the last cycle.
+    // 只有部分商的低 31 位送入下一轮迭代；最终最高位在最后一拍由
+    // next_quotient 形成。
     reg [30:0] quotient_tail;
-    // After every subtraction the partial remainder is less than a 32-bit
-    // divisor, so its registered form needs only 32 bits.
+    // 每次减法后的部分余数均小于 32 位除数，因此其寄存形式只需 32 位。
     reg [31:0] remainder_work;
     reg        quotient_negative;
     reg        remainder_negative;
@@ -45,14 +43,13 @@ module la32_divmod (
     wire [31:0] divisor_magnitude =
         divisor_negative ? (~req_divisor + 32'd1) : req_divisor;
 
-    // One restoring-division iteration.  The dividend is consumed MSB first.
+    // 一轮恢复余数除法迭代，被除数从最高位开始处理。
     wire [32:0] shifted_remainder =
         {remainder_work, dividend_shift[31]};
     wire        quotient_bit =
         shifted_remainder >= {1'b0, divisor_mag};
-    // The exact post-subtraction value is known to fit in 32 bits.  Computing
-    // its low word is also correct when shifted_remainder[32] is set because
-    // two's-complement subtraction is modulo 2^32.
+    // 减法后的精确结果必定可由 32 位表示。当 shifted_remainder[32] 有效时，
+    // 仅计算其低 32 位同样正确，因为二进制补码减法以 2^32 为模。
     wire [31:0] next_remainder = quotient_bit ?
         (shifted_remainder[31:0] - divisor_mag) :
         shifted_remainder[31:0];
@@ -91,15 +88,15 @@ module la32_divmod (
                 rsp_divide_by_zero <= 1'b0;
                 rsp_overflow       <= 1'b0;
 
-                // Deterministic exceptional results, accompanied by flags.
-                // q = 0xffffffff and r = dividend for division by zero.
+                // 异常情况返回确定的结果，并同时设置标志。
+                // 除零时 q=0xffffffff，r=被除数。
                 if (req_divisor == 32'b0) begin
                     rsp_quotient       <= 32'hffff_ffff;
                     rsp_remainder      <= req_dividend;
                     rsp_divide_by_zero <= 1'b1;
                     rsp_valid          <= 1'b1;
                 end
-                // Signed INT_MIN / -1 cannot be represented in 32 bits.
+                // 有符号 INT_MIN/-1 的结果无法用 32 位表示。
                 else if (req_signed &&
                          (req_dividend == 32'h8000_0000) &&
                          (req_divisor  == 32'hffff_ffff)) begin

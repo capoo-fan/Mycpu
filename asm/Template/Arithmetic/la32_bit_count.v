@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Combinational bit-count core.
-// operation: 0=CLZ, 1=CLO, 2=CTZ, 3=CTO, 4=POPCOUNT.
-// CLZ/CTZ of zero and CLO/CTO of all-ones return 32.
+// 组合逻辑位计数核心。
+// 操作编码：0=CLZ，1=CLO，2=CTZ，3=CTO，4=POPCOUNT。
+// 对零执行 CLZ/CTZ、对全一执行 CLO/CTO 时返回 32。
 module la32_bit_count (
     input  wire [2:0]  operation,
     input  wire [31:0] operand,
@@ -88,7 +88,7 @@ module la32_bit_count (
         input [31:0] value;
         reg [31:0] partial;
         begin
-            // SWAR adder tree: pair, nibble, byte, halfword, word.
+            // SWAR 加法树：位对、半字节、字节、半字、字。
             partial = value - ((value >> 1) & 32'h5555_5555);
             partial = (partial & 32'h3333_3333) +
                       ((partial >> 2) & 32'h3333_3333);
@@ -104,14 +104,19 @@ module la32_bit_count (
         invalid_operation = 1'b0;
 
         case (operation)
+            // CLZ：统计 operand 从最高位开始连续为 0 的位数。
             OP_CLZ:
                 result = {26'b0, count_leading_zeros(operand)};
+            // CLO：统计 operand 从最高位开始连续为 1 的位数。
             OP_CLO:
                 result = {26'b0, count_leading_zeros(~operand)};
+            // CTZ：统计 operand 从最低位开始连续为 0 的位数。
             OP_CTZ:
                 result = {26'b0, count_trailing_zeros(operand)};
+            // CTO：统计 operand 从最低位开始连续为 1 的位数。
             OP_CTO:
                 result = {26'b0, count_trailing_zeros(~operand)};
+            // POPCOUNT：统计 operand 的 32 个比特中值为 1 的比特总数。
             OP_POPCOUNT:
                 result = {26'b0, population_count(operand)};
             default:
