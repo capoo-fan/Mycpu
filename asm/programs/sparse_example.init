@@ -1,3 +1,0 @@
-# address  value
-80400000  deadbeef
-80700004  01234567  # trailing comments are allowed

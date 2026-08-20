@@ -100,10 +100,12 @@ Agent 读取 thinpad_top_timing_summary_rounted.rpt
 
 在 Mycpu 仓库根目录激活已准备的 Python 环境，并显式指定 LA32R 工具链：
 
+LoongArch32R 工具已经加入环境变量，可直接调用。
+
 ```bash
 MYCPU_ROOT=$(pwd)
 source .venv/bin/activate
-export GCCPREFIX=/opt/loongarch-env/loongarch32r-toolchain/bin/loongarch32r-linux-gnusf-
+export GCCPREFIX=loongarch32r-linux-gnusf-
 cd supervisor
 PYTHON="$MYCPU_ROOT/.venv/bin/python" ./build_all.sh
 ```

@@ -47,11 +47,11 @@ module asm_monitor_tb;
   reg [31:0] program_mem [0:PROGRAM_DEPTH-1];
   reg [7:0] tx_bytes [0:2047];
   integer tx_count, i;
-  integer base_words, program_words, watch_words;
+  integer base_words, program_words, watch_words, watch_words_2;
   integer data_words, expect_words;
   integer write_log_count;
   integer init_fd, init_status, init_line_status;
-  reg [31:0] entry_addr, program_addr, watch_addr;
+  reg [31:0] entry_addr, program_addr, watch_addr, watch_addr_2;
   reg [31:0] data_load_addr, expect_addr, expect_value;
   reg [31:0] init_addr, init_value;
   reg [1023:0] base_file, program_file, data_file;
@@ -409,6 +409,14 @@ module asm_monitor_tb;
           $display("MEM addr=%h data=%h", addr, memory_word(addr));
         end
       end
+      if (watch_words_2 > 0) begin
+        validate_region(watch_addr_2, watch_words_2);
+        $display("MEMORY addr=%h words=%0d", watch_addr_2, watch_words_2);
+        for (n = 0; n < watch_words_2; n = n + 1) begin
+          addr = watch_addr_2 + n * 4;
+          $display("MEM addr=%h data=%h", addr, memory_word(addr));
+        end
+      end
       $display("PASS asm monitor test");
     end
   endtask
@@ -426,6 +434,8 @@ module asm_monitor_tb;
       entry_addr = program_addr;
     if (!$value$plusargs("WATCH_ADDR=%h", watch_addr)) watch_addr = 32'b0;
     if (!$value$plusargs("WATCH_WORDS=%d", watch_words)) watch_words = 0;
+    if (!$value$plusargs("WATCH_ADDR_2=%h", watch_addr_2)) watch_addr_2 = 32'b0;
+    if (!$value$plusargs("WATCH_WORDS_2=%d", watch_words_2)) watch_words_2 = 0;
     data_enabled = $value$plusargs("DATA_MIF=%s", data_file);
     if (data_enabled &&
         (!$value$plusargs("DATA_WORDS=%d", data_words) ||
