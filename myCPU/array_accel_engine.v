@@ -20,7 +20,7 @@ module array_accel_engine #(
     parameter [31:0] ARRAY_BEGIN = 32'h1c40_0000,
     parameter [31:0] ARRAY_END   = 32'h1c70_0000, // exclusive
     parameter [31:0] RESULT_ADDR = 32'h1c70_0000,
-    parameter [15:0] MAX_OUTSTANDING = 16'd4
+    parameter [15:0] MAX_OUTSTANDING = 16'd1
 )(
     input  wire        clk,
     input  wire        resetn,

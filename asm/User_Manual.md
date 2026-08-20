@@ -3,7 +3,7 @@
 ## 包含的资料
 
 - Loongarch 指令表，查询指令
-- 加速器使用指南 ACCELERATOR_INTEGRATION_2025
+- [硬件加速器接入手册](Acc_Manual.md)
 - 二分的模版
 - 各种函数的模版
 

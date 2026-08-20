@@ -1,15 +1,22 @@
 `ifndef MYCPU_H
 `define MYCPU_H
 
-        // 级间总线宽度定义
+// 级间总线宽度定义
 
-`define FS_TO_DS_BUS_WD 97
-
-`define DS_DEC_BUS_WD   169
+`define DS_DEC_BUS_WD   170
 
 `define IBUF_ENTRY_BUS_WD (`FS_TO_DS_BUS_WD + `DS_DEC_BUS_WD)
 
-`define DS_TO_ES_BUS_WD 254
+`define DS_TO_ES_BUS_WD 255
+
+`define FS_TO_DS_BUS_WD 97
+
+//`define DS_DEC_BUS_WD   169
+
+//`define IBUF_ENTRY_BUS_WD (`FS_TO_DS_BUS_WD + `DS_DEC_BUS_WD)
+
+//`define DS_TO_ES_BUS_WD 254
+
 `define DS_TO_ES_BUS_1_WD 223
 
 `define ES_TO_MS_BUS_WD 301

@@ -12,6 +12,8 @@ module EXE_stage(
     input  wire [31:0]                  ds_mul_src1_1,
     input  wire [31:0]                  ds_mul_src2_1,
     input  wire                         flush,
+    input  wire                         mem_stage_empty,
+    input  wire                         accel_done,
     input  wire                         ms_allowin,
     input  wire                         load_wakeup_valid,
     input  wire [31:0]                  load_wakeup_data,
@@ -24,6 +26,9 @@ module EXE_stage(
     output wire [`ES_FWD_BUS_1_WD-1:0]  es_fwd_bus_1,
     output wire                         csr_busy,
     output wire                         cacop_busy,
+    output wire                         accel_start,
+    output wire                         accel_flush,
+    output wire [31:0]                  accel_flush_target,
     output wire [13:0]                  csr_raddr,
     input  wire [31:0]                  csr_rdata
   );
@@ -33,6 +38,11 @@ module EXE_stage(
 
   reg         es_valid_0;
   reg  [31:0] es_pc_0;
+
+  reg         es_is_accel_0;
+  reg         accel_started;
+  reg  [31:0] accel_resume_pc;
+
   (* max_fanout = 8 *) reg [11:0] es_alu_op_0;
   (* max_fanout = 8 *) reg [31:0] es_alu_src1_0;
   (* max_fanout = 8 *) reg [31:0] es_alu_src2_0;
@@ -101,6 +111,7 @@ module EXE_stage(
   reg  [ 3:0] es_br_op_1;
   reg  [31:0] es_br_offs_1;
 
+  wire        ds_is_accel_0;
   wire [31:0] ds_pc_0;
   wire [11:0] ds_alu_op_0;
   wire [31:0] ds_alu_src1_0;
@@ -131,13 +142,16 @@ module EXE_stage(
   wire        ds_load_wakeup_rj_0;
   wire        ds_load_wakeup_rkd_0;
 
-  assign {ds_store_data_late_0, ds_store_data_src_0,
-          ds_pc_0, ds_alu_op_0, ds_alu_src1_0, ds_alu_src2_0, ds_rkd_value_0,
+  assign {ds_is_accel_0,
+          ds_store_data_late_0, ds_store_data_src_0,
+          ds_pc_0, ds_alu_op_0, ds_alu_src1_0,
+          ds_alu_src2_0, ds_rkd_value_0,
           ds_res_from_mem_0, ds_gr_we_0, ds_mem_we_0, ds_dest_0,
           ds_is_mul_0,
           ds_ld_byte_0, ds_ld_half_0, ds_ld_sign_ext_0,
           ds_st_byte_0, ds_st_half_0,
-          ds_pred_taken_0, ds_pred_target_0, ds_br_op_0, ds_br_offs_0,
+          ds_pred_taken_0, ds_pred_target_0,
+          ds_br_op_0, ds_br_offs_0,
           ds_is_cpucfg_0, ds_is_cacop_0, ds_cacop_code_0,
           ds_is_csr_0, ds_is_csrxchg_0, ds_csr_num_0,
           ds_load_wakeup_rj_0,
@@ -183,8 +197,16 @@ module EXE_stage(
   // 且尾槽为空时，才额外接收一个新的 MUL+MUL 包；因此任何普通
   // 指令都不会越过乘法包，第二包的 RAW 也仍由现有 EX hazard 阻塞。
   wire mul_packet_ready = !es_valid_0 || !mul_pending_0;
-  wire es_ready_go = mul_packet_ready;
+  wire accel_hold = es_valid_0 && es_is_accel_0;
+  wire es_ready_go = mul_packet_ready && !accel_hold;
   wire es_busy     = es_valid_0 || es_valid_1;
+  assign accel_start = accel_hold &&
+       !accel_started &&
+       mem_stage_empty &&
+       !flush;
+  assign accel_flush = accel_hold && accel_started && accel_done;
+  assign accel_flush_target = accel_resume_pc;
+
   wire es_head_fire = es_busy && es_ready_go && ms_allowin;
   wire es_head_slot_open = !es_busy ||
        (es_head_fire && !mul_tail_valid);
@@ -250,8 +272,9 @@ module EXE_stage(
        es_is_cpucfg_0 ? cpucfg_result(es_alu_src1_0) : es_exec_result_0;
 
   //去除掉低频指令的前递
-  wire es_result_forwardable_0 =
-       !(es_is_csr_0 || es_is_cpucfg_0 || es_is_cacop_0);
+ wire es_result_forwardable_0 =
+       !(es_is_csr_0 || es_is_cpucfg_0 ||
+         es_is_cacop_0 || es_is_accel_0);
 
   wire        es_is_bj_0;
   wire        es_real_taken_0;
@@ -359,6 +382,21 @@ module EXE_stage(
                            es_redirect_miss_1
                           };
 
+
+  always @(posedge clk)
+  begin
+    if (reset || flush)
+    begin
+      accel_started   <= 1'b0;
+      accel_resume_pc <= 32'b0;
+    end
+    else if (accel_start)
+    begin
+      accel_started   <= 1'b1;
+      accel_resume_pc <= es_pc_0 + 32'd4;
+    end
+  end          
+              
   always @(posedge clk)
   begin
     if (reset)
@@ -387,6 +425,7 @@ module EXE_stage(
   begin
     if (reset)
     begin
+      es_is_accel_0     <= 1'b0;
       es_pc_0           <= 32'b0;
       es_gr_we_0        <= 1'b0;
       es_mem_we_0       <= 1'b0;
@@ -438,6 +477,7 @@ module EXE_stage(
     end
     else if (flush)
     begin
+      es_is_accel_0     <= 1'b0;
       es_gr_we_0        <= 1'b0;
       es_mem_we_0       <= 1'b0;
       es_store_data_late_0 <= 1'b0;
@@ -458,6 +498,7 @@ module EXE_stage(
     begin
       // 尾槽只可能保存 MUL+MUL；其余控制全部显式清零，保证提升后
       // 不继承前一包的访存、分支或特殊指令副作用。
+      es_is_accel_0     <= 1'b0;
       es_pc_0           <= mul_tail_result_hold_valid ? 32'b0 :
                            mul_tail_pc_0;
       es_gr_we_0        <= 1'b1;
@@ -503,6 +544,7 @@ module EXE_stage(
     end
     else if (es_head_slot_open)
     begin
+      es_is_accel_0     <= ds_to_es_valid_0 && ds_is_accel_0;
       es_pc_0           <= ds_pc_0;
       es_alu_op_0       <= ds_alu_op_0;
       es_alu_src1_0     <= ds_alu_src1_final;

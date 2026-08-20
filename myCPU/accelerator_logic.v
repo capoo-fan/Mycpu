@@ -61,7 +61,7 @@ module accelerator_logic (
     //
     // 2024 MAX 不需要；
     // 2025 count-first 需要。
-    // reg [31:0] key_reg;
+    reg [31:0] key_reg;
 
 
     // 可选临时寄存器
@@ -80,7 +80,7 @@ module accelerator_logic (
         if (!resetn) begin
 
             result_reg <= 32'b0;
-            // key_reg <= 32'b0;
+            key_reg <= 32'b0;
 
         end
 
@@ -97,7 +97,7 @@ module accelerator_logic (
         else if (run_start) begin
 
             result_reg <= 32'b0;
-            // key_reg <= 32'b0;
+            key_reg <= 32'b0;
 
         end
 
@@ -122,8 +122,8 @@ module accelerator_logic (
 
         else if (first_valid) begin
 
-            result_reg <= data;
-
+            result_reg <= 32'b1;
+            key_reg    <= data;
         end
 
         // ====================================================================
@@ -154,8 +154,8 @@ module accelerator_logic (
 
         else if (data_valid) begin
 
-            if (data > result_reg)
-                result_reg <= data;
+            if (data == key_reg)
+                result_reg <= result_reg + 32'b1;
 
         end
 

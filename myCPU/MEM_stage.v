@@ -34,6 +34,7 @@ module MEM_stage(
     input  wire                         icacop_done,
     output wire                         cacop_flush,
     output wire [31:0]                  cacop_flush_target,
+    output wire                         mem_stage_empty,
     // 类SRAM 数据接口
     output wire                         data_sram_req,
     output wire                         data_sram_wr,
@@ -359,6 +360,17 @@ module MEM_stage(
   assign data_sram_wstrb = selected_mem_we ? ms_st_strb : 4'b0;
   assign data_sram_addr  = selected_addr;
   assign data_sram_wdata = ms_st_data;
+
+  assign mem_stage_empty =
+       !ms_valid_0 &&
+       !ms_valid_1 &&
+       (ms_wait_kind == WAIT_NONE) &&
+       !ms_data_pending &&
+       !ms_response_waiting &&
+       !ms_fast_response_waiting &&
+       !ms_rdata_buf_valid &&
+       !cacop_req_sent &&
+       !data_sram_req;
 
   // data_ok 返回拍直接送 WB；若 WB 暂时不能接收，则下一拍回退到
   // 已寄存的 ms_rdata_buf。当前 WB 恒可接收，但保留后一条路径可

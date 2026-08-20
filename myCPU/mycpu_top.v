@@ -91,6 +91,44 @@ module mycpu_top(
   wire        load_wakeup_valid;
   wire [31:0] load_wakeup_data;
 
+   // MEM 到顶层仲裁器的 CPU 数据口
+  wire        cpu_data_req;
+  wire        cpu_data_wr;
+  wire [ 1:0] cpu_data_size;
+  wire [ 3:0] cpu_data_wstrb;
+  wire [31:0] cpu_data_vaddr;
+  wire [31:0] cpu_data_paddr;
+  wire [31:0] cpu_data_wdata;
+  wire        cpu_data_addr_ok;
+  wire        cpu_data_data_ok;
+  wire [31:0] cpu_data_rdata;
+  wire        cpu_data_fast_ready;
+  wire        cpu_data_fast_data_ok;
+  wire [31:0] cpu_data_fast_rdata;
+  wire        cpu_data_store_ready;
+  wire        cpu_data_addr_is_sram;
+
+  // 加速器控制和数据口
+  wire        mem_stage_empty;
+  wire        accel_start;
+  wire        accel_busy;
+  wire        accel_done;
+  wire        accel_takeover_req;
+  wire        accel_takeover_grant;
+  wire        accel_flush;
+  wire [31:0] accel_flush_target;
+  reg         accel_owns_bus;
+
+  wire        accel_mem_req;
+  wire        accel_mem_wr;
+  wire [ 1:0] accel_mem_size;
+  wire [ 3:0] accel_mem_wstrb;
+  wire [31:0] accel_mem_addr;
+  wire [31:0] accel_mem_wdata;
+  wire        accel_mem_addr_ok;
+  wire        accel_mem_data_ok;
+  wire [31:0] accel_mem_rdata;
+
   // 写回总线
   wire [`WS_TO_RF_BUS_WD-1:0] ws_to_rf_bus;
 
@@ -121,9 +159,12 @@ module mycpu_top(
   wire [31:0] csr_flush_target;
   wire        cacop_flush;
   wire [31:0] cacop_flush_target;
-  wire        pipeline_flush = csr_flush || cacop_flush || br_taken;
-  wire [31:0] pipeline_flush_target = csr_flush ? csr_flush_target :
-       cacop_flush ? cacop_flush_target : br_target;
+  wire        pipeline_flush = csr_flush || cacop_flush || accel_flush || br_taken;
+  wire [31:0] pipeline_flush_target =
+       csr_flush   ? csr_flush_target   :
+       cacop_flush ? cacop_flush_target :
+       accel_flush ? accel_flush_target :
+                     br_target;
 
   // CSR/CACOP 发射后用一个本地 scoreboard 阻止年轻指令。不再将
   // ES/MEM/WB 各级 busy 组合后跨级送回 ISSUE。
@@ -165,7 +206,6 @@ module mycpu_top(
   // PC 模块信号
   wire [31:0] pc_out;
   wire [31:0] pc_paddr;
-  wire [31:0] data_sram_vaddr;
   wire        pc_inst_req;
   wire        if_suspend;
   wire        pc_cross_line = (pc_out[3:2] == 2'b11);
@@ -184,7 +224,7 @@ module mycpu_top(
   wire data_txn_accept = data_sram_req && data_sram_addr_ok;
   // supervisor 只会产生 SRAM/UART 合法地址；两类物理地址的
   // bit24 分别为 0/1，避免在 posted-store 路径上使用宽比较器。
-  wire data_sram_addr_is_sram = ~data_sram_addr[24];
+  assign cpu_data_addr_is_sram = ~cpu_data_paddr[24];
   data_txn_tracker u_data_txn_tracker(
                      .clk            (clk),
                      .resetn         (resetn),
@@ -234,8 +274,8 @@ module mycpu_top(
                    .resetn(resetn),
                    .ctx_update(csr_ctx_update),
                    .ctx_in(csr_trans_ctx),
-                   .vaddr (data_sram_vaddr),
-                   .paddr (data_sram_addr)
+                   .vaddr (cpu_data_vaddr),
+                   .paddr (cpu_data_paddr)
                  );
 
   PC u_pc(
@@ -359,82 +399,88 @@ module mycpu_top(
 
   // EX stage
   EXE_stage u_exe(
-              .clk              (clk),
-              .resetn           (resetn),
-              .ds_to_es_valid_0 (ds_to_es_valid_0),
-              .ds_to_es_valid_1 (ds_to_es_valid_1),
-              .ds_to_es_bus_0   (ds_to_es_bus_0),
-              .ds_to_es_bus_1   (ds_to_es_bus_1),
-              .ds_mul_src1_0    (ds_mul_src1_0),
-              .ds_mul_src2_0    (ds_mul_src2_0),
-              .ds_mul_src1_1    (ds_mul_src1_1),
-              .ds_mul_src2_1    (ds_mul_src2_1),
-              .flush            (pipeline_flush),
-              .ms_allowin       (ms_allowin),
-              .load_wakeup_valid(load_wakeup_valid),
-              .load_wakeup_data (load_wakeup_data),
-              .es_allowin       (es_allowin),
-              .es_to_ms_valid_0 (es_to_ms_valid_0),
-              .es_to_ms_valid_1 (es_to_ms_valid_1),
-              .es_to_ms_bus_0   (es_to_ms_bus_0),
-              .es_to_ms_bus_1   (es_to_ms_bus_1),
-              .es_fwd_bus_0     (es_fwd_bus_0),
-              .es_fwd_bus_1     (es_fwd_bus_1),
-              .csr_busy         (es_csr_busy),
-              .cacop_busy       (es_cacop_busy),
-              .csr_raddr        (csr_raddr),
-              .csr_rdata        (csr_rdata)
-            );
-
-  // MEM stage
-  MEM_stage u_mem(
               .clk               (clk),
               .resetn            (resetn),
+              .ds_to_es_valid_0  (ds_to_es_valid_0),
+              .ds_to_es_valid_1  (ds_to_es_valid_1),
+              .ds_to_es_bus_0    (ds_to_es_bus_0),
+              .ds_to_es_bus_1    (ds_to_es_bus_1),
+              .ds_mul_src1_0     (ds_mul_src1_0),
+              .ds_mul_src2_0     (ds_mul_src2_0),
+              .ds_mul_src1_1     (ds_mul_src1_1),
+              .ds_mul_src2_1     (ds_mul_src2_1),
+              .flush             (pipeline_flush),
+              .mem_stage_empty   (mem_stage_empty),
+              .accel_done        (accel_done),
+              .ms_allowin        (ms_allowin),
+              .load_wakeup_valid (load_wakeup_valid),
+              .load_wakeup_data  (load_wakeup_data),
+              .es_allowin        (es_allowin),
               .es_to_ms_valid_0  (es_to_ms_valid_0),
               .es_to_ms_valid_1  (es_to_ms_valid_1),
               .es_to_ms_bus_0    (es_to_ms_bus_0),
               .es_to_ms_bus_1    (es_to_ms_bus_1),
-              .ws_allowin        (ws_allowin),
-              .ws_to_rf_bus      (ws_to_rf_bus),
-              .ms_allowin        (ms_allowin),
-              .ms_to_ws_valid_0  (ms_to_ws_valid_0),
-              .ms_to_ws_valid_1  (ms_to_ws_valid_1),
-              .ms_to_ws_bus_0    (ms_to_ws_bus_0),
-              .ms_to_ws_bus_1    (ms_to_ws_bus_1),
-              .ms_fwd_bus_0      (ms_fwd_bus_0),
-              .ms_fwd_bus_1      (ms_fwd_bus_1),
-              .load_wakeup_valid (load_wakeup_valid),
-              .load_wakeup_data  (load_wakeup_data),
-              .csr_busy          (ms_csr_busy),
-              .cacop_busy        (ms_cacop_busy),
-              .br_taken          (br_taken),
-              .br_target         (br_target),
-              .bpu_valid         (bpu_ex_valid),
-              .bpu_is_bj         (bpu_ex_is_bj),
-              .bpu_pc            (bpu_ex_pc),
-              .bpu_real_taken    (bpu_ex_real_taken),
-              .bpu_real_target   (bpu_ex_real_target),
-              .icacop_req_valid  (icacop_req_valid),
-              .icacop_req_code   (icacop_req_code),
-              .icacop_req_addr   (icacop_req_addr),
-              .icacop_req_ready  (icacop_req_ready),
-              .icacop_done       (icacop_done),
-              .cacop_flush       (cacop_flush),
-              .cacop_flush_target(cacop_flush_target),
-              .data_sram_req     (data_sram_req),
-              .data_sram_wr      (data_sram_wr),
-              .data_sram_size    (data_sram_size),
-              .data_sram_wstrb   (data_sram_wstrb),
-              .data_sram_addr    (data_sram_vaddr),
-              .data_sram_wdata   (data_sram_wdata),
-              .data_sram_addr_is_sram(data_sram_addr_is_sram),
-              .data_sram_store_ready(data_sram_store_ready),
-              .data_sram_addr_ok (data_sram_addr_ok),
-              .data_sram_data_ok (data_sram_data_ok),
-              .data_sram_rdata   (data_sram_rdata),
-              .data_sram_fast_ready(data_sram_fast_ready),
-              .data_sram_fast_data_ok(data_sram_fast_data_ok),
-              .data_sram_fast_rdata(data_sram_fast_rdata)
+              .es_fwd_bus_0      (es_fwd_bus_0),
+              .es_fwd_bus_1      (es_fwd_bus_1),
+              .csr_busy          (es_csr_busy),
+              .cacop_busy        (es_cacop_busy),
+              .accel_start       (accel_start),
+              .accel_flush       (accel_flush),
+              .accel_flush_target(accel_flush_target),
+              .csr_raddr         (csr_raddr),
+              .csr_rdata         (csr_rdata)
+            );
+
+  // MEM stage
+  MEM_stage u_mem(
+              .clk                    (clk),
+              .resetn                 (resetn),
+              .es_to_ms_valid_0       (es_to_ms_valid_0),
+              .es_to_ms_valid_1       (es_to_ms_valid_1),
+              .es_to_ms_bus_0         (es_to_ms_bus_0),
+              .es_to_ms_bus_1         (es_to_ms_bus_1),
+              .ws_allowin             (ws_allowin),
+              .ws_to_rf_bus           (ws_to_rf_bus),
+              .ms_allowin             (ms_allowin),
+              .ms_to_ws_valid_0       (ms_to_ws_valid_0),
+              .ms_to_ws_valid_1       (ms_to_ws_valid_1),
+              .ms_to_ws_bus_0         (ms_to_ws_bus_0),
+              .ms_to_ws_bus_1         (ms_to_ws_bus_1),
+              .ms_fwd_bus_0           (ms_fwd_bus_0),
+              .ms_fwd_bus_1           (ms_fwd_bus_1),
+              .load_wakeup_valid      (load_wakeup_valid),
+              .load_wakeup_data       (load_wakeup_data),
+              .csr_busy               (ms_csr_busy),
+              .cacop_busy             (ms_cacop_busy),
+              .br_taken               (br_taken),
+              .br_target              (br_target),
+              .bpu_valid              (bpu_ex_valid),
+              .bpu_is_bj              (bpu_ex_is_bj),
+              .bpu_pc                 (bpu_ex_pc),
+              .bpu_real_taken         (bpu_ex_real_taken),
+              .bpu_real_target        (bpu_ex_real_target),
+              .icacop_req_valid       (icacop_req_valid),
+              .icacop_req_code        (icacop_req_code),
+              .icacop_req_addr        (icacop_req_addr),
+              .icacop_req_ready       (icacop_req_ready),
+              .icacop_done            (icacop_done),
+              .cacop_flush            (cacop_flush),
+              .cacop_flush_target     (cacop_flush_target),
+              .mem_stage_empty        (mem_stage_empty),
+              .data_sram_req          (cpu_data_req),
+              .data_sram_wr           (cpu_data_wr),
+              .data_sram_size         (cpu_data_size),
+              .data_sram_wstrb        (cpu_data_wstrb),
+              .data_sram_addr         (cpu_data_vaddr),
+              .data_sram_wdata        (cpu_data_wdata),
+              .data_sram_addr_is_sram (cpu_data_addr_is_sram),
+              .data_sram_store_ready  (cpu_data_store_ready),
+              .data_sram_addr_ok      (cpu_data_addr_ok),
+              .data_sram_data_ok      (cpu_data_data_ok),
+              .data_sram_rdata        (cpu_data_rdata),
+              .data_sram_fast_ready   (cpu_data_fast_ready),
+              .data_sram_fast_data_ok (cpu_data_fast_data_ok),
+              .data_sram_fast_rdata   (cpu_data_fast_rdata)
             );
 
   // WB stage
@@ -477,4 +523,74 @@ module mycpu_top(
                   .inst_sram_rdata  (inst_sram_rdata)
                 );
 
+
+    array_accel_engine #(
+    .ARRAY_BEGIN     (32'h1c40_0000),
+    .ARRAY_END       (32'h1c70_0000),
+    .RESULT_ADDR     (32'h1c70_0000),
+    .MAX_OUTSTANDING (16'd1)
+  ) u_array_accel (
+    .clk              (clk),
+    .resetn           (resetn),
+    .start            (accel_start),
+    .busy             (accel_busy),
+    .done             (accel_done),
+    .takeover_req     (accel_takeover_req),
+    .takeover_grant   (accel_takeover_grant),
+    .mem_req          (accel_mem_req),
+    .mem_wr           (accel_mem_wr),
+    .mem_size         (accel_mem_size),
+    .mem_wstrb        (accel_mem_wstrb),
+    .mem_addr         (accel_mem_addr),
+    .mem_wdata        (accel_mem_wdata),
+    .mem_addr_ok      (accel_mem_addr_ok),
+    .mem_data_ok      (accel_mem_data_ok),
+    .mem_rdata        (accel_mem_rdata)
+  );           
+  always @(posedge clk)
+  begin
+    if (!resetn)
+      accel_owns_bus <= 1'b0;
+    else if (!accel_owns_bus)
+    begin
+      if (accel_takeover_req && mem_stage_empty && !cpu_data_req)
+        accel_owns_bus <= 1'b1;
+    end
+    else if (!accel_takeover_req)
+      accel_owns_bus <= 1'b0;
+  end
+
+  assign accel_takeover_grant = accel_owns_bus;
+
+  assign data_sram_req = accel_owns_bus ?
+       accel_mem_req : cpu_data_req;
+  assign data_sram_wr = accel_owns_bus ?
+       accel_mem_wr : cpu_data_wr;
+  assign data_sram_size = accel_owns_bus ?
+       accel_mem_size : cpu_data_size;
+  assign data_sram_wstrb = accel_owns_bus ?
+       accel_mem_wstrb : cpu_data_wstrb;
+  assign data_sram_addr = accel_owns_bus ?
+       accel_mem_addr : cpu_data_paddr;
+  assign data_sram_wdata = accel_owns_bus ?
+       accel_mem_wdata : cpu_data_wdata;
+
+  assign cpu_data_addr_ok =
+       !accel_owns_bus && data_sram_addr_ok;
+  assign cpu_data_data_ok =
+       !accel_owns_bus && data_sram_data_ok;
+  assign cpu_data_rdata = data_sram_rdata;
+  assign cpu_data_fast_ready =
+       !accel_owns_bus && data_sram_fast_ready;
+  assign cpu_data_fast_data_ok =
+       !accel_owns_bus && data_sram_fast_data_ok;
+  assign cpu_data_fast_rdata = data_sram_fast_rdata;
+  assign cpu_data_store_ready =
+       !accel_owns_bus && data_sram_store_ready;
+
+  assign accel_mem_addr_ok =
+       accel_owns_bus && data_sram_addr_ok;
+  assign accel_mem_data_ok =
+       accel_owns_bus && data_sram_data_ok;
+  assign accel_mem_rdata = data_sram_rdata;
 endmodule

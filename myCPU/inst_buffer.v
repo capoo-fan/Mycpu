@@ -48,13 +48,13 @@ module inst_buffer(
   reg [44:0] front_bus_0_g2;
   reg [44:0] front_bus_0_g3;
   reg [44:0] front_bus_0_g4;
-  reg [40:0] front_bus_0_g5;
+  reg [41:0] front_bus_0_g5;
   reg [44:0] front_bus_1_g0;
   reg [44:0] front_bus_1_g1;
   reg [44:0] front_bus_1_g2;
   reg [44:0] front_bus_1_g3;
   reg [44:0] front_bus_1_g4;
-  reg [40:0] front_bus_1_g5;
+  reg [41:0] front_bus_1_g5;
 
   (* keep = "true", equivalent_register_removal = "no", max_fanout = 16 *)
   reg [4:0] front_raddr1_0_hot_r;
@@ -169,7 +169,7 @@ module inst_buffer(
   reg [44:0] next_front_bus_1_g2;
   reg [44:0] next_front_bus_1_g3;
   reg [44:0] next_front_bus_1_g4;
-  reg [40:0] next_front_bus_1_g5;
+  reg [41:0] next_front_bus_1_g5;
 
   always @(*)
   begin
@@ -265,18 +265,18 @@ module inst_buffer(
   begin
     next_front_bus_1_g5 = front_bus_1_g5;
     if (pop_1)
-      next_front_bus_1_g5 = fifo_front_1[265:225];
+      next_front_bus_1_g5 = fifo_front_1[266:225];
     else if (pop_0)
     begin
       if (front_valid_1_r && (cnt != CNT_ZERO))
-        next_front_bus_1_g5 = fifo_front_0[265:225];
+        next_front_bus_1_g5 = fifo_front_0[266:225];
       else if (!front_valid_1_r)
-        next_front_bus_1_g5 = fifo_front_1[265:225];
+        next_front_bus_1_g5 = fifo_front_1[266:225];
     end
     else if (!front_valid_0_r)
-      next_front_bus_1_g5 = fifo_front_1[265:225];
+      next_front_bus_1_g5 = fifo_front_1[266:225];
     else if (!front_valid_1_r && (cnt != CNT_ZERO))
-      next_front_bus_1_g5 = fifo_front_0[265:225];
+      next_front_bus_1_g5 = fifo_front_0[266:225];
   end
 
 
@@ -403,7 +403,7 @@ module inst_buffer(
       if (front0_we_g4)
         front_bus_0_g4 <= next_front_bus_0[224:180];
       if (front0_we_g5)
-        front_bus_0_g5 <= next_front_bus_0[265:225];
+        front_bus_0_g5 <= next_front_bus_0[266:225];
       if (front1_we_g0)
         front_bus_1_g0 <= next_front_bus_1_g0;
       if (front1_we_g1)

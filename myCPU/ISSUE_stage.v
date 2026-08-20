@@ -62,6 +62,7 @@ module ISSUE_stage(
   assign {ds_pc_0, ds_inst_0, ds_pred_taken_0, ds_pred_target_0} = fs_bus_0;
   assign {ds_pc_1, ds_inst_1, ds_pred_taken_1, ds_pred_target_1} = fs_bus_1;
 
+  wire        is_accel_0;
   wire [11:0] alu_op_0;
   wire [31:0] imm_0;
   wire [31:0] br_offs_0;
@@ -99,17 +100,20 @@ module ISSUE_stage(
   wire        is_csrxchg_0;
   wire [13:0] csr_num_0;
 
-  assign {alu_op_0, imm_0, br_offs_0, jirl_offs_0,
+  assign {is_accel_0,
+          alu_op_0, imm_0, br_offs_0, jirl_offs_0,
           rf_raddr1_0, rf_raddr2_0, dest_0,
           src1_is_pc_0, src2_is_imm_0, res_from_mem_0, gr_we_0, mem_we_0,
           is_mul_0,
           ld_byte_0, ld_half_0, ld_sign_ext_0, st_byte_0, st_half_0,
           need_rj_0, need_rkd_0, is_bj_0,
-          inst_beq_0, inst_bne_0, inst_blt_0, inst_bge_0, inst_bltu_0, inst_bgeu_0,
+          inst_beq_0, inst_bne_0, inst_blt_0, inst_bge_0,
+          inst_bltu_0, inst_bgeu_0,
           inst_jirl_0, inst_bl_0, inst_b_0,
           is_cpucfg_0, is_cacop_0, cacop_code_0,
           is_csr_0, is_csrxchg_0, csr_num_0} = dec_bus_0;
 
+  wire        is_accel_1;        
   wire [11:0] alu_op_1;
   wire [31:0] imm_1;
   wire [31:0] br_offs_1;
@@ -144,14 +148,19 @@ module ISSUE_stage(
   wire        is_cacop_1;
   wire        is_csr_1;
 
+  assign is_accel_1 = dec_bus_1[`DS_DEC_BUS_WD-1];
+
   assign {alu_op_1, imm_1, br_offs_1, jirl_offs_1,
           rf_raddr1_1, rf_raddr2_1, dest_1,
           src1_is_pc_1, src2_is_imm_1, res_from_mem_1, gr_we_1, mem_we_1,
           is_mul_1,
           ld_byte_1, ld_half_1, ld_sign_ext_1, st_byte_1, st_half_1,
           need_rj_1, need_rkd_1, is_bj_1,
-          inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1, inst_bltu_1, inst_bgeu_1,
-          inst_jirl_1, inst_bl_1, inst_b_1} = dec_bus_1[`DS_DEC_BUS_WD-1:23];
+          inst_beq_1, inst_bne_1, inst_blt_1, inst_bge_1,
+          inst_bltu_1, inst_bgeu_1,
+          inst_jirl_1, inst_bl_1, inst_b_1}
+       = dec_bus_1[`DS_DEC_BUS_WD-2:23];
+
   assign is_cpucfg_1 = dec_bus_1[22];
   assign is_cacop_1  = dec_bus_1[21];
   assign is_csr_1    = dec_bus_1[15];
@@ -622,8 +631,8 @@ module ISSUE_stage(
 
   wire mem_op_0 = res_from_mem_0 || mem_we_0;
   wire mem_op_1 = res_from_mem_1 || mem_we_1;
-  wire special_0 = is_csr_0 || is_cacop_0 || is_cpucfg_0;
-  wire special_1 = is_csr_1 || is_cacop_1 || is_cpucfg_1;
+  wire special_0 = is_csr_0 || is_cacop_0 || is_cpucfg_0 || is_accel_0;
+  wire special_1 = is_csr_1 || is_cacop_1 || is_cpucfg_1 || is_accel_1;
   wire lane1_regular_alu = gr_we_1 && !is_bj_1 &&
        !mem_op_1 && !is_mul_1 && !special_1;
   wire lane1_simple_branch = is_bj_1 && !inst_jirl_1 && !inst_bl_1;
@@ -665,7 +674,7 @@ module ISSUE_stage(
   assign pop_1            = issue1_fire_for_consume;
   // CPUCFG 只需单发，但不改变机器状态，不占用全局特殊指令
   // scoreboard。CSR/CACOP 则一直阻止年轻指令直到它们的 flush。
-  assign special_fire = ds_to_es_valid_0 && (is_csr_0 || is_cacop_0);
+  assign special_fire = ds_to_es_valid_0 && (is_csr_0 || is_cacop_0 || is_accel_0);
 
   wire capture_ex_wait_0 = ds_to_es_valid_0 && gr_we_0 &&
        (dest_0 != 5'b0) &&
@@ -777,7 +786,8 @@ module ISSUE_stage(
                                         inst_bltu_1, inst_bgeu_1, inst_jirl_1, inst_bl_1, inst_b_1);
   wire [31:0] ds_br_offs_1 = inst_jirl_1 ? jirl_offs_1 : br_offs_1;
 
-  assign ds_to_es_bus_0 = {store_data_late_0,
+ assign ds_to_es_bus_0 = {is_accel_0,
+                           store_data_late_0,
                            src_raddr2_0,
                            ds_pc_0,
                            alu_op_0,

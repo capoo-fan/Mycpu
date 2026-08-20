@@ -39,6 +39,7 @@ module inst_decoder(
   wire inst_mul_w;
   wire inst_cpucfg, inst_cacop;
   wire inst_csrwr, inst_csrxchg;
+  wire inst_accel;
 
   // ALU 指令译码
   assign inst_add_w   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00];
@@ -87,6 +88,7 @@ module inst_decoder(
   assign inst_csrxchg = (inst[31:24] == 8'h04) &&
        (rj != 5'd0) && (rj != 5'd1);
 
+   assign inst_accel = (inst == 32'h0020_0000);    
   // 找出未知指令
   wire inst_known = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
        inst_nor | inst_and | inst_or | inst_xor |
@@ -100,7 +102,8 @@ module inst_decoder(
        inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
        inst_st_b | inst_st_h |
        inst_mul_w |
-       inst_cpucfg | inst_cacop | inst_csrwr | inst_csrxchg;
+       inst_cpucfg | inst_cacop | inst_csrwr | inst_csrxchg |
+       inst_accel;
 
   wire is_mul      = inst_mul_w;
   wire ld_byte     = inst_ld_b | inst_ld_bu;
@@ -136,7 +139,8 @@ module inst_decoder(
        inst_cacop;
   wire res_from_mem  = inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu;
   wire dst_is_r1     = inst_bl;
-  wire gr_we         = inst_known & ~inst_st_w & ~inst_st_b & ~inst_st_h &
+  wire gr_we         = inst_known & ~inst_accel &
+       ~inst_st_w & ~inst_st_b & ~inst_st_h &
        ~inst_beq & ~inst_bne & ~inst_b &
        ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu &
        ~inst_cacop;
@@ -164,7 +168,8 @@ module inst_decoder(
   wire [13:0] csr_num = inst[23:10];
   wire [ 4:0] rf_raddr2 = (src_reg_is_rd | is_csr) ? rd : rk;
 
-  wire ds_need_rj  = ~inst_b & ~inst_bl & ~inst_lu12i_w &
+  wire ds_need_rj  = ~inst_accel &
+       ~inst_b & ~inst_bl & ~inst_lu12i_w &
        ~inst_pcaddu12i & ~inst_csrwr;
   wire ds_need_rkd = inst_beq | inst_bne | inst_st_w |
        inst_blt | inst_bge | inst_bltu | inst_bgeu | inst_st_b | inst_st_h |
@@ -177,6 +182,7 @@ module inst_decoder(
        inst_bltu || inst_bgeu || inst_jirl || inst_bl || inst_b;
 
   assign dec_bus = {
+    inst_accel,
     alu_op, imm, br_offs, jirl_offs,
     rf_raddr1, rf_raddr2, dest,
     src1_is_pc, src2_is_imm, res_from_mem, gr_we, mem_we,
