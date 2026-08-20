@@ -40,7 +40,7 @@ module accelerator_logic (
     // =========================================================================
 
     reg        working;
-    reg [31:0] work_data;
+    reg [31:0] work_data; // 每个数组输入进来的数据
 
     assign in_ready = !working;
 
