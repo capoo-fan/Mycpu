@@ -9,7 +9,7 @@
 CROSS_COMPILE ?= loongarch32r-linux-gnusf-
 CC := $(CROSS_COMPILE)gcc
 
-SRC ?= 2025.c
+SRC ?= 
 OUT ?= $(basename $(SRC)).asm
 
 COMMON_FLAGS := \

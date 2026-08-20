@@ -1,7 +1,6 @@
 	.file	"2025.c"
 	.text
 	.align	2
-	.align	4
 	.globl	count_first
 	.type	count_first, @function
 count_first:
@@ -12,7 +11,6 @@ count_first:
 	or	$r6,$r0,$r0
 	or	$r20,$r0,$r0
 	lu12i.w	$r7,-2140143616>>12			# 0xffffffff80700000
-	.align	4,54525952,4
 .L2:
 	ld.w	$r17,$r12,0
 	ld.w	$r16,$r12,4
@@ -23,12 +21,12 @@ count_first:
 	ld.w	$r19,$r12,24
 	ld.w	$r18,$r12,28
 	xor	$r17,$r17,$r13
-	xor	$r16,$r16,$r13
-	xor	$r15,$r15,$r13
-	xor	$r14,$r14,$r13
 	xor	$r9,$r9,$r13
+	xor	$r16,$r16,$r13
 	xor	$r8,$r8,$r13
+	xor	$r15,$r15,$r13
 	xor	$r19,$r19,$r13
+	xor	$r14,$r14,$r13
 	xor	$r18,$r18,$r13
 	sltui	$r17,$r17,1
 	sltui	$r9,$r9,1
@@ -54,5 +52,5 @@ count_first:
 	st.w	$r4,$r12,0
 	jr	$r1
 	.size	count_first, .-count_first
-	.ident	"GCC: (LoongArch GNU toolchain LA32 v2.0 (20230903)) 8.3.0"
+	.ident	"GCC: (GNU) 8.3.0"
 	.section	.note.GNU-stack,"",@progbits
