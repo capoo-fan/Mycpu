@@ -28,9 +28,6 @@ module supervisor_boot_tb;
   wire        data_addr_ok;
   wire        data_data_ok;
   wire [31:0] data_rdata;
-  wire        data_fast_data_ok;
-  wire        data_fast_ready;
-  wire [31:0] data_fast_rdata;
 
   wire [31:0] debug_pc;
   wire [3:0]  debug_we;
@@ -60,7 +57,6 @@ module supervisor_boot_tb;
   reg [31:0] ext_mem  [0:1048575];
   wire [31:0] base_rdata = base_mem[base_addr];
   wire [31:0] ext_rdata  = ext_mem[ext_addr];
-  wire        data_store_ready;
 
   reg [7:0] tx_bytes [0:511];
   integer tx_count;
@@ -81,10 +77,6 @@ module supervisor_boot_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
-    .data_sram_fast_ready(data_fast_ready),
-    .data_sram_fast_data_ok(data_fast_data_ok),
-    .data_sram_fast_rdata(data_fast_rdata),
-    .data_sram_store_ready(data_store_ready),
     .debug_wb_pc(debug_pc), .debug_wb_rf_we(debug_we),
     .debug_wb_rf_wnum(debug_wnum), .debug_wb_rf_wdata(debug_wdata)
   );
@@ -101,10 +93,6 @@ module supervisor_boot_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
-    .data_sram_fast_ready(data_fast_ready),
-    .data_sram_fast_data_ok(data_fast_data_ok),
-    .data_sram_fast_rdata(data_fast_rdata),
-    .data_sram_store_ready(data_store_ready),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
     .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),
@@ -142,9 +130,7 @@ module supervisor_boot_tb;
       $display("FAIL: global timeout pc=%h tx_count=%0d", cpu.pc_out, tx_count);
       $display("  data req=%b wr=%b addr=%h addr_ok=%b data_ok=%b",
                data_req, data_wr, data_addr, data_addr_ok, data_data_ok);
-      $display("  MEM wait=%0d pending=%b rvalid=%b",
-               cpu.u_mem.ms_wait_kind, cpu.u_mem.ms_data_pending,
-               cpu.u_mem.ms_rdata_buf_valid);
+      $display("  serialized core state=%0d", cpu.state);
       $display("  UART pending=%b resp=%b tx_start=%b",
                bridge.uart_req_pending, bridge.uart_resp_valid,
                uart_tx_start);
@@ -285,20 +271,23 @@ module supervisor_boot_tb;
     command_g();
     command_r_check_a0(8'h01);
 
-    // Rewrite an already cached instruction line.  The next G must observe
-    // the new addi immediate rather than the old I-cache contents.
+    // Rewrite an instruction word. The next G must observe the new value.
     command_a(32'h0280_0884); // addi.w a0,a0,2
     command_g();
     command_r_check_a0(8'h03);
+
+    // The reduced CPU retains exactly one three-cycle MUL.W unit.
+    command_a(32'h001c_1084); // mul.w a0,a0,a0
+    command_g();
+    command_r_check_a0(8'h09);
 
     $display("PASS supervisor_boot_tb cycles=%0d", cycle_count);
     $finish;
   end
 endmodule
 
-// Three-cycle unsigned low-32 stand-in for the Xilinx multiplier IP.  The boot
-// and command-flow checks do not execute mul.w, but defining the model keeps
-// this integration test self-contained.
+// Three-cycle unsigned low-32 stand-in for the Xilinx multiplier IP. The final
+// command-flow check executes MUL.W, keeping this integration test self-contained.
 module mult_gen_0(
   input  wire        CLK,
   input  wire [31:0] A,
