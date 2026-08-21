@@ -1,12 +1,14 @@
 `timescale 1ns / 1ps
 
-// Monitor-driven LA32R assembly testbench. Performance counters are purely
-// hierarchical simulation probes; no debug path is added to the CPU RTL.
+// Monitor-driven LA32R assembly testbench for the serialized accelerator CPU.
+// Performance counters observe the local PC/state only; no debug path is added
+// to the CPU RTL.
 module asm_monitor_tb;
   localparam integer BOOT_LEN = 38;
   localparam integer BASE_DEPTH = 1048576;
   localparam integer EXT_DEPTH = 1048576;
   localparam integer PROGRAM_DEPTH = 1048576;
+  localparam [3:0] CPU_ST_EX = 4'd2;
   localparam [BOOT_LEN*8-1:0] BOOT_MESSAGE =
       "MONITOR for Loongarch32 - initialized.";
 
@@ -24,9 +26,6 @@ module asm_monitor_tb;
   wire [31:0] data_addr, data_wdata;
   wire data_addr_ok, data_data_ok;
   wire [31:0] data_rdata;
-  wire data_fast_ready, data_fast_data_ok;
-  wire [31:0] data_fast_rdata;
-  wire [1:0] data_store_ready;
 
   wire [19:0] base_addr, ext_addr;
   wire [31:0] base_wdata, ext_wdata;
@@ -60,8 +59,7 @@ module asm_monitor_tb;
   reg [63:0] cycle_count, max_cycles;
   reg [63:0] wait_cycles;
   reg command_counting, command_done;
-  reg user_counting, user_done, exit_seen;
-  reg [31:0] exit_pc;
+  reg user_counting, user_done;
   reg [63:0] command_cycles, command_instr;
   reg [63:0] user_cycles, user_instr, write_count;
   reg [31:0] write_addr_log [0:255];
@@ -98,24 +96,12 @@ module asm_monitor_tb;
     end
   endfunction
 
-  wire [31:0] branch_next_pc = cpu.bpu_ex_real_taken ?
-                                cpu.bpu_ex_real_target :
-                                cpu.bpu_ex_pc + 32'd4;
-  wire program_exit = user_counting && cpu.bpu_ex_valid &&
-                      pc_is_user(cpu.bpu_ex_pc) &&
-                      !pc_is_user(branch_next_pc);
-  wire [1:0] commit_width = {1'b0, cpu.ms_to_ws_valid_0} +
-                            {1'b0, cpu.ms_to_ws_valid_1};
-  wire user_commit_0 = cpu.ms_to_ws_valid_0 &&
-                       pc_is_user(cpu.u_mem.ms_pc_0);
-  wire user_commit_1 = cpu.ms_to_ws_valid_1 &&
-                       pc_is_user(cpu.u_mem.ms_pc_1);
-  wire exit_commit_now = program_exit &&
-      ((cpu.ms_to_ws_valid_0 && cpu.u_mem.ms_pc_0 == cpu.bpu_ex_pc) ||
-       (cpu.ms_to_ws_valid_1 && cpu.u_mem.ms_pc_1 == cpu.bpu_ex_pc));
-  wire exit_commit_later = exit_seen &&
-      ((cpu.ms_to_ws_valid_0 && cpu.u_mem.ms_pc_0 == exit_pc) ||
-       (cpu.ms_to_ws_valid_1 && cpu.u_mem.ms_pc_1 == exit_pc));
+  // The reduced core has exactly one instruction in flight. ST_EX is reached
+  // once per instruction, so it is the single architectural instruction event
+  // for cycle/IPC accounting. With no speculation, a PC outside the uploaded
+  // image after an EX event means the user program has returned to the monitor.
+  wire cpu_exec_valid = (cpu.state == CPU_ST_EX);
+  wire user_exec_valid = cpu_exec_valid && pc_is_user(cpu.pc_out);
 
   mycpu_top cpu(
     .clk(clk), .resetn(resetn),
@@ -129,10 +115,6 @@ module asm_monitor_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
-    .data_sram_fast_ready(data_fast_ready),
-    .data_sram_fast_data_ok(data_fast_data_ok),
-    .data_sram_fast_rdata(data_fast_rdata),
-    .data_sram_store_ready(data_store_ready),
     .debug_wb_pc(), .debug_wb_rf_we(), .debug_wb_rf_wnum(),
     .debug_wb_rf_wdata());
 
@@ -148,10 +130,6 @@ module asm_monitor_tb;
     .data_sram_addr(data_addr), .data_sram_wdata(data_wdata),
     .data_sram_addr_ok(data_addr_ok), .data_sram_data_ok(data_data_ok),
     .data_sram_rdata(data_rdata),
-    .data_sram_fast_ready(data_fast_ready),
-    .data_sram_fast_data_ok(data_fast_data_ok),
-    .data_sram_fast_rdata(data_fast_rdata),
-    .data_sram_store_ready(data_store_ready),
     .base_ram_addr(base_addr), .base_ram_wdata(base_wdata),
     .base_ram_be_n(base_be_n), .base_ram_ce_n(base_ce_n),
     .base_ram_oe_n(base_oe_n), .base_ram_we_n(base_we_n),
@@ -171,7 +149,7 @@ module asm_monitor_tb;
 
     if (command_counting) begin
       command_cycles <= command_cycles + 1;
-      command_instr <= command_instr + {62'b0, commit_width};
+      command_instr <= command_instr + {63'b0, cpu_exec_valid};
       if (uart_tx_start && uart_tx_data == 8'h07) begin
         command_counting <= 1'b0;
         command_done <= 1'b1;
@@ -180,13 +158,8 @@ module asm_monitor_tb;
 
     if (user_counting) begin
       user_cycles <= user_cycles + 1;
-      user_instr <= user_instr + {63'b0, user_commit_0} +
-                                  {63'b0, user_commit_1};
-      if (program_exit) begin
-        exit_seen <= 1'b1;
-        exit_pc <= cpu.bpu_ex_pc;
-      end
-      if (exit_commit_now || exit_commit_later) begin
+      user_instr <= user_instr + {63'b0, user_exec_valid};
+      if (!pc_is_user(cpu.pc_out)) begin
         user_counting <= 1'b0;
         user_done <= 1'b1;
       end
@@ -228,7 +201,8 @@ module asm_monitor_tb;
       tx_count = tx_count + 1;
     end
     if (cycle_count > max_cycles)
-      $fatal(1, "asm monitor timeout pc=%h cycles=%0d", cpu.pc_out, cycle_count);
+      $fatal(1, "asm monitor timeout pc=%h state=%0d inst=%h cycles=%0d",
+             cpu.pc_out, cpu.state, cpu.inst, cycle_count);
   end
 
   task fail;
@@ -507,8 +481,6 @@ module asm_monitor_tb;
     command_done = 1'b0;
     user_counting = 1'b0;
     user_done = 1'b0;
-    exit_seen = 1'b0;
-    exit_pc = 32'b0;
     command_cycles = 0;
     command_instr = 0;
     user_cycles = 0;
