@@ -8,6 +8,7 @@ module asm_monitor_tb;
   localparam integer BASE_DEPTH = 1048576;
   localparam integer EXT_DEPTH = 1048576;
   localparam integer PROGRAM_DEPTH = 1048576;
+  localparam integer WRITE_LOG_LIMIT = 8;
   localparam [3:0] CPU_ST_EX = 4'd2;
   localparam [BOOT_LEN*8-1:0] BOOT_MESSAGE =
       "MONITOR for Loongarch32 - initialized.";
@@ -62,8 +63,8 @@ module asm_monitor_tb;
   reg user_counting, user_done;
   reg [63:0] command_cycles, command_instr;
   reg [63:0] user_cycles, user_instr, write_count;
-  reg [31:0] write_addr_log [0:255];
-  reg [31:0] write_data_log [0:255];
+  reg [31:0] write_addr_log [0:WRITE_LOG_LIMIT-1];
+  reg [31:0] write_data_log [0:WRITE_LOG_LIMIT-1];
 
   function address_is_valid;
     input [31:0] addr;
@@ -172,7 +173,7 @@ module asm_monitor_tb;
       if (!base_be_n[3]) base_mem[base_addr][31:24] <= base_wdata[31:24];
       if (user_counting) begin
         write_count <= write_count + 1;
-        if (write_log_count < 256) begin
+        if (write_log_count < WRITE_LOG_LIMIT) begin
           write_addr_log[write_log_count] <= 32'h1c000000 +
                                              {10'b0, base_addr, 2'b0};
           write_data_log[write_log_count] <= base_wdata;
@@ -187,7 +188,7 @@ module asm_monitor_tb;
       if (!ext_be_n[3]) ext_mem[ext_addr][31:24] <= ext_wdata[31:24];
       if (user_counting) begin
         write_count <= write_count + 1;
-        if (write_log_count < 256) begin
+        if (write_log_count < WRITE_LOG_LIMIT) begin
           write_addr_log[write_log_count] <= 32'h1c400000 +
                                              {10'b0, ext_addr, 2'b0};
           write_data_log[write_log_count] <= ext_wdata;

@@ -5,9 +5,9 @@
 // Exactly one instruction is in flight. The architectural stages are
 // serialized, so every RAW dependency waits until the producer reaches WB.
 module mycpu_top #(
-    parameter [31:0] ACCEL_ARRAY_BEGIN = 32'h1c40_0000,
-    parameter [31:0] ACCEL_ARRAY_END   = 32'h1c70_0000,
-    parameter [31:0] ACCEL_RESULT_ADDR = 32'h1c70_0000
+    parameter [31:0] ACCEL_ARRAY_BEGIN = 32'h8040_0000,
+    parameter [31:0] ACCEL_ARRAY_END   = 32'h8050_0000,
+    parameter [31:0] ACCEL_RESULT_ADDR = 32'h8050_0000
 )(
     input  wire        clk,
     input  wire        resetn,

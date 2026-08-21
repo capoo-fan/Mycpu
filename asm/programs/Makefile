@@ -48,7 +48,7 @@ WATCH_WORDS ?= 5
 
 # WATCH_ADDR_2 为打印输出结果的起始地址，WATCH_WORDS_2 为打印输出区域的长度
 # 打印输出区域的 5 个数据
-WATCH_ADDR_2  ?= 0x80700000
+WATCH_ADDR_2  ?= 0x80500000
 WATCH_WORDS_2 ?= 5
 
 # 默认写入数据的起始地址和值
