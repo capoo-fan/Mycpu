@@ -1,10 +1,6 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-`ifndef TEST_MAX_OUTSTANDING
-`define TEST_MAX_OUTSTANDING 4
-`endif
-
 module tb_array_accel_engine;
     localparam [31:0] SRC = 32'h0000_1000;
     localparam [31:0] RESULT = 32'h0000_2000;
@@ -41,6 +37,7 @@ module tb_array_accel_engine;
     integer writes = 0;
     integer i;
     reg [31:0] expected_max = 32'b0;
+    reg read_stream_started = 1'b0;
 
     wire request_fire = mem_req && mem_addr_ok;
     wire response_fire = mem_data_ok;
@@ -52,10 +49,6 @@ module tb_array_accel_engine;
         .ARRAY_BEGIN(SRC),
         .ARRAY_END(SRC + WORDS * 4),
         .RESULT_ADDR(RESULT)
-`ifndef LEGACY_ENGINE
-        ,
-        .MAX_OUTSTANDING(`TEST_MAX_OUTSTANDING)
-`endif
     ) dut (
         .clk(clk), .resetn(resetn),
         .start(start), .busy(busy), .done(done),
@@ -77,24 +70,39 @@ module tb_array_accel_engine;
             pipe_data[i]  <= pipe_data[i-1];
         end
 
-        pipe_valid[0] <= mem_req && mem_addr_ok;
+        pipe_valid[0] <= request_fire;
         pipe_wr[0]    <= mem_wr;
         pipe_addr[0]  <= mem_addr;
         if (mem_wr)
             pipe_data[0] <= mem_wdata;
-        else if (mem_req)
+        else if (request_fire)
             pipe_data[0] <= source[(mem_addr - SRC) >> 2];
 
+        if (read_stream_started && (reads < WORDS) &&
+            (!mem_req || mem_wr))
+            $fatal(1, "Reduction read-request bubble at cycle %0d", cycles);
+
         if (request_fire) begin
-            if (mem_wr)
+            if (mem_size !== 2'b10)
+                $fatal(1, "Reduction request size is not word");
+
+            if (mem_wr) begin
+                if (mem_addr !== RESULT || mem_wstrb !== 4'b1111)
+                    $fatal(1, "Reduction write request mismatch");
                 writes <= writes + 1;
-            else
+            end
+            else begin
+                read_stream_started <= 1'b1;
+                if (mem_addr !== (SRC + reads * 4))
+                    $fatal(1, "Reduction read address mismatch: got=%h", mem_addr);
+                if (mem_wstrb !== 4'b0000)
+                    $fatal(1, "Reduction read strobe mismatch");
                 reads <= reads + 1;
+            end
         end
-        if (response_fire) begin
-            if (pipe_wr[LATENCY-1])
-                result_word <= pipe_data[LATENCY-1];
-        end
+
+        if (response_fire && pipe_wr[LATENCY-1])
+            result_word <= pipe_data[LATENCY-1];
 
         case ({request_fire, response_fire})
             2'b10: outstanding <= outstanding + 1;
@@ -150,15 +158,15 @@ module tb_array_accel_engine;
         if (reads != WORDS || writes != 1)
             $fatal(1, "transaction count mismatch: reads=%0d writes=%0d",
                    reads, writes);
-        if (!$test$plusargs("ALLOW_SINGLE") && max_outstanding < 2)
-            $fatal(1, "read pipeline was not exercised");
+        if (max_outstanding < LATENCY)
+            $fatal(1, "continuous read pipeline was not filled");
 
-        $display("PASS reduction words=%0d cycles=%0d max_outstanding=%0d",
+        $display("PASS reduction words=%0d cycles=%0d max_outstanding=%0d continuous_reads=1",
                  WORDS, cycles, max_outstanding);
         $finish;
     end
 
-    wire unused = &{1'b0, mem_size, mem_wstrb, pipe_addr[LATENCY-1]};
+    wire unused = &{1'b0, pipe_addr[LATENCY-1]};
 endmodule
 
 `default_nettype wire

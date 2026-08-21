@@ -3,11 +3,7 @@
 
 module tb_array_map_engine;
     localparam [31:0] SRC = 32'h0000_1000;
-`ifdef TEST_OVERLAP
-    localparam [31:0] DST = SRC + 32'd4;
-`else
     localparam [31:0] DST = 32'h0000_2000;
-`endif
     localparam integer WORDS = 32;
 
     reg clk = 1'b0;
@@ -24,26 +20,38 @@ module tb_array_map_engine;
     wire [31:0] mem_addr;
     wire [31:0] mem_wdata;
     wire mem_addr_ok;
-    reg mem_data_ok = 1'b0;
-    reg [31:0] mem_rdata = 32'b0;
+    wire mem_data_ok;
+    wire [31:0] mem_rdata;
 
     reg [31:0] memory [0:4095];
-    reg pending = 1'b0;
-    reg pending_wr = 1'b0;
-    reg [31:0] pending_addr = 32'b0;
-    reg [31:0] pending_wdata = 32'b0;
-    integer pending_delay = 0;
+    reg response_valid = 1'b0;
+    reg response_wr = 1'b0;
+    reg [31:0] response_addr = 32'b0;
+    reg [31:0] response_wdata = 32'b0;
+    reg [31:0] response_rdata = 32'b0;
     integer cycles = 0;
     integer reads = 0;
     integer writes = 0;
     integer i;
+    reg stream_started = 1'b0;
+    reg held_request = 1'b0;
+    reg held_wr = 1'b0;
+    reg [3:0] held_wstrb = 4'b0;
+    reg [31:0] held_addr = 32'b0;
+    reg [31:0] held_wdata = 32'b0;
 
-    assign mem_addr_ok = mem_req && !pending;
+    // 周期性制造 addr_ok 背压，验证请求保持；响应固定晚一拍且严格有序。
+    wire force_stall = ((cycles % 7) == 3);
+    assign mem_addr_ok = mem_req && !force_stall;
+    assign mem_data_ok = response_valid;
+    assign mem_rdata   = response_rdata;
 
-    array_map_engine #(
-        .SRC_BEGIN(SRC),
-        .SRC_END(SRC + WORDS * 4),
-        .DST_BEGIN(DST)
+    wire request_fire = mem_req && mem_addr_ok;
+
+    array_accel_engine #(
+        .ARRAY_BEGIN(SRC),
+        .ARRAY_END(SRC + WORDS * 4),
+        .RESULT_ADDR(DST)
     ) dut (
         .clk(clk), .resetn(resetn),
         .start(start), .busy(busy), .done(done),
@@ -58,36 +66,61 @@ module tb_array_map_engine;
     always #5 clk = ~clk;
 
     always @(posedge clk) begin
-        mem_data_ok <= 1'b0;
+        cycles <= cycles + 1;
 
-        if (mem_req && mem_addr_ok) begin
-            pending       <= 1'b1;
-            pending_wr    <= mem_wr;
-            pending_addr  <= mem_addr;
-            pending_wdata <= mem_wdata;
-            pending_delay <= 2;
-            if (mem_wr)
-                writes <= writes + 1;
-            else
-                reads <= reads + 1;
+        // 一旦首笔请求出现，在最后一笔写请求被接受前，engine 自身不得
+        // 拉低 mem_req。addr_ok=0 时仍必须保持当前请求。
+        if (stream_started && (writes < WORDS) && !mem_req)
+            $fatal(1, "Map request bubble at cycle %0d", cycles);
+        if (mem_req)
+            stream_started <= 1'b1;
+
+        if (held_request &&
+            (!mem_req || (mem_wr !== held_wr) ||
+             (mem_wstrb !== held_wstrb) || (mem_addr !== held_addr) ||
+             (mem_wdata !== held_wdata)))
+            $fatal(1, "Map request payload changed under backpressure");
+
+        held_request <= mem_req && !mem_addr_ok;
+        if (mem_req && !mem_addr_ok) begin
+            held_wr    <= mem_wr;
+            held_wstrb <= mem_wstrb;
+            held_addr  <= mem_addr;
+            held_wdata <= mem_wdata;
         end
 
-        if (pending) begin
-            if (pending_delay == 0) begin
-                pending    <= 1'b0;
-                mem_data_ok <= 1'b1;
-                if (pending_wr)
-                    memory[pending_addr[13:2]] <= pending_wdata;
-                else
-                    mem_rdata <= memory[pending_addr[13:2]];
+        response_valid <= request_fire;
+        if (request_fire) begin
+            response_wr    <= mem_wr;
+            response_addr  <= mem_addr;
+            response_wdata <= mem_wdata;
+
+            if (mem_size !== 2'b10)
+                $fatal(1, "Map request size is not word");
+
+            if (mem_wr) begin
+                if (reads != (writes + 1))
+                    $fatal(1, "Map request order is not read/write alternating");
+                if (mem_addr !== (DST + writes * 4))
+                    $fatal(1, "Map write address mismatch: got=%h", mem_addr);
+                if (mem_wstrb !== 4'b1111)
+                    $fatal(1, "Map write strobe mismatch");
+                writes <= writes + 1;
             end
             else begin
-                pending_delay <= pending_delay - 1;
+                if (reads != writes)
+                    $fatal(1, "Map issued a second read before its write");
+                if (mem_addr !== (SRC + reads * 4))
+                    $fatal(1, "Map read address mismatch: got=%h", mem_addr);
+                if (mem_wstrb !== 4'b0000)
+                    $fatal(1, "Map read strobe mismatch");
+                response_rdata <= memory[mem_addr[13:2]];
+                reads <= reads + 1;
             end
         end
 
-        if (busy)
-            cycles <= cycles + 1;
+        if (response_valid && response_wr)
+            memory[response_addr[13:2]] <= response_wdata;
     end
 
     initial begin
@@ -95,9 +128,7 @@ module tb_array_map_engine;
             memory[i] = 32'hdead_beef;
         for (i = 0; i < WORDS; i = i + 1) begin
             memory[(SRC >> 2) + i] = 32'h1357_0000 + i * 32'h1021;
-`ifndef TEST_OVERLAP
             memory[(DST >> 2) + i] = 32'b0;
-`endif
         end
 
         repeat (4) @(posedge clk);
@@ -112,7 +143,7 @@ module tb_array_map_engine;
                 wait (done);
             end
             begin
-                repeat (2000) @(posedge clk);
+                repeat (1000) @(posedge clk);
                 $fatal(1, "Map engine timeout");
             end
         join_any
@@ -123,22 +154,14 @@ module tb_array_map_engine;
             $fatal(1, "transaction count mismatch: reads=%0d writes=%0d",
                    reads, writes);
         for (i = 0; i < WORDS; i = i + 1) begin
-`ifdef TEST_OVERLAP
-            // identity 且 dst=src+4 时，严格逐项读后写会把第一个 word
-            // 依次传播到整个目标区间；预取若未自动关闭就会失败。
-            if (memory[(DST >> 2) + i] !== 32'h1357_0000)
-                $fatal(1, "overlap Map mismatch at word %0d", i);
-`else
             if (memory[(DST >> 2) + i] !== memory[(SRC >> 2) + i])
                 $fatal(1, "Map mismatch at word %0d", i);
-`endif
         end
 
-        $display("PASS map words=%0d cycles=%0d", WORDS, cycles);
+        $display("PASS map words=%0d cycles=%0d continuous_requests=1",
+                 WORDS, cycles);
         $finish;
     end
-
-    wire unused = &{1'b0, mem_size, mem_wstrb};
 endmodule
 
 `default_nettype wire

@@ -7,9 +7,8 @@ Reduction 加速器，独占 CPU 数据类 SRAM 接口，扫描 ExtRAM 中的 3 
 本文按当前 `myCPU/` RTL 编写。所有需要新增、替换的代码都完整列出，不使用“原字段”、
 “其余端口”或省略号代替代码。没有明确要求修改的 RTL 文件保持不变。
 
-> 当前仓库已经有 `myCPU/array_accel_engine.v` 和
-> `myCPU/accelerator_logic.v`，但 CPU 流水线尚未完成整机接线。本文说明的是完成接线所需
-> 的全部改动，不表示这些改动已经应用到 RTL。
+> 当前仓库已经完成 `myCPU/array_accel_engine.v`、2025 计数逻辑、流水线控制和
+> 数据总线仲裁接线。本文同时作为从 Template 重新同步或移植到其他 CPU 的参考。
 
 ## 1. 接入结果和修改文件
 
@@ -50,6 +49,7 @@ EX 发出 accel_flush，PC 跳到触发指令 PC+4
 | `myCPU/EXE_stage.v` | 保存命令状态，产生单拍 start，等待 done，发出完成冲刷 |
 | `myCPU/MEM_stage.v` | 导出可安全接管数据口的 `mem_stage_empty` |
 | `myCPU/mycpu_top.v` | 实例化加速器，连接控制信号，仲裁请求和响应 |
+| `myCPU/thinpad_sram_uart_bridge.v` | ExtRAM 在读响应拍接受下一笔连续读 |
 | `asm/programs/user_sample.s` | 替换为命令、返回值清零和返回指令组成的短程序 |
 
 以下文件不要修改：
@@ -57,7 +57,6 @@ EX 发出 accel_flush，PC 跳到触发指令 PC+4
 - `myCPU/WB_stage.v`：加速器命令不进入 MEM/WB，也不通过寄存器返回结果；
 - `myCPU/data_txn_tracker.v`：继续观察仲裁后的真实数据口事务；
 - `thinpad_top.v`：`mycpu_top` 的外部端口没有变化；
-- `thinpad_sram_uart_bridge.v`：加速器复用现有类 SRAM 协议；
 - `debug_wb_*` 相关逻辑：四个 debug 端口继续绑定常量，不能恢复写回长线或 debug FIFO。
 
 ## 2. 地址、命令和接口约定
@@ -87,8 +86,8 @@ EX 发出 accel_flush，PC 跳到触发指令 PC+4
 
 - `mem_req` 在 `mem_addr_ok` 前保持有效，`mem_wr`、`mem_addr`、`mem_wstrb` 和
   `mem_wdata` 同时保持稳定；
-- 请求被 `mem_addr_ok` 接受后，必须等待与该请求对应的 `mem_data_ok`；
-- 当前 bridge 只按单笔事务使用，因此 `MAX_OUTSTANDING` 固定为 1；
+- 请求被 `mem_addr_ok` 接受后，每笔请求必须按序返回一个对应的 `mem_data_ok`；
+- 加速器在扫描区间内持续发读请求，bridge 可在返回上一笔读取的同时接受下一笔；
 - 结果写请求收到 `mem_data_ok` 后才能拉高 `done`；
 - 总线所有者切换时，请求和所有响应/ready 信号必须一起切换。
 
@@ -102,8 +101,8 @@ EX 发出 accel_flush，PC 跳到触发指令 PC+4
 cp asm/Template/Reduction/array_accel_engine.v myCPU/array_accel_engine.v
 ```
 
-该文件完整复制，不修改模块名、端口和状态机。顶层实例化时通过参数设置题目地址和
-outstanding 数量。不要同时把 `asm/Template/Map/accelerator_logic.v` 放入
+该文件完整复制，不修改模块名、端口和状态机。顶层实例化时通过三个统一参数设置
+输入起点、输入终点和结果地址。不要同时把 `asm/Template/Map/accelerator_logic.v` 放入
 `myCPU/`，因为 Map 和 Reduction 模板都定义了同名模块 `accelerator_logic`。
 
 ### 3.2 `myCPU/accelerator_logic.v`
@@ -969,8 +968,7 @@ EX 的大控制寄存器时序块有 reset、flush、`promote_mul_tail` 和
   array_accel_engine #(
     .ARRAY_BEGIN     (32'h1c40_0000),
     .ARRAY_END       (32'h1c70_0000),
-    .RESULT_ADDR     (32'h1c70_0000),
-    .MAX_OUTSTANDING (16'd1)
+    .RESULT_ADDR     (32'h1c70_0000)
   ) u_array_accel (
     .clk              (clk),
     .resetn           (resetn),
@@ -1169,4 +1167,4 @@ make -f test/supervisor_perf.mk suite
 - 顶层多驱动：地址翻译仍直接驱动 `data_sram_addr`；
 - 普通程序永久阻塞：完成时没有用 `accel_flush` 清除 `special_block`；
 - reset 后偶发启动：`es_is_accel_0`、`accel_started` 或 `accel_owns_bus` 没复位；
-- 增大 `MAX_OUTSTANDING` 后失效：下游不支持多笔未完成请求或不能保证顺序返回。
+- 连续读取后归约错误：下游漏返回响应，或多笔读响应没有严格按请求顺序返回。

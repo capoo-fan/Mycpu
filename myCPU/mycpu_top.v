@@ -524,11 +524,10 @@ module mycpu_top(
                 );
 
 
-    array_accel_engine #(
+  array_accel_engine #(
     .ARRAY_BEGIN     (32'h1c40_0000),
     .ARRAY_END       (32'h1c70_0000),
-    .RESULT_ADDR     (32'h1c70_0000),
-    .MAX_OUTSTANDING (16'd1)
+    .RESULT_ADDR     (32'h1c70_0000)
   ) u_array_accel (
     .clk              (clk),
     .resetn           (resetn),

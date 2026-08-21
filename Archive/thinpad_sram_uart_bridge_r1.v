@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// 一周期读归档版：SRAM 地址在 addr_ok 握手拍直接送出，读响应在
-// 下一拍给出。也就是说，从 addr_ok 被采样到 data_ok 被采样只有
-// 一个时钟周期。UART 和 posted-store 时序保持源文件不变。
+// 一周期流水读版：SRAM 地址在 addr_ok 握手沿锁存，读响应在下一拍
+// 给出；响应拍可同时接受下一笔读请求，因此连续读取吞吐率为一拍一笔。
+// UART 和 posted-store 时序保持不变。
 module thinpad_sram_uart_bridge(
     input  wire        clk,
     input  wire        resetn,
@@ -90,16 +90,17 @@ module thinpad_sram_uart_bridge(
     wire base_data_read  = base_data_req & ~data_sram_wr;
     wire base_inst_req   = inst_sram_req & ~inst_sram_wr;
 
-    wire base_grant_data = (base_state == S_IDLE) & ~base_store_valid &
-                           base_data_read;
-    wire base_grant_inst = (base_state == S_IDLE) & ~base_store_valid &
-                           ~base_data_read & base_inst_req;
+    // S_DONE 返回上一笔的同时允许锁存下一笔；base_addr_reg 在握手沿
+    // 更新，因此响应沿之前 SRAM 引脚仍保持上一笔地址。
+    wire base_grant_data = ~base_store_valid & base_data_read;
+    wire base_grant_inst = ~base_store_valid & ~base_data_read & base_inst_req;
     wire base_grant      = base_grant_data | base_grant_inst;
     wire base_done       = (base_state == S_DONE);
 
-    wire [19:0] base_cur_word = base_grant_data ? data_sram_addr[21:2] :
+    wire [19:0] base_cur_word = base_done ? base_addr_reg :
+                                  base_grant_data ? data_sram_addr[21:2] :
                                   base_grant_inst ? inst_sram_addr[21:2] :
-                                                    base_addr_reg;
+                                                    20'b0;
     // 握手拍和紧随其后的响应拍均保持 SRAM 地址与读控制有效。
     wire base_read_active = base_grant | base_done;
     wire base_active      = base_store_drain | base_read_active;
@@ -144,7 +145,17 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_DONE: begin
-                    base_state <= S_IDLE;
+                    if (base_grant) begin
+                        base_state       <= S_DONE;
+                        base_client_data <= base_grant_data;
+                        base_addr_reg    <= base_grant_data ?
+                                            data_sram_addr[21:2] :
+                                            inst_sram_addr[21:2];
+                        base_fast_data_ok_reg <= base_grant_data;
+                        base_fast_ready_reg <= base_grant_data;
+                    end else begin
+                        base_state <= S_IDLE;
+                    end
                 end
 
                 default: begin
@@ -190,11 +201,12 @@ module thinpad_sram_uart_bridge(
     wire ext_store_drain = (ext_state == S_IDLE) & ext_store_valid;
     wire ext_store_ready = ~ext_store_valid | ext_store_drain;
     wire ext_store_accept = ext_data_store & ext_store_ready;
-    wire ext_grant = (ext_state == S_IDLE) & ~ext_store_valid &
-                     ext_data_req & ~data_sram_wr;
+    // 与 BaseRAM 相同，响应拍可同时接受下一笔 ExtRAM 读取。
+    wire ext_grant = ~ext_store_valid & ext_data_req & ~data_sram_wr;
     wire ext_done  = (ext_state == S_DONE);
 
-    wire [31:0] ext_cur_addr  = ext_grant ? data_sram_addr : ext_addr_reg;
+    wire [31:0] ext_cur_addr  = ext_done ? ext_addr_reg :
+                                 ext_grant ? data_sram_addr : 32'b0;
     wire        ext_read_active = ext_grant | ext_done;
     wire        ext_active    = ext_store_drain | ext_read_active;
 
@@ -234,7 +246,14 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_DONE: begin
-                    ext_state <= S_IDLE;
+                    if (ext_grant) begin
+                        ext_state     <= S_DONE;
+                        ext_addr_reg  <= data_sram_addr;
+                        ext_fast_data_ok_reg <= 1'b1;
+                        ext_fast_ready_reg <= 1'b1;
+                    end else begin
+                        ext_state <= S_IDLE;
+                    end
                 end
 
                 default: begin

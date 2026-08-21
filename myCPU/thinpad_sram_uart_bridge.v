@@ -257,11 +257,16 @@ module thinpad_sram_uart_bridge(
     wire ext_store_drain = (ext_state == S_IDLE) & ext_store_valid;
     wire ext_store_ready = ~ext_store_valid | ext_store_drain;
     wire ext_store_accept = ext_data_store & ext_store_ready;
-    wire ext_grant = (ext_state == S_IDLE) & ~ext_store_valid &
+    // DONE 返回当前读取的同一拍允许接受下一笔连续读。当前响应地址必须
+    // 继续由 ext_addr_reg 保持到握手沿，下一地址在该沿锁存后进入 ACCESS0。
+    wire ext_can_accept_read = (ext_state == S_IDLE) |
+                               (ext_state == S_DONE);
+    wire ext_grant = ext_can_accept_read & ~ext_store_valid &
                      ext_data_req & ~data_sram_wr;
     wire ext_done  = (ext_state == S_DONE);
 
-    wire [31:0] ext_cur_addr  = ext_grant ? data_sram_addr  : ext_addr_reg;
+    wire [31:0] ext_cur_addr  = ((ext_state == S_IDLE) && ext_grant) ?
+                                 data_sram_addr : ext_addr_reg;
     wire        ext_read_active = ext_grant | (ext_state != S_IDLE);
     wire        ext_active    = ext_store_drain | ext_read_active;
 
@@ -304,7 +309,12 @@ module thinpad_sram_uart_bridge(
                 end
 
                 S_DONE: begin
-                    ext_state <= S_IDLE;
+                    if (ext_grant) begin
+                        ext_state    <= S_ACCESS0;
+                        ext_addr_reg <= data_sram_addr;
+                    end else begin
+                        ext_state <= S_IDLE;
+                    end
                 end
 
                 default: begin

@@ -2,30 +2,30 @@
 `default_nettype none
 
 // ============================================================================
-// array_map_engine.v
+// array_accel_engine.v
 //
-// 通用 Map 加速器：dst[i] = F(src[i])。
+// 通用 Map 加速器：RESULT_ADDR[i] = F(ARRAY_BEGIN[i])。
 //
-// 性能设计：
-//   - 一个输入缓冲允许在算法计算当前元素时预取下一个元素；
-//   - 算法结果的写请求一旦被 addr_ok 接受，输出缓冲即可立即复用；
-//   - 算法、已接受的写事务和下一次读请求可以重叠；
-//   - 总线上仍最多只有一个未完成事务，兼容普通 SRAM-like bridge。
+// 本模块与 Reduction 模板使用完全相同的模块名、参数和 CPU/存储器端口。
+// Map 中 RESULT_ADDR 表示结果数组首地址，ARRAY_END 是源数组独占上界。
 //
-// 接口约束：
-//   - mem_req 在 mem_addr_ok 前保持，地址、方向和写数据保持稳定；
-//   - mem_data_ok 必须与已接受事务一一对应；
-//   - accelerator_logic 每接受一个输入，必须按顺序返回一个结果。
+// 连续请求约定：
+//   - 获得总线后，引擎不会在相邻元素之间主动插入请求空拍；
+//   - 一拍返回的读数据可在同拍形成写请求，写响应拍可同时请求下一元素；
+//   - mem_addr_ok 拉低时，mem_req 以及全部请求载荷保持稳定；
+//   - 下游造成的背压不计为引擎插入的气泡。
+//   - mem_data_ok 最早在对应请求被接受后的下一拍返回，不支持零延迟响应。
+//
+// accelerator_logic 必须能在读响应拍组合返回结果；寄存流水、多周期或会
+// 拉低 in_ready 的算法请使用 Template/Handshake/Map。
+// 源/目标区间只支持互不重叠或完全原地映射，部分重叠与连续流水语义冲突。
 // ============================================================================
 
-module array_map_engine #(
-    // 数组起止地址，必须 4 字节对齐；SRC_END 为独占上界。
-    // DST 为结果起始地址
-    parameter [31:0] SRC_BEGIN       = 32'h8040_0000,
-    parameter [31:0] SRC_END         = 32'h8050_0000,  // exclusive
-    parameter [31:0] DST_BEGIN       = 32'h8050_0000,
-    parameter        ENABLE_PREFETCH = 1'b1
-) (
+module array_accel_engine #(
+    parameter [31:0] ARRAY_BEGIN = 32'h1c40_0000,
+    parameter [31:0] ARRAY_END   = 32'h1c50_0000, // exclusive
+    parameter [31:0] RESULT_ADDR = 32'h1c50_0000
+)(
     input  wire        clk,
     input  wire        resetn,
 
@@ -38,241 +38,244 @@ module array_map_engine #(
 
     output reg         mem_req,
     output reg         mem_wr,
-    output reg  [ 1:0] mem_size,
-    output reg  [ 3:0] mem_wstrb,
+    output reg  [1:0]  mem_size,
+    output reg  [3:0]  mem_wstrb,
     output reg  [31:0] mem_addr,
     output reg  [31:0] mem_wdata,
-    
+
     input  wire        mem_addr_ok,
     input  wire        mem_data_ok,
     input  wire [31:0] mem_rdata
 );
 
-  localparam [ 1:0] M_IDLE  = 2'd0, M_REQ = 2'd1, M_WAIT = 2'd2;
+    localparam [2:0]
+        S_IDLE       = 3'd0,
+        S_WAIT_BUS   = 3'd1,
+        S_READ_REQ   = 3'd2,
+        S_READ_WAIT  = 3'd3,
+        S_ALGO_WAIT  = 3'd4,
+        S_WRITE_REQ  = 3'd5,
+        S_WRITE_WAIT = 3'd6;
 
-  localparam [31:0] DST_END = DST_BEGIN + (SRC_END - SRC_BEGIN);
+    reg [2:0] state;
+    reg [31:0] array_addr;
+    reg [31:0] result_addr;
+    reg [31:0] result_data;
 
-  reg  [ 1:0] mem_state;
+    wire        algo_in_valid;
+    wire        algo_in_ready;
+    wire [31:0] algo_out_data;
+    wire        algo_out_valid;
 
-  // 下一笔尚未发出的读/写地址。
-  reg  [31:0] read_addr;
-  reg  [31:0] write_addr;
+    // 读响应没有 ready，因此只允许在算法空闲时发起当前元素的读取。
+    assign algo_in_valid = (state == S_READ_WAIT) && mem_data_ok;
 
-  // 单入口输入、输出缓冲。输出在写地址握手后即可释放，因为下游此时
-  // 已经锁存地址和写数据；写完成仍由 M_WAIT 等待 data_ok。
-  reg         input_valid;
-  reg  [31:0] input_data;
-  reg         output_valid;
-  reg  [31:0] output_data;
-  reg         algo_busy;
+    accelerator_logic u_accelerator_logic (
+        .clk      (clk),
+        .resetn   (resetn),
+        .in_valid (algo_in_valid),
+        .in_ready (algo_in_ready),
+        .in_data  (mem_rdata),
+        .out_valid(algo_out_valid),
+        .out_data (algo_out_data)
+    );
 
-  // addr_ok 不能立即给出时锁存请求，保证请求载荷稳定。
-  reg         held_wr;
-  reg  [31:0] held_addr;
-  reg  [31:0] held_wdata;
+    assign takeover_req = busy;
 
-  // 已接受、正在等待 data_ok 的事务属性。
-  reg         pending_wr;
-  reg         pending_last;
+    wire current_is_last = ((array_addr + 32'd4) >= ARRAY_END);
 
-  wire        algo_in_valid;
-  wire        algo_in_ready;
-  wire [31:0] algo_in_data;
-  wire        algo_out_valid;
-  wire [31:0] algo_out_data;
+    // 算法结果出现的当拍直接尝试写出；若下游背压，时钟沿锁存到
+    // result_data，随后由 S_WRITE_REQ 保持稳定。
+    wire direct_write = ((state == S_READ_WAIT) ||
+                         (state == S_ALGO_WAIT)) && algo_out_valid;
 
-  // 输出缓冲占用时不再启动新算法，避免无 out_ready 接口下结果溢出。
-  assign algo_in_valid = input_valid && !output_valid;
-  assign algo_in_data  = input_data;
-  wire algo_accept = algo_in_valid && algo_in_ready;
+    // 写响应到达的当拍直接提出下一元素读请求，消除状态切换气泡。
+    wire chain_next_read = (state == S_WRITE_WAIT) && mem_data_ok &&
+                           !current_is_last;
 
-  accelerator_logic u_accelerator_logic (
-      .clk      (clk),
-      .resetn   (resetn),
-      .in_valid (algo_in_valid),
-      .in_ready (algo_in_ready),
-      .in_data  (algo_in_data),
-      .out_valid(algo_out_valid),
-      .out_data (algo_out_data)
-  );
+    always @(*) begin
+        mem_req   = 1'b0;
+        mem_wr    = 1'b0;
+        mem_size  = 2'b10;
+        mem_wstrb = 4'b0000;
+        mem_addr  = 32'b0;
+        mem_wdata = 32'b0;
 
-  assign takeover_req = busy;
-
-  // 若本拍输入会被算法取走，则输入槽在同一个时钟沿可视为可用；这样
-  // SRAM bridge 从 DONE 回到 IDLE 后能立即接受下一次预取。
-  wire input_slot_available = !input_valid || algo_accept;
-  wire have_more_reads = (read_addr < SRC_END);
-  wire current_write_last = ((write_addr + 32'd4) >= DST_END);
-
-  // dst 从 src 内部更高地址开始时，提前读取会改变有意重叠复制的逐项
-  // 语义，因此自动关闭预取；其它情况可由参数显式关闭以便调试。
-  localparam PREFETCH_SAFE = ENABLE_PREFETCH && !((DST_BEGIN > SRC_BEGIN) && (DST_BEGIN < SRC_END));
-  wire read_buffer_available = PREFETCH_SAFE ? input_slot_available :
-    (!input_valid && !algo_busy &&
-      !output_valid);
-
-  // ------------------------------------------------------------------------
-  // Memory request scheduler
-  //
-  // 写优先可限制输出等待时间；没有待写结果时尽早预取。M_REQ 中只使
-  // 用锁存载荷，因此算法和缓冲状态变化不会破坏 SRAM-like 稳定性。
-  // ------------------------------------------------------------------------
-  always @(*) begin
-    mem_req   = 1'b0;
-    mem_wr    = 1'b0;
-    mem_size  = 2'b10;
-    mem_wstrb = 4'b0000;
-    mem_addr  = 32'b0;
-    mem_wdata = 32'b0;
-
-    if (busy && takeover_grant) begin
-      case (mem_state)
-        M_IDLE: begin
-          if (output_valid) begin
-            mem_req   = 1'b1;
-            mem_wr    = 1'b1;
-            mem_wstrb = 4'b1111;
-            mem_addr  = write_addr;
-            mem_wdata = output_data;
-          end else if (have_more_reads && read_buffer_available) begin
-            mem_req  = 1'b1;
-            mem_wr   = 1'b0;
-            mem_addr = read_addr;
-          end
-        end
-
-        M_REQ: begin
-          mem_req   = 1'b1;
-          mem_wr    = held_wr;
-          mem_wstrb = held_wr ? 4'b1111 : 4'b0000;
-          mem_addr  = held_addr;
-          mem_wdata = held_wdata;
-        end
-
-        default: begin
-        end
-      endcase
-    end
-  end
-
-  wire request_fire = mem_req && mem_addr_ok;
-
-  always @(posedge clk) begin
-    if (!resetn) begin
-      busy         <= 1'b0;
-      done         <= 1'b0;
-      mem_state    <= M_IDLE;
-      read_addr    <= SRC_BEGIN;
-      write_addr   <= DST_BEGIN;
-      input_valid  <= 1'b0;
-      input_data   <= 32'b0;
-      output_valid <= 1'b0;
-      output_data  <= 32'b0;
-      algo_busy    <= 1'b0;
-      held_wr      <= 1'b0;
-      held_addr    <= 32'b0;
-      held_wdata   <= 32'b0;
-      pending_wr   <= 1'b0;
-      pending_last <= 1'b0;
-    end else begin
-      done <= 1'b0;
-
-      // 算法接口与访存控制相互独立，允许两者同拍前进。
-      if (algo_accept) begin
-        input_valid <= 1'b0;
-        algo_busy   <= 1'b1;
-      end
-
-      if (algo_out_valid) begin
-        output_valid <= 1'b1;
-        output_data  <= algo_out_data;
-        // 同拍返回旧结果并接受新输入时，新输入仍在运算中。
-        if (!algo_accept) algo_busy <= 1'b0;
-      end
-
-      if (!busy) begin
-        mem_state <= M_IDLE;
-
-        if (start) begin
-          read_addr    <= SRC_BEGIN;
-          write_addr   <= DST_BEGIN;
-          input_valid  <= 1'b0;
-          output_valid <= 1'b0;
-          algo_busy    <= 1'b0;
-
-          // 空区间不访问总线，也不产生伪造的一个元素。
-          if (SRC_BEGIN >= SRC_END) begin
-            busy <= 1'b0;
-            done <= 1'b1;
-          end else begin
-            busy <= 1'b1;
-          end
-        end
-      end else begin
-        case (mem_state)
-          M_IDLE: begin
-            if (mem_req) begin
-              if (request_fire) begin
-                pending_wr <= mem_wr;
-                mem_state  <= M_WAIT;
-
-                if (mem_wr) begin
-                  pending_last <= current_write_last;
-                  output_valid <= 1'b0;
-                  write_addr   <= write_addr + 32'd4;
-                end else begin
-                  pending_last <= 1'b0;
-                  read_addr    <= read_addr + 32'd4;
+        if (takeover_grant) begin
+            case (state)
+                S_READ_REQ: begin
+                    mem_req  = 1'b1;
+                    mem_addr = array_addr;
                 end
-              end else begin
-                held_wr    <= mem_wr;
-                held_addr  <= mem_addr;
-                held_wdata <= mem_wdata;
-                mem_state  <= M_REQ;
-              end
-            end
-          end
 
-          M_REQ: begin
-            if (request_fire) begin
-              pending_wr <= held_wr;
-              mem_state  <= M_WAIT;
-
-              if (held_wr) begin
-                pending_last <= current_write_last;
-                output_valid <= 1'b0;
-                write_addr   <= write_addr + 32'd4;
-              end else begin
-                pending_last <= 1'b0;
-                read_addr    <= read_addr + 32'd4;
-              end
-            end
-          end
-
-          M_WAIT: begin
-            if (mem_data_ok) begin
-              mem_state <= M_IDLE;
-
-              if (pending_wr) begin
-                if (pending_last) begin
-                  busy <= 1'b0;
-                  done <= 1'b1;
+                S_READ_WAIT,
+                S_ALGO_WAIT: begin
+                    if (direct_write) begin
+                        mem_req   = 1'b1;
+                        mem_wr    = 1'b1;
+                        mem_wstrb = 4'b1111;
+                        mem_addr  = result_addr;
+                        mem_wdata = algo_out_data;
+                    end
                 end
-              end else begin
-                // 若算法恰好同拍取走旧输入，新返回值直接补入。
-                input_valid <= 1'b1;
-                input_data  <= mem_rdata;
-              end
-            end
-          end
 
-          default: begin
-            mem_state <= M_IDLE;
-          end
-        endcase
-      end
+                S_WRITE_REQ: begin
+                    mem_req   = 1'b1;
+                    mem_wr    = 1'b1;
+                    mem_wstrb = 4'b1111;
+                    mem_addr  = result_addr;
+                    mem_wdata = result_data;
+                end
+
+                S_WRITE_WAIT: begin
+                    if (chain_next_read) begin
+                        mem_req  = 1'b1;
+                        mem_addr = array_addr + 32'd4;
+                    end
+                end
+
+                default: begin
+                end
+            endcase
+        end
     end
-  end
+
+    wire request_fire = mem_req && mem_addr_ok;
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            state       <= S_IDLE;
+            busy        <= 1'b0;
+            done        <= 1'b0;
+            array_addr  <= ARRAY_BEGIN;
+            result_addr <= RESULT_ADDR;
+            result_data <= 32'b0;
+        end
+        else begin
+            done <= 1'b0;
+
+            case (state)
+                S_IDLE: begin
+                    busy <= 1'b0;
+
+                    if (start) begin
+                        busy        <= 1'b1;
+                        array_addr  <= ARRAY_BEGIN;
+                        result_addr <= RESULT_ADDR;
+                        state       <= S_WAIT_BUS;
+                    end
+                end
+
+                S_WAIT_BUS: begin
+                    if (takeover_grant) begin
+                        if (ARRAY_BEGIN >= ARRAY_END) begin
+                            busy  <= 1'b0;
+                            done  <= 1'b1;
+                            state <= S_IDLE;
+                        end
+                        else begin
+                            state <= S_READ_REQ;
+                        end
+                    end
+                end
+
+                S_READ_REQ: begin
+                    if (request_fire) begin
+                        state <= S_READ_WAIT;
+                    end
+                end
+
+                S_READ_WAIT: begin
+                    if (mem_data_ok) begin
+                        if (!algo_in_ready) begin
+                            // 接口没有读响应反压能力；仿真断言会报告该错误。
+                            state <= S_READ_WAIT;
+                        end
+                        else if (algo_out_valid) begin
+                            if (request_fire) begin
+                                state <= S_WRITE_WAIT;
+                            end
+                            else begin
+                                result_data <= algo_out_data;
+                                state       <= S_WRITE_REQ;
+                            end
+                        end
+                        else begin
+                            state <= S_ALGO_WAIT;
+                        end
+                    end
+                end
+
+                S_ALGO_WAIT: begin
+                    if (algo_out_valid) begin
+                        if (request_fire) begin
+                            state <= S_WRITE_WAIT;
+                        end
+                        else begin
+                            result_data <= algo_out_data;
+                            state       <= S_WRITE_REQ;
+                        end
+                    end
+                end
+
+                S_WRITE_REQ: begin
+                    if (request_fire) begin
+                        if (mem_data_ok) begin
+                            if (current_is_last) begin
+                                busy  <= 1'b0;
+                                done  <= 1'b1;
+                                state <= S_IDLE;
+                            end
+                            else begin
+                                array_addr  <= array_addr + 32'd4;
+                                result_addr <= result_addr + 32'd4;
+                                state       <= S_READ_REQ;
+                            end
+                        end
+                        else begin
+                            state <= S_WRITE_WAIT;
+                        end
+                    end
+                end
+
+                S_WRITE_WAIT: begin
+                    if (mem_data_ok) begin
+                        if (current_is_last) begin
+                            busy  <= 1'b0;
+                            done  <= 1'b1;
+                            state <= S_IDLE;
+                        end
+                        else begin
+                            array_addr  <= array_addr + 32'd4;
+                            result_addr <= result_addr + 32'd4;
+                            state       <= request_fire ? S_READ_WAIT :
+                                                          S_READ_REQ;
+                        end
+                    end
+                end
+
+                default: begin
+                    state <= S_IDLE;
+                    busy  <= 1'b0;
+                end
+            endcase
+        end
+    end
+
+`ifndef SYNTHESIS
+    localparam [31:0] RESULT_END = RESULT_ADDR + (ARRAY_END - ARRAY_BEGIN);
+    initial begin
+        if ((ARRAY_BEGIN < ARRAY_END) &&
+            (RESULT_ADDR != ARRAY_BEGIN) &&
+            (RESULT_ADDR < ARRAY_END) && (RESULT_END > ARRAY_BEGIN))
+            $error("Map source/result ranges must not partially overlap");
+    end
+
+    always @(posedge clk) begin
+        if (resetn && algo_in_valid && !algo_in_ready)
+            $error("Map accelerator_logic was not ready for a read response");
+    end
+`endif
 
 endmodule
 

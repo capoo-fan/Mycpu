@@ -7,20 +7,18 @@
 // 通用 Reduction 加速器：顺序读取数组，由 accelerator_logic 归约，
 // 最后只写一个 32-bit 结果。
 //
-// 与逐请求等待的基础版本相比，本实现把“地址发出”和“数据返回”解耦：
-//   - 下游只支持单 outstanding 时，行为与普通 SRAM-like master 兼容；
-//   - 下游支持顺序返回流水时，可连续接受 MAX_OUTSTANDING 个读请求；
-//   - outstanding 满载且同拍返回数据时，可补发一个新请求，不插气泡。
+// 本实现把“地址发出”和“数据返回”完全解耦：获得总线后，只要数组尚未
+// 发完，就持续保持读请求；mem_addr_ok 每接受一拍，地址递增一个 word。
+// 引擎不再人为限制 outstanding 数量，也不会在连续读之间主动插入空拍。
 //
-// 重要：多个读响应必须保持请求顺序。接口没有 transaction ID，因此不能
-// 接到会乱序返回的主端口；这种场景应把 MAX_OUTSTANDING 设为 1。
+// 重要：多个读响应必须保持请求顺序。接口没有 transaction ID，不能接到
+// 会乱序返回的主端口。
 // ============================================================================
 
 module array_accel_engine #(
     parameter [31:0] ARRAY_BEGIN = 32'h1c40_0000,
     parameter [31:0] ARRAY_END   = 32'h1c70_0000, // exclusive
-    parameter [31:0] RESULT_ADDR = 32'h1c70_0000,
-    parameter [15:0] MAX_OUTSTANDING = 16'd4
+    parameter [31:0] RESULT_ADDR = 32'h1c70_0000
 )(
     input  wire        clk,
     input  wire        resetn,
@@ -57,7 +55,6 @@ module array_accel_engine #(
     // 对应的地址。返回严格有序时无需为每笔请求保存完整地址 FIFO。
     reg [31:0] issue_addr;
     reg [31:0] return_addr;
-    reg [15:0] outstanding_count;
 
     wire        algo_run_start;
     wire        algo_first_valid;
@@ -79,13 +76,6 @@ module array_accel_engine #(
     assign takeover_req = busy;
 
     wire have_more_requests = (issue_addr < ARRAY_END);
-    wire count_has_space = (outstanding_count < MAX_OUTSTANDING);
-
-    // 满载时若本拍正好返回一个 word，可在同拍补发，维持 1 word/cycle。
-    wire scan_response_hint = (state == S_SCAN) && mem_data_ok &&
-                              (outstanding_count != 16'd0);
-    wire can_issue_read = have_more_requests &&
-                          (count_has_space || scan_response_hint);
 
     always @(*) begin
         mem_req   = 1'b0;
@@ -97,7 +87,7 @@ module array_accel_engine #(
 
         case (state)
             S_SCAN: begin
-                if (takeover_grant && can_issue_read) begin
+                if (takeover_grant && have_more_requests) begin
                     mem_req  = 1'b1;
                     mem_wr   = 1'b0;
                     mem_addr = issue_addr;
@@ -123,7 +113,7 @@ module array_accel_engine #(
 
     // 支持最后一级在同一拍接受并返回（常规 SRAM bridge 通常至少晚一拍）。
     wire read_response = (state == S_SCAN) && mem_data_ok &&
-                         ((outstanding_count != 16'd0) || read_request_fire);
+                         ((return_addr < issue_addr) || read_request_fire);
 
     assign algo_first_valid = read_response && (return_addr == ARRAY_BEGIN);
     assign algo_data_valid  = read_response && (return_addr != ARRAY_BEGIN);
@@ -137,7 +127,6 @@ module array_accel_engine #(
             done              <= 1'b0;
             issue_addr        <= ARRAY_BEGIN;
             return_addr       <= ARRAY_BEGIN;
-            outstanding_count <= 16'd0;
         end
         else begin
             done <= 1'b0;
@@ -150,7 +139,6 @@ module array_accel_engine #(
                         busy              <= 1'b1;
                         issue_addr        <= ARRAY_BEGIN;
                         return_addr       <= ARRAY_BEGIN;
-                        outstanding_count <= 16'd0;
                         state             <= S_WAIT_BUS;
                     end
                 end
@@ -178,11 +166,6 @@ module array_accel_engine #(
                             state <= S_WRITE_REQ;
                     end
 
-                    case ({read_request_fire, read_response})
-                        2'b10: outstanding_count <= outstanding_count + 16'd1;
-                        2'b01: outstanding_count <= outstanding_count - 16'd1;
-                        default: outstanding_count <= outstanding_count;
-                    endcase
                 end
 
                 S_WRITE_REQ: begin
@@ -208,20 +191,12 @@ module array_accel_engine #(
                 end
 
                 default: begin
-                    state             <= S_IDLE;
-                    busy              <= 1'b0;
-                    outstanding_count <= 16'd0;
+                    state <= S_IDLE;
+                    busy  <= 1'b0;
                 end
             endcase
         end
     end
-
-`ifndef SYNTHESIS
-    initial begin
-        if (MAX_OUTSTANDING < 1)
-            $error("MAX_OUTSTANDING must be at least 1");
-    end
-`endif
 
 endmodule
 
