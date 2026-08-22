@@ -6,7 +6,7 @@ SUPERVISOR_BUILD := $(SUPERVISOR_DIR)/build
 
 PROGRAM_NAME := user_sample
 PROGRAM_PATH := $(MAKEFILE_DIR)/user_sample.s
-PROGRAM_ADDR ?= 0x80100000
+PROGRAM_ADDR ?= 0x1c100000
 
 ifneq ($(origin PROGRAM),undefined)
   $(error PROGRAM is not supported; replace asm/programs/user_sample.s instead)
