@@ -1,46 +1,70 @@
 # Reduction 加速器模板
 
 适用于完整读取数组、维护少量归约状态、最后只写一个 32-bit 结果的题目，例如最大值、
-求和、计数和校验。Reduction 与 Map 使用相同的 engine 模块名、配置参数和
-CPU/存储器端口。
+求和、计数和校验。Reduction 与 Map 使用相同的 `array_accel_engine` 模块名、配置参数及
+CPU/存储器接口。
 
-## 统一 engine 接口
+## 算法握手
 
-模块名固定为 `array_accel_engine`，配置参数固定为：
+`accelerator_logic.v` 使用与 Map 相同风格的 ready/valid 接口，并额外提供首元素标志：
 
-- `ARRAY_BEGIN`：输入数组首地址；
-- `ARRAY_END`：输入数组独占上界；
-- `RESULT_ADDR`：最终单字结果地址。
+- `run_start`：开始新任务并初始化全局归约状态；
+- `in_valid && in_ready`：接收一个元素，`in_first` 标识 `A[0]`；
+- `out_valid`：该元素处理完成，归约状态已更新；
+- `result`：当前归约结果。
 
-控制端口均为 `start/busy/done` 和 `takeover_req/takeover_grant`；存储器端口均为
-`mem_req/mem_wr/mem_size/mem_wstrb/mem_addr/mem_wdata` 与
-`mem_addr_ok/mem_data_ok/mem_rdata`。Map 中唯一不同的语义是 `RESULT_ADDR` 表示结果
-数组首地址，但端口和例化方式不变。
+每次输入握手必须按顺序产生且只产生一次 `out_valid`。上一项尚未 `out_valid` 时，engine
+不会让下一项进入算法；下一项最多预取到 engine 的单入口缓冲中。`out_valid` 和下一次
+输入握手可以同拍发生，因此单拍算法在首项之后能够每拍接收一个元素，不插入算法空拍。
 
-## 连续访存约定
+默认 `accelerator_logic.v` 用一拍完成无符号最大值归约。多周期算法只修改 USER MODIFY
+REGION，并应保持 `in_ready/out_valid` 的握手语义。
 
-engine 获得总线后会持续发出从 `ARRAY_BEGIN` 到 `ARRAY_END` 的递增 word 读请求。
-只要 `mem_addr_ok` 连续为 1，每拍都会接受一笔读取，中间没有人为 outstanding 上限，
-也没有请求空拍；旧的 outstanding 深度参数已删除。
+## 访存约定
 
-下游必须为每笔已接受请求恰好返回一次 `mem_data_ok`，多个响应必须严格保持请求顺序；
-接口没有 transaction ID，不能接入会乱序返回的主端口。`mem_addr_ok=0` 时，engine
-保持当前请求地址和载荷，直到请求被接受。
+engine 最多保留一笔未返回的读请求。算法接收当前项的同拍会预取下一项：单拍算法配合
+一拍响应的 SRAM bridge 时，读请求、读响应和算法输入都能逐拍连续；多周期算法则把
+预取结果保存在输入缓冲中，直到旧元素完成。
 
-在 `accelerator_logic.v` 中分别处理 `first_valid` 和 `data_valid`。每个连续返回的
-word 都会在对应周期产生其中一个 valid，因此归约逻辑必须能逐拍更新状态。
+下游必须满足：
+
+- 每笔被 `mem_addr_ok` 接受的请求恰好返回一次 `mem_data_ok`；
+- `mem_data_ok` 最早在请求被接受后的下一拍返回，且严格保持请求顺序；
+- `mem_addr_ok=0` 时，engine 保持当前请求及其载荷不变。
 
 ## 验证
 
-testbench 使用 6 拍响应延迟，并检查 64 笔读请求逐拍连续、地址递增、归约结果和最终
-写回：
+先检查 Verilator 版本：
+
+```bash
+verilator --version
+```
+
+单拍测试验证相邻算法输入逐拍连续；四拍测试验证上一项完成前下一项不能进入，并验证完成
+拍能直接接收下一项：
 
 ```bash
 build_dir=$(mktemp -d /tmp/reduction-template.XXXXXX)
 verilator --binary --timing --top-module tb_array_accel_engine \
-  --Mdir "$build_dir" \
+  --Mdir "$build_dir/one-cycle" \
   asm/Template/Reduction/tb_array_accel_engine.v \
   asm/Template/Reduction/array_accel_engine.v \
   asm/Template/Reduction/accelerator_logic.v
-"$build_dir/Vtb_array_accel_engine"
+"$build_dir/one-cycle/Vtb_array_accel_engine"
+
+verilator --binary --timing --top-module tb_array_accel_engine \
+  -DREDUCTION_DEMO_CYCLES=4 \
+  --Mdir "$build_dir/four-cycle" \
+  asm/Template/Reduction/tb_array_accel_engine.v \
+  asm/Template/Reduction/array_accel_engine.v \
+  asm/Template/Reduction/accelerator_logic.v
+"$build_dir/four-cycle/Vtb_array_accel_engine"
+
+verilator --binary --timing --top-module tb_array_accel_engine \
+  -DREDUCTION_DEMO_CYCLES=4 -DREDUCTION_TEST_ADDR_STALL \
+  --Mdir "$build_dir/backpressure" \
+  asm/Template/Reduction/tb_array_accel_engine.v \
+  asm/Template/Reduction/array_accel_engine.v \
+  asm/Template/Reduction/accelerator_logic.v
+"$build_dir/backpressure/Vtb_array_accel_engine"
 ```
