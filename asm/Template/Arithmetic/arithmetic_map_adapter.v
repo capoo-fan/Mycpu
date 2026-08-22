@@ -21,21 +21,30 @@ module arithmetic_map_adapter #(
     output wire [31:0] out_data
 );
 
-    // 兼容旧的 3 位算术操作码；所有新接入统一直接使用 accelerator_logic。
-    accelerator_logic #(
-        .OPERATION       ({5'b0, OPERATION}),
-        .OPERAND_B       (OPERAND_B),
-        .CONTROL_LSB     (5'b0),
-        .CONTROL_MSB     (5'b0),
-        .USE_AUXILIARY   (USE_AUXILIARY)
-    ) u_accelerator_logic (
-        .clk       (clk),
-        .resetn    (resetn),
-        .in_valid  (in_valid),
-        .in_ready  (in_ready),
-        .in_data   (in_data),
-        .out_valid (out_valid),
-        .out_data  (out_data)
+    wire [31:0] primary_result;
+    wire [31:0] auxiliary_result;
+    wire unused_divide_by_zero;
+    wire unused_overflow;
+    wire unused_invalid_operation;
+
+    assign out_data = USE_AUXILIARY ? auxiliary_result : primary_result;
+
+    // 兼容旧的 3 位算术 Map 入口。
+    contest_arithmetic_unit u_arithmetic_unit (
+        .clk                   (clk),
+        .resetn                (resetn),
+        .req_valid             (in_valid),
+        .req_ready             (in_ready),
+        .req_operation         (OPERATION),
+        .req_operand_a         (in_data),
+        .req_operand_b         (OPERAND_B),
+        .rsp_valid             (out_valid),
+        .rsp_ready             (1'b1),
+        .rsp_result            (primary_result),
+        .rsp_auxiliary         (auxiliary_result),
+        .rsp_divide_by_zero    (unused_divide_by_zero),
+        .rsp_overflow          (unused_overflow),
+        .rsp_invalid_operation (unused_invalid_operation)
     );
 
 endmodule

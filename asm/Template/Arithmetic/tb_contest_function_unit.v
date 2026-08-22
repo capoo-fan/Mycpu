@@ -1,8 +1,42 @@
 `timescale 1ns / 1ps
 `default_nettype none
-`include "la32_function_ops.vh"
 
 module tb_contest_function_unit;
+
+    localparam [7:0]
+        LA32_FUNC_OP_UDIV       = 8'h00,
+        LA32_FUNC_OP_SDIV       = 8'h01,
+        LA32_FUNC_OP_UMOD       = 8'h02,
+        LA32_FUNC_OP_SMOD       = 8'h03,
+        LA32_FUNC_OP_ISQRT      = 8'h04,
+        LA32_FUNC_OP_GCD        = 8'h05,
+        LA32_FUNC_OP_CLZ        = 8'h08,
+        LA32_FUNC_OP_CLO        = 8'h09,
+        LA32_FUNC_OP_CTZ        = 8'h0a,
+        LA32_FUNC_OP_CTO        = 8'h0b,
+        LA32_FUNC_OP_POPCOUNT   = 8'h0c,
+        LA32_FUNC_OP_ROTR       = 8'h10,
+        LA32_FUNC_OP_BITREV_W   = 8'h11,
+        LA32_FUNC_OP_BITREV_4B  = 8'h12,
+        LA32_FUNC_OP_REVB_2H    = 8'h13,
+        LA32_FUNC_OP_BYTEPICK_W = 8'h14,
+        LA32_FUNC_OP_BSTRPICK_W = 8'h18,
+        LA32_FUNC_OP_BSTRINS_W  = 8'h19,
+        LA32_FUNC_OP_MULU_FULL  = 8'h20,
+        LA32_FUNC_OP_MULS_FULL  = 8'h21,
+        LA32_FUNC_OP_CRC32_B    = 8'h28,
+        LA32_FUNC_OP_CRC32_H    = 8'h29,
+        LA32_FUNC_OP_CRC32_W    = 8'h2a,
+        LA32_FUNC_OP_CRC32C_B   = 8'h2c,
+        LA32_FUNC_OP_CRC32C_H   = 8'h2d,
+        LA32_FUNC_OP_CRC32C_W   = 8'h2e,
+        LA32_FUNC_OP_ANDN       = 8'h30,
+        LA32_FUNC_OP_ORN        = 8'h31,
+        LA32_FUNC_OP_MASKEQZ    = 8'h32,
+        LA32_FUNC_OP_MASKNEZ    = 8'h33,
+        LA32_FUNC_OP_ALSL       = 8'h34,
+        LA32_FUNC_OP_EXT_W_B    = 8'h35,
+        LA32_FUNC_OP_EXT_W_H    = 8'h36;
 
     reg         clk;
     reg         resetn;
@@ -309,7 +343,7 @@ module tb_contest_function_unit;
         begin
             polynomial = castagnoli ? 32'h82f6_3b78 : 32'hedb8_8320;
             operation  = castagnoli ?
-                `LA32_FUNC_OP_CRC32C_B : `LA32_FUNC_OP_CRC32_B;
+                LA32_FUNC_OP_CRC32C_B : LA32_FUNC_OP_CRC32_B;
             expected = crc_reference({24'b0, message_byte}, current_seed,
                                      6'd8, polynomial);
             check_operation(operation, {24'b0, message_byte}, current_seed,
@@ -337,97 +371,97 @@ module tb_contest_function_unit;
         resetn = 1'b1;
 
         // Existing arithmetic-unit integration.
-        check_operation(`LA32_FUNC_OP_UDIV, 32'd100, 32'd7, 0, 0,
+        check_operation(LA32_FUNC_OP_UDIV, 32'd100, 32'd7, 0, 0,
                         32'd14, 32'd2, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_ISQRT, 32'hffff_ffff, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_ISQRT, 32'hffff_ffff, 0, 0, 0,
                         32'd65535, 32'h0001_fffe, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_GCD, 32'd48, 32'd18, 0, 0,
+        check_operation(LA32_FUNC_OP_GCD, 32'd48, 32'd18, 0, 0,
                         32'd6, 32'b0, 0, 0, 0, 0);
 
         // Count operations and corner cases.
-        check_operation(`LA32_FUNC_OP_CLZ, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_CLZ, 1, 0, 0, 0, 31, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_CLO, 32'hffff_ffff, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_CLZ, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0);
+        check_operation(LA32_FUNC_OP_CLZ, 1, 0, 0, 0, 31, 0, 0, 0, 0, 0);
+        check_operation(LA32_FUNC_OP_CLO, 32'hffff_ffff, 0, 0, 0,
                         32, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_CTZ, 32'h0000_0100, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_CTZ, 32'h0000_0100, 0, 0, 0,
                         8, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_CTO, 32'h0000_0007, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_CTO, 32'h0000_0007, 0, 0, 0,
                         3, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_POPCOUNT, 32'hf0f0_5555, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_POPCOUNT, 32'hf0f0_5555, 0, 0, 0,
                         16, 0, 0, 0, 0, 0);
 
         // Shift and permutation examples, including all BYTEPICK windows.
-        check_operation(`LA32_FUNC_OP_ROTR, 32'h1234_5678, 0, 8, 0,
+        check_operation(LA32_FUNC_OP_ROTR, 32'h1234_5678, 0, 8, 0,
                         32'h7812_3456, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BITREV_W, 32'h0000_0001, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_BITREV_W, 32'h0000_0001, 0, 0, 0,
                         32'h8000_0000, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BITREV_4B, 32'h0123_4567, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_BITREV_4B, 32'h0123_4567, 0, 0, 0,
                         32'h80c4_a2e6, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_REVB_2H, 32'h1122_3344, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_REVB_2H, 32'h1122_3344, 0, 0, 0,
                         32'h2211_4433, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BYTEPICK_W,
+        check_operation(LA32_FUNC_OP_BYTEPICK_W,
                         32'h1122_3344, 32'haabb_ccdd, 0, 0,
                         32'haabb_ccdd, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BYTEPICK_W,
+        check_operation(LA32_FUNC_OP_BYTEPICK_W,
                         32'h1122_3344, 32'haabb_ccdd, 1, 0,
                         32'hbbcc_dd11, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BYTEPICK_W,
+        check_operation(LA32_FUNC_OP_BYTEPICK_W,
                         32'h1122_3344, 32'haabb_ccdd, 2, 0,
                         32'hccdd_1122, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BYTEPICK_W,
+        check_operation(LA32_FUNC_OP_BYTEPICK_W,
                         32'h1122_3344, 32'haabb_ccdd, 3, 0,
                         32'hdd11_2233, 0, 0, 0, 0, 0);
 
         // Bit-field extraction/insertion, full width, and invalid controls.
-        check_operation(`LA32_FUNC_OP_BSTRPICK_W, 32'hdead_beef, 0, 8, 15,
+        check_operation(LA32_FUNC_OP_BSTRPICK_W, 32'hdead_beef, 0, 8, 15,
                         32'h0000_00be, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BSTRINS_W,
+        check_operation(LA32_FUNC_OP_BSTRINS_W,
                         32'hdead_beef, 32'h1234_5678, 8, 15,
                         32'hdead_78ef, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BSTRPICK_W,
+        check_operation(LA32_FUNC_OP_BSTRPICK_W,
                         32'hdead_beef, 0, 0, 31,
                         32'hdead_beef, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BSTRINS_W,
+        check_operation(LA32_FUNC_OP_BSTRINS_W,
                         32'hdead_beef, 32'h1234_5678, 0, 31,
                         32'h1234_5678, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_BSTRPICK_W,
+        check_operation(LA32_FUNC_OP_BSTRPICK_W,
                         32'hdead_beef, 0, 20, 10,
                         0, 0, 0, 0, 0, 1);
 
         // Full multiply boundary cases.
         reference_product = unsigned_product_reference(
             32'hffff_ffff, 32'hffff_ffff);
-        check_operation(`LA32_FUNC_OP_MULU_FULL,
+        check_operation(LA32_FUNC_OP_MULU_FULL,
                         32'hffff_ffff, 32'hffff_ffff, 0, 0,
                         reference_product[31:0], reference_product[63:32],
                         0, 0, 0, 0);
         reference_product = signed_product_reference(
             32'h8000_0000, 32'hffff_ffff);
-        check_operation(`LA32_FUNC_OP_MULS_FULL,
+        check_operation(LA32_FUNC_OP_MULS_FULL,
                         32'h8000_0000, 32'hffff_ffff, 0, 0,
                         reference_product[31:0], reference_product[63:32],
                         0, 0, 0, 0);
 
         // Small logic helpers.
-        check_operation(`LA32_FUNC_OP_ANDN,
+        check_operation(LA32_FUNC_OP_ANDN,
                         32'hffff_00ff, 32'h0f0f_0f0f, 0, 0,
                         32'hf0f0_00f0, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_ORN,
+        check_operation(LA32_FUNC_OP_ORN,
                         32'h0000_00ff, 32'h0f0f_0f0f, 0, 0,
                         32'hf0f0_f0ff, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_MASKEQZ, 32'h1234_5678, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_MASKEQZ, 32'h1234_5678, 0, 0, 0,
                         0, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_MASKEQZ,
+        check_operation(LA32_FUNC_OP_MASKEQZ,
                         32'h1234_5678, 1, 0, 0,
                         32'h1234_5678, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_MASKNEZ,
+        check_operation(LA32_FUNC_OP_MASKNEZ,
                         32'h1234_5678, 0, 0, 0,
                         32'h1234_5678, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_ALSL, 32'h0000_0010, 5, 3, 0,
+        check_operation(LA32_FUNC_OP_ALSL, 32'h0000_0010, 5, 3, 0,
                         32'h0000_0105, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_EXT_W_B, 32'h0000_0080, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_EXT_W_B, 32'h0000_0080, 0, 0, 0,
                         32'hffff_ff80, 0, 0, 0, 0, 0);
-        check_operation(`LA32_FUNC_OP_EXT_W_H, 32'h0000_8000, 0, 0, 0,
+        check_operation(LA32_FUNC_OP_EXT_W_H, 32'h0000_8000, 0, 0, 0,
                         32'hffff_8000, 0, 0, 0, 0, 0);
 
         // Standard "123456789" check values validate polynomial and bit order.
@@ -462,31 +496,31 @@ module tb_contest_function_unit;
             random_a = $urandom(seed);
             random_b = $urandom(seed);
 
-            check_operation(`LA32_FUNC_OP_CLZ, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_CLZ, random_a, 0, 0, 0,
                             clz_reference(random_a), 0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_CLO, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_CLO, random_a, 0, 0, 0,
                             clz_reference(~random_a), 0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_CTZ, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_CTZ, random_a, 0, 0, 0,
                             ctz_reference(random_a), 0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_CTO, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_CTO, random_a, 0, 0, 0,
                             ctz_reference(~random_a), 0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_POPCOUNT, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_POPCOUNT, random_a, 0, 0, 0,
                             popcount_reference(random_a), 0, 0, 0, 0, 0);
 
             random_lsb = random_b[4:0];
-            check_operation(`LA32_FUNC_OP_ROTR, random_a, random_b,
+            check_operation(LA32_FUNC_OP_ROTR, random_a, random_b,
                             random_lsb, 0,
                             rotr_reference(random_a, random_lsb),
                             0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_BITREV_W, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_BITREV_W, random_a, 0, 0, 0,
                             bitrev_reference(random_a), 0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_BITREV_4B, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_BITREV_4B, random_a, 0, 0, 0,
                             bitrev_4b_reference(random_a), 0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_REVB_2H, random_a, 0, 0, 0,
+            check_operation(LA32_FUNC_OP_REVB_2H, random_a, 0, 0, 0,
                             {random_a[23:16], random_a[31:24],
                              random_a[7:0], random_a[15:8]},
                             0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_BYTEPICK_W,
+            check_operation(LA32_FUNC_OP_BYTEPICK_W,
                             random_a, random_b, random_lsb, 0,
                             bytepick_reference(random_a[31:8], random_b,
                                                random_lsb[1:0]),
@@ -499,44 +533,44 @@ module tb_contest_function_unit;
                 $fatal(1, "random field offset escaped valid range");
             random_msb = random_lsb + random_offset[4:0];
             reference_mask = field_mask_reference(random_msb, random_lsb);
-            check_operation(`LA32_FUNC_OP_BSTRPICK_W,
+            check_operation(LA32_FUNC_OP_BSTRPICK_W,
                             random_a, random_b, random_lsb, random_msb,
                             (random_a >> random_lsb) &
                                 (reference_mask >> random_lsb),
                             0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_BSTRINS_W,
+            check_operation(LA32_FUNC_OP_BSTRINS_W,
                             random_a, random_b, random_lsb, random_msb,
                             (random_a & ~reference_mask) |
                                 ((random_b << random_lsb) & reference_mask),
                             0, 0, 0, 0, 0);
 
             reference_product = unsigned_product_reference(random_a, random_b);
-            check_operation(`LA32_FUNC_OP_MULU_FULL,
+            check_operation(LA32_FUNC_OP_MULU_FULL,
                             random_a, random_b, 0, 0,
                             reference_product[31:0],
                             reference_product[63:32], 0, 0, 0, 0);
             reference_product = signed_product_reference(random_a, random_b);
-            check_operation(`LA32_FUNC_OP_MULS_FULL,
+            check_operation(LA32_FUNC_OP_MULS_FULL,
                             random_a, random_b, 0, 0,
                             reference_product[31:0],
                             reference_product[63:32], 0, 0, 0, 0);
 
-            check_operation(`LA32_FUNC_OP_CRC32_H,
+            check_operation(LA32_FUNC_OP_CRC32_H,
                             random_a, random_b, 0, 0,
                             crc_reference(random_a, random_b, 16,
                                           32'hedb8_8320),
                             0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_CRC32_W,
+            check_operation(LA32_FUNC_OP_CRC32_W,
                             random_a, random_b, 0, 0,
                             crc_reference(random_a, random_b, 32,
                                           32'hedb8_8320),
                             0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_CRC32C_H,
+            check_operation(LA32_FUNC_OP_CRC32C_H,
                             random_a, random_b, 0, 0,
                             crc_reference(random_a, random_b, 16,
                                           32'h82f6_3b78),
                             0, 0, 0, 0, 0);
-            check_operation(`LA32_FUNC_OP_CRC32C_W,
+            check_operation(LA32_FUNC_OP_CRC32C_W,
                             random_a, random_b, 0, 0,
                             crc_reference(random_a, random_b, 32,
                                           32'h82f6_3b78),

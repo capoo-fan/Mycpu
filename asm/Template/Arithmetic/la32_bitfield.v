@@ -1,6 +1,63 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。OPERATION=0 提取位域，OPERATION=1 插入位域。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic #(
+    parameter        OPERATION = 1'b0,
+    parameter [31:0] OPERAND_B = 32'b0,
+    parameter [4:0]  MSB       = 5'd31,
+    parameter [4:0]  LSB       = 5'd0
+) (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    wire [31:0] core_result;
+    wire unused_invalid_control;
+    reg         result_valid;
+    reg  [31:0] result_data;
+
+    assign in_ready  = !result_valid;
+    assign out_valid = result_valid;
+    assign out_data  = result_data;
+
+    la32_bitfield u_selected_operation (
+        .operation       (OPERATION),
+        .operand_a       (in_data),
+        .operand_b       (OPERAND_B),
+        .msb             (MSB),
+        .lsb             (LSB),
+        .result          (core_result),
+        .invalid_control (unused_invalid_control)
+    );
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            result_valid <= 1'b0;
+            result_data  <= 32'b0;
+        end
+        else begin
+            if (result_valid)
+                result_valid <= 1'b0;
+
+            if (in_valid && in_ready) begin
+                result_valid <= 1'b1;
+                result_data  <= core_result;
+            end
+        end
+    end
+
+endmodule
+`endif
+
 // LA32S 组合逻辑位域核心。
 // 操作编码：0=BSTRPICK.W，1=BSTRINS.W。
 //

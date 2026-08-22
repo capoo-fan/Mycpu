@@ -1,6 +1,63 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。
+// OPERATION：0=ROTR.W，1=BITREV.W，2=BITREV.4B，3=REVB.2H，
+//            4=BYTEPICK.W。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic #(
+    parameter [2:0]  OPERATION    = 3'd0,
+    parameter [31:0] OPERAND_B    = 32'b0,
+    parameter [4:0]  SHIFT_AMOUNT = 5'b0
+) (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    wire [31:0] core_result;
+    wire unused_invalid_operation;
+    reg         result_valid;
+    reg  [31:0] result_data;
+
+    assign in_ready  = !result_valid;
+    assign out_valid = result_valid;
+    assign out_data  = result_data;
+
+    la32_bit_permute u_selected_operation (
+        .operation         (OPERATION),
+        .operand_a         (in_data),
+        .operand_b         (OPERAND_B),
+        .shift_amount      (SHIFT_AMOUNT),
+        .result            (core_result),
+        .invalid_operation (unused_invalid_operation)
+    );
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            result_valid <= 1'b0;
+            result_data  <= 32'b0;
+        end
+        else begin
+            if (result_valid)
+                result_valid <= 1'b0;
+
+            if (in_valid && in_ready) begin
+                result_valid <= 1'b1;
+                result_data  <= core_result;
+            end
+        end
+    end
+
+endmodule
+`endif
+
 // LA32S 组合逻辑移位/重排核心。
 // 操作编码：0=ROTR.W，1=BITREV.W，2=BITREV.4B，3=REVB.2H，
 //           4=BYTEPICK.W。

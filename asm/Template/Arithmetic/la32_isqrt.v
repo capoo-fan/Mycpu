@@ -1,6 +1,41 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。直接提交本文件时，文件中已经同时包含固定接口和
+// 开平方核心；整套函数库一起编译时由 Makefile 定义 LA32_CORE_ONLY 隐去此同名壳。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    wire [15:0] root;
+    wire [31:0] remainder;
+
+    assign out_data = {16'b0, root};
+
+    la32_isqrt u_selected_operation (
+        .clk           (clk),
+        .resetn        (resetn),
+        .req_valid     (in_valid),
+        .req_ready     (in_ready),
+        .req_radicand  (in_data),
+        .rsp_valid     (out_valid),
+        .rsp_ready     (1'b1),
+        .rsp_root      (root),
+        .rsp_remainder (remainder)
+    );
+
+endmodule
+`endif
+
 // 无符号 32 位整数平方根。
 //
 // 结果：result = floor(sqrt(radicand))

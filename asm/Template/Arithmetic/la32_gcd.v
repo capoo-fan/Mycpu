@@ -1,6 +1,38 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。in_data 是第一个操作数，OPERAND_B 是综合期固定的
+// 第二个操作数。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic #(
+    parameter [31:0] OPERAND_B = 32'b0
+) (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    la32_gcd u_selected_operation (
+        .clk       (clk),
+        .resetn    (resetn),
+        .req_valid (in_valid),
+        .req_ready (in_ready),
+        .req_a     (in_data),
+        .req_b     (OPERAND_B),
+        .rsp_valid (out_valid),
+        .rsp_ready (1'b1),
+        .rsp_gcd   (out_data)
+    );
+
+endmodule
+`endif
+
 // GCD：将 req_a、req_b 视为无符号 32 位整数，使用二进制 GCD 算法求
 // 最大公约数；任一操作数为 0 时，结果为另一个操作数。
 module la32_gcd (

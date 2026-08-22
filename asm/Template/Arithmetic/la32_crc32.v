@@ -1,6 +1,45 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。CASTAGNOLI 选择 CRC-32C；WIDTH 的 0/1/2 分别表示
+// 处理 in_data 的低 8/16/32 位，SEED 是综合期固定的旧 CRC。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic #(
+    parameter        CASTAGNOLI = 1'b0,
+    parameter [1:0]  WIDTH      = 2'd2,
+    parameter [31:0] SEED       = 32'b0
+) (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    wire unused_invalid_width;
+
+    la32_crc32 u_selected_operation (
+        .clk               (clk),
+        .resetn            (resetn),
+        .req_valid         (in_valid),
+        .req_ready         (in_ready),
+        .req_castagnoli    (CASTAGNOLI),
+        .req_width         (WIDTH),
+        .req_message       (in_data),
+        .req_seed          (SEED),
+        .rsp_valid         (out_valid),
+        .rsp_ready         (1'b1),
+        .rsp_checksum      (out_data),
+        .rsp_invalid_width (unused_invalid_width)
+    );
+
+endmodule
+`endif
+
 // 符合 LoongArch CRC 语义、最低位优先的迭代式 CRC-32/CRC-32C 核心。
 // req_castagnoli=0 对应 CRC32.{B/H/W}，使用 IEEE 802.3 多项式；
 // req_castagnoli=1 对应 CRC32C.{B/H/W}，使用 Castagnoli 多项式。

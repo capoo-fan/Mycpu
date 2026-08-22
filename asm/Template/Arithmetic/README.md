@@ -1,45 +1,100 @@
 # LA32R/LA32S 决赛可复用函数工具库
 
 本目录提供一组可综合的 32 位 Verilog 函数模块，面向龙芯杯个人赛决赛的数组变换、
-归约、位处理、校验和算术题。模块分为三层：
+归约、位处理、校验和算术题。模块提供两种使用方式：
 
-- `accelerator_logic`：所有操作共用的 Map 固定接口和固定源码集合；
-- 独立核心：接口精简，适合直接接入 ALU、EX 阶段或自定义加速器；
+- 单文件 Map：每个 `la32_*.v` 的第一段都是固定接口 `accelerator_logic`，随后紧跟
+  对应核心，选择一个文件即可直接提交；
+- 独立核心：定义 `LA32_CORE_ONLY` 后可同时编译全部核心，适合直接接入 ALU、EX
+  阶段或自定义加速器；
 - `contest_function_unit`：操作码和全部操作数均可逐请求变化的完整接口。
 
 仓库当前 CPU 使用 LA32R 的 40 条精简子集；本工具库还准备了若干 LA32S 标准整数
 操作。加入这些源文件不会自动扩展 CPU 指令集，译码、暂停、冲刷和写回仍需按实际
 接入方式处理。
 
+## 整数操作列举
+
+### 除法/取模
+
+- 有符号除法/取模
+- 无符号除法/取模
+
+### bit_count 类
+
+- CLZ：统计 operand 从最高位开始连续为 0 的位数
+- CLO：统计 operand 从最高位开始连续为 1 的位数
+- CTZ：统计 operand 从最低位开始连续为 0 的位数
+- CTO：统计 operand 从最低位开始连续为 1 的位数
+- 统计 operand 的 32 个比特中值为 1 的比特总数
+
+### 移位类型
+
+- ROTR.W：将 operand_a 循环右移 shift_amount 位。result=`(a >> sa) | (a << (32-sa))`，其中 `sa=shift_amount[4:0]`
+- BITREV.W：将 operand_a 的 32 个比特反转。result=`{a[0], a[1], ..., a[31]}`
+- REVB.2H：将 operand_a 的两个半字节内的字节交换。result=`{a[15:8], a[7:0], a[31:24], a[23:16]}`
+- BYTEPICK.W：从 operand_a 与 operand_b 的拼接值中选取连续四字节
+
+
+### 位域类型
+
+- BSTRPICK.W：提取 operand_a 的 [msb:lsb] 位并零扩展到 32 位
+- BSTRINS.W：用 operand_b 的低位替换 operand_a 的 [msb:lsb] 位，其他位保持不变
+
+
+### 最大公约数
+
+- GCD：计算 operand_a 与 operand_b 的最大公约数,使用辗转相除法
+  
+### 无符号整数开方
+
+- Sqrt: 计算 operand_a 的无符号整数平方根，返回向下取整的结果，16 周期实现
+
+### 乘法
+
+- MULH.WU：无符号乘法，返回高 32 位
+- MULH.W ：有符号乘法，返回高 32 位
+- MULU.W ：无符号乘法，返回低 32 位
+- MULS.W ：有符号乘法，返回低 32 位
+
+### 多条指令的逻辑
+
+- ANDN: operand_a & ~operand_b
+- ORN: operand_a | ~operand_b
+- MASKEQZ: 如果 operand_b==0 返回 0，否则返回 operand_a
+- MASKNEZ: 如果 operand_b!=0 返回 0，否则返回 operand_a
+- ALSL: 将 operand_a 左移 (shift_amount[1:0]+1) 位后加上 operand_b，移位范围 1～4
+- EXT.W.B：符号扩展 operand_a 的低 8 位
+- EXT.W.H：符号扩展 operand_a 的低 16 位
+
+
+
 ## 文件和用途
 
-| 文件                        | 功能                           | 实现形式                 |
-| --------------------------- | ------------------------------ | ------------------------ |
-| `accelerator_logic.v`       | 全部操作的统一 Map 接入层      | 8 位编译期操作码         |
-| `la32_divmod.v`             | 有/无符号除法和取模            | 32 轮迭代                |
-| `la32_isqrt.v`              | 无符号整数开方和平方余数       | 16 轮迭代                |
-| `la32_gcd.v`                | 无符号最大公约数               | 二进制 GCD，数据相关     |
-| `la32_bit_count.v`          | CLZ/CLO/CTZ/CTO/Popcount       | 五级分组/加法树组合核心  |
-| `la32_bit_permute.v`        | ROTR/BITREV/REVB/BYTEPICK      | 组合核心                 |
-| `la32_bitfield.v`           | BSTRPICK/BSTRINS               | 组合核心                 |
-| `la32_simple_ops.v`         | ANDN/ORN/MASK/ALSL/EXT         | 组合核心                 |
-| `la32_mul_full.v`           | 有/无符号 32×32→64 位乘法      | 单拍寄存，推断乘法资源   |
-| `la32_crc32.v`              | CRC-32/CRC-32C，8/16/32 位消息 | 8/16/32 轮迭代           |
-| `contest_arithmetic_unit.v` | 原有算术模块统一入口           | 3 位兼容操作码           |
-| `contest_function_unit.v`   | 全部函数统一入口               | 8 位操作码               |
-| `arithmetic_map_adapter.v`  | 旧 3 位算术 Map 入口            | 兼容壳                   |
-| `function_map_adapter.v`    | 旧全函数 Map 入口               | 兼容壳                   |
-| `la32_arithmetic_ops.vh`    | 原算术操作码                   | 兼容保留                 |
-| `la32_function_ops.vh`      | 全函数操作码                   | 推荐新代码使用           |
+| 文件                        | 功能                           | 实现形式                |
+| --------------------------- | ------------------------------ | ----------------------- |
+| `la32_divmod.v`             | 有/无符号除法和取模            | 自包含 Map + 32 轮核心  |
+| `la32_isqrt.v`              | 无符号整数开方                 | 自包含 Map + 16 轮核心  |
+| `la32_gcd.v`                | 无符号最大公约数               | 自包含 Map + 二进制 GCD |
+| `la32_bit_count.v`          | CLZ/CLO/CTZ/CTO/Popcount       | 自包含 Map + 组合核心   |
+| `la32_bit_permute.v`        | ROTR/BITREV/REVB/BYTEPICK      | 自包含 Map + 组合核心   |
+| `la32_bitfield.v`           | BSTRPICK/BSTRINS               | 自包含 Map + 组合核心   |
+| `la32_simple_ops.v`         | ANDN/ORN/MASK/ALSL/EXT         | 自包含 Map + 组合核心   |
+| `la32_mul_full.v`           | 有/无符号 32×32→64 位乘法      | 自包含 Map + 单拍核心   |
+| `la32_crc32.v`              | CRC-32/CRC-32C，8/16/32 位消息 | 自包含 Map + 迭代核心   |
+| `contest_arithmetic_unit.v` | 原有算术模块统一入口           | 3 位兼容操作码          |
+| `contest_function_unit.v`   | 全部函数统一入口               | 8 位操作码              |
+| `arithmetic_map_adapter.v`  | 旧 3 位算术 Map 入口           | 兼容壳                  |
+| `function_map_adapter.v`    | 旧全函数 Map 入口              | 兼容壳                  |
+| `la32_arithmetic_ops.vh`    | 原算术操作码                   | 兼容保留                |
 
 `la32_bit_count`、`la32_bit_permute`、`la32_bitfield` 和 `la32_simple_ops` 没有时序
-状态，可单独放在已有流水级中；统一入口会在接受请求的时钟沿寄存这些组合结果。
+状态，可单独放在已有流水级中；它们各自的 Map 接入壳会在接受请求的时钟沿寄存组合
+结果。
 
 ## 运行时可变操作接口
 
 ```verilog
-`include "la32_function_ops.vh"
-
 contest_function_unit u_function_unit (
     .clk                   (clk),
     .resetn                (resetn),
@@ -66,7 +121,12 @@ contest_function_unit u_function_unit (
 请求只在 `req_valid && req_ready` 的上升沿被接受。响应产生后，所有 `rsp_*` 信号
 保持不变，直到 `rsp_valid && rsp_ready`。统一入口一次只执行一个请求。
 
-## 操作码
+## 运行时操作编码
+
+`contest_function_unit` 的 8 位编码直接定义在模块内部，不再依赖额外头文件。下表
+沿用模块内部的 `LA32_FUNC_OP_*` 局部参数名称说明语义；调用方按模块中列出的
+`8'h00`～`8'h36` 数值传入。单文件 Map 接入只使用各文件自己的短参数，不使用这套
+全局编码。
 
 ### 算术和计数
 
@@ -132,27 +192,17 @@ CRC 核采用 LoongArch 定义的 LSB-first 更新方式：IEEE 多项式为 `0x
 Castagnoli 多项式为 `0x82f63b78`。它执行的是一条 CRC 指令的累加语义，不会自动完成
 常见文件 CRC API 的初始/最终异或；软件可按协议自行处理。
 
-## 使用同一套文件和接口接到 Map 模板
+## 单文件接到 Map 模板
 
-所有操作都直接实例化 `accelerator_logic`，不再区分算术 adapter 和函数 adapter。
-编译时始终加入 Makefile 中 `MAP_RTL` 指定的同一套文件：
-
-- `accelerator_logic.v` 和 `la32_function_ops.vh`；
-- `la32_divmod.v`、`la32_isqrt.v`、`la32_gcd.v`；
-- `la32_bit_count.v`、`la32_bit_permute.v`、`la32_bitfield.v`；
-- `la32_simple_ops.v`、`la32_mul_full.v`、`la32_crc32.v`。
-
-只有参数值随题目变化，模块端口和源码清单都不变。例如逐元素位反转：
+从九个 `la32_*.v` 文件中只选择题目需要的一个。该文件开头已经定义固定端口的
+`accelerator_logic`，后半段包含所需核心，不需要再复制接入逻辑、加入操作码头文件
+或同时编译其他运算文件。例如逐元素位反转只使用 `la32_bit_permute.v`：
 
 ```verilog
-`include "la32_function_ops.vh"
-
 accelerator_logic #(
-    .OPERATION     (`LA32_FUNC_OP_BITREV_W),
-    .OPERAND_B     (32'b0),
-    .CONTROL_LSB   (5'b0),
-    .CONTROL_MSB   (5'b0),
-    .USE_AUXILIARY (1'b0)
+    .OPERATION    (3'd1),
+    .OPERAND_B    (32'b0),
+    .SHIFT_AMOUNT (5'b0)
 ) u_accelerator_logic (
     .clk       (clk),
     .resetn    (resetn),
@@ -164,15 +214,27 @@ accelerator_logic #(
 );
 ```
 
-`in_data` 固定对应 `operand_a`，其余输入来自参数常量。`USE_AUXILIARY=0` 输出表中的
-`result`；设为 1 时输出 `auxiliary`，可取得除法余数、开方余数或完整乘积高 32 位。
-每次 `in_valid && in_ready` 接受一个输入，之后恰好产生一次 `out_valid`。长延迟操作
-执行期间会拉低 `in_ready`。
+`in_data` 固定对应核心的第一个操作数，其余输入由文件顶部的参数固定。各文件参数
+如下：
 
-`OPERATION` 是综合展开期开关，`generate` 只例化所选类别的运算核心；未选除法、
-开方、GCD、乘法或 CRC 数据通路不会进入实现。修改参数后需要重新综合和
-implementation。`arithmetic_map_adapter` 与 `function_map_adapter` 仅用于兼容旧例化，
-内部也转接到同一个 `accelerator_logic`。
+| 文件                 | 接入壳参数                                     |
+| -------------------- | ---------------------------------------------- |
+| `la32_divmod.v`      | `OPERATION`、`DIVISOR`                         |
+| `la32_isqrt.v`       | 无；固定返回向下取整的平方根                   |
+| `la32_gcd.v`         | `OPERAND_B`                                    |
+| `la32_bit_count.v`   | `OPERATION`                                    |
+| `la32_bit_permute.v` | `OPERATION`、`OPERAND_B`、`SHIFT_AMOUNT`       |
+| `la32_bitfield.v`    | `OPERATION`、`OPERAND_B`、`MSB`、`LSB`         |
+| `la32_simple_ops.v`  | `OPERATION`、`OPERAND_B`、`SHIFT_AMOUNT`       |
+| `la32_mul_full.v`    | `SIGNED_OPERATION`、`OPERAND_B`、`RETURN_HIGH` |
+| `la32_crc32.v`       | `CASTAGNOLI`、`WIDTH`、`SEED`                  |
+
+每次 `in_valid && in_ready` 接受一个输入，之后恰好产生一次 `out_valid`。长延迟操作
+执行期间会拉低 `in_ready`。参数改变后需要重新综合和 implementation。
+
+若要在同一工程中同时使用多个核心，定义 `LA32_CORE_ONLY` 隐去各文件同名的
+`accelerator_logic`，再直接实例化 `la32_*` 核心或使用 `contest_function_unit`。
+`arithmetic_map_adapter` 与 `function_map_adapter` 仅用于兼容旧例化。
 
 若 `operand_b` 或位域控制需要随每个请求变化，则使用前述 `contest_function_unit`；
 它和 Map 固定参数场景是两种不同用途，不需要为不同操作更换接口。
@@ -203,7 +265,7 @@ make test
 
 - 原算术单元 1246 个边界/随机/反压事务；
 - 全函数单元 1851 个边界/随机/反压事务；
-- 统一 Map 接口覆盖 33 个有效操作、辅助结果选择和无效操作；
+- 九个自包含文件分别以 `accelerator_logic` 为顶层通过 Verilator/Icarus 语法检查；
 - 除零、符号溢出、完整位域、全部 BYTEPICK 窗口；
 - 有/无符号完整乘积；
 - CRC-32 与 CRC-32C 的 `123456789` 标准检查值。

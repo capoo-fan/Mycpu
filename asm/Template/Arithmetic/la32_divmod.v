@@ -1,6 +1,50 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。
+// OPERATION：0=无符号除法，1=有符号除法，2=无符号取余，3=有符号取余。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic #(
+    parameter [1:0]  OPERATION = 2'd0,
+    parameter [31:0] DIVISOR   = 32'd1
+) (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    wire [31:0] quotient;
+    wire [31:0] remainder;
+    wire unused_divide_by_zero;
+    wire unused_overflow;
+
+    assign out_data = OPERATION[1] ? remainder : quotient;
+
+    la32_divmod u_selected_operation (
+        .clk                (clk),
+        .resetn             (resetn),
+        .req_valid          (in_valid),
+        .req_ready          (in_ready),
+        .req_signed         (OPERATION[0]),
+        .req_dividend       (in_data),
+        .req_divisor        (DIVISOR),
+        .rsp_valid          (out_valid),
+        .rsp_ready          (1'b1),
+        .rsp_quotient       (quotient),
+        .rsp_remainder      (remainder),
+        .rsp_divide_by_zero (unused_divide_by_zero),
+        .rsp_overflow       (unused_overflow)
+    );
+
+endmodule
+`endif
+
 // 用于 LA32 风格整数操作数的 32 位迭代除法器。
 //
 // 一个请求同时产生商和余数，因此 DIV 与 MOD 可以复用同一套硬件。数据通路采用

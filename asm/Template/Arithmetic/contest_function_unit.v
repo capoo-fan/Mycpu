@@ -1,6 +1,5 @@
 `timescale 1ns / 1ps
 `default_nettype none
-`include "la32_function_ops.vh"
 
 // 面向竞赛加速器的统一可复用功能单元。
 //
@@ -30,6 +29,43 @@ module contest_function_unit (
     output reg         rsp_invalid_control
 );
 
+    // 运行时功能单元的内部操作码。Map 单文件接入不再依赖这些编码，也不再需要
+    // 额外的操作码头文件。
+    localparam [7:0]
+        LA32_FUNC_OP_UDIV       = 8'h00,
+        LA32_FUNC_OP_SDIV       = 8'h01,
+        LA32_FUNC_OP_UMOD       = 8'h02,
+        LA32_FUNC_OP_SMOD       = 8'h03,
+        LA32_FUNC_OP_ISQRT      = 8'h04,
+        LA32_FUNC_OP_GCD        = 8'h05,
+        LA32_FUNC_OP_CLZ        = 8'h08,
+        LA32_FUNC_OP_CLO        = 8'h09,
+        LA32_FUNC_OP_CTZ        = 8'h0a,
+        LA32_FUNC_OP_CTO        = 8'h0b,
+        LA32_FUNC_OP_POPCOUNT   = 8'h0c,
+        LA32_FUNC_OP_ROTR       = 8'h10,
+        LA32_FUNC_OP_BITREV_W   = 8'h11,
+        LA32_FUNC_OP_BITREV_4B  = 8'h12,
+        LA32_FUNC_OP_REVB_2H    = 8'h13,
+        LA32_FUNC_OP_BYTEPICK_W = 8'h14,
+        LA32_FUNC_OP_BSTRPICK_W = 8'h18,
+        LA32_FUNC_OP_BSTRINS_W  = 8'h19,
+        LA32_FUNC_OP_MULU_FULL  = 8'h20,
+        LA32_FUNC_OP_MULS_FULL  = 8'h21,
+        LA32_FUNC_OP_CRC32_B    = 8'h28,
+        LA32_FUNC_OP_CRC32_H    = 8'h29,
+        LA32_FUNC_OP_CRC32_W    = 8'h2a,
+        LA32_FUNC_OP_CRC32C_B   = 8'h2c,
+        LA32_FUNC_OP_CRC32C_H   = 8'h2d,
+        LA32_FUNC_OP_CRC32C_W   = 8'h2e,
+        LA32_FUNC_OP_ANDN       = 8'h30,
+        LA32_FUNC_OP_ORN        = 8'h31,
+        LA32_FUNC_OP_MASKEQZ    = 8'h32,
+        LA32_FUNC_OP_MASKNEZ    = 8'h33,
+        LA32_FUNC_OP_ALSL       = 8'h34,
+        LA32_FUNC_OP_EXT_W_B    = 8'h35,
+        LA32_FUNC_OP_EXT_W_H    = 8'h36;
+
     localparam [1:0]
         STATE_IDLE  = 2'd0,
         STATE_ARITH = 2'd1,
@@ -39,27 +75,27 @@ module contest_function_unit (
     reg [1:0] state;
 
     wire operation_is_arithmetic =
-        req_operation <= `LA32_FUNC_OP_GCD;
+        req_operation <= LA32_FUNC_OP_GCD;
     wire operation_is_count =
-        (req_operation >= `LA32_FUNC_OP_CLZ) &&
-        (req_operation <= `LA32_FUNC_OP_POPCOUNT);
+        (req_operation >= LA32_FUNC_OP_CLZ) &&
+        (req_operation <= LA32_FUNC_OP_POPCOUNT);
     wire operation_is_permute =
-        (req_operation >= `LA32_FUNC_OP_ROTR) &&
-        (req_operation <= `LA32_FUNC_OP_BYTEPICK_W);
+        (req_operation >= LA32_FUNC_OP_ROTR) &&
+        (req_operation <= LA32_FUNC_OP_BYTEPICK_W);
     wire operation_is_bitfield =
-        (req_operation >= `LA32_FUNC_OP_BSTRPICK_W) &&
-        (req_operation <= `LA32_FUNC_OP_BSTRINS_W);
+        (req_operation >= LA32_FUNC_OP_BSTRPICK_W) &&
+        (req_operation <= LA32_FUNC_OP_BSTRINS_W);
     wire operation_is_multiply =
-        (req_operation >= `LA32_FUNC_OP_MULU_FULL) &&
-        (req_operation <= `LA32_FUNC_OP_MULS_FULL);
+        (req_operation >= LA32_FUNC_OP_MULU_FULL) &&
+        (req_operation <= LA32_FUNC_OP_MULS_FULL);
     wire operation_is_crc =
-        ((req_operation >= `LA32_FUNC_OP_CRC32_B) &&
-         (req_operation <= `LA32_FUNC_OP_CRC32_W)) ||
-        ((req_operation >= `LA32_FUNC_OP_CRC32C_B) &&
-         (req_operation <= `LA32_FUNC_OP_CRC32C_W));
+        ((req_operation >= LA32_FUNC_OP_CRC32_B) &&
+         (req_operation <= LA32_FUNC_OP_CRC32_W)) ||
+        ((req_operation >= LA32_FUNC_OP_CRC32C_B) &&
+         (req_operation <= LA32_FUNC_OP_CRC32C_W));
     wire operation_is_simple =
-        (req_operation >= `LA32_FUNC_OP_ANDN) &&
-        (req_operation <= `LA32_FUNC_OP_EXT_W_H);
+        (req_operation >= LA32_FUNC_OP_ANDN) &&
+        (req_operation <= LA32_FUNC_OP_EXT_W_H);
     wire operation_is_fast = operation_is_count || operation_is_permute ||
                              operation_is_bitfield || operation_is_simple;
     wire operation_is_valid = operation_is_arithmetic || operation_is_fast ||
@@ -128,7 +164,7 @@ module contest_function_unit (
     wire bitfield_invalid_control;
 
     la32_bitfield u_bitfield (
-        .operation       (req_operation == `LA32_FUNC_OP_BSTRINS_W),
+        .operation       (req_operation == LA32_FUNC_OP_BSTRINS_W),
         .operand_a       (req_operand_a),
         .operand_b       (req_operand_b),
         .msb             (req_msb),
@@ -164,7 +200,7 @@ module contest_function_unit (
         .resetn        (resetn),
         .req_valid     (multiply_req_valid),
         .req_ready     (multiply_req_ready),
-        .req_signed    (req_operation == `LA32_FUNC_OP_MULS_FULL),
+        .req_signed    (req_operation == LA32_FUNC_OP_MULS_FULL),
         .req_operand_a (req_operand_a),
         .req_operand_b (req_operand_b),
         .rsp_valid     (multiply_rsp_valid),
@@ -184,15 +220,15 @@ module contest_function_unit (
     wire crc_req_valid = request_fire && operation_is_crc;
     wire crc_rsp_ready = (state == STATE_CRC) && !rsp_valid;
     wire crc_is_castagnoli =
-        (req_operation >= `LA32_FUNC_OP_CRC32C_B) &&
-        (req_operation <= `LA32_FUNC_OP_CRC32C_W);
+        (req_operation >= LA32_FUNC_OP_CRC32C_B) &&
+        (req_operation <= LA32_FUNC_OP_CRC32C_W);
 
     always @(*) begin
-        if ((req_operation == `LA32_FUNC_OP_CRC32_B) ||
-            (req_operation == `LA32_FUNC_OP_CRC32C_B))
+        if ((req_operation == LA32_FUNC_OP_CRC32_B) ||
+            (req_operation == LA32_FUNC_OP_CRC32C_B))
             crc_request_width = 2'd0;
-        else if ((req_operation == `LA32_FUNC_OP_CRC32_H) ||
-                 (req_operation == `LA32_FUNC_OP_CRC32C_H))
+        else if ((req_operation == LA32_FUNC_OP_CRC32_H) ||
+                 (req_operation == LA32_FUNC_OP_CRC32C_H))
             crc_request_width = 2'd1;
         else
             crc_request_width = 2'd2;

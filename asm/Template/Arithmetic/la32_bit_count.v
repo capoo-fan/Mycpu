@@ -1,6 +1,58 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// Map 模板的单文件接入层。
+// OPERATION：0=CLZ，1=CLO，2=CTZ，3=CTO，4=POPCOUNT。
+`ifndef LA32_CORE_ONLY
+module accelerator_logic #(
+    parameter [2:0] OPERATION = 3'd0
+) (
+    input  wire        clk,
+    input  wire        resetn,
+
+    input  wire        in_valid,
+    output wire        in_ready,
+    input  wire [31:0] in_data,
+
+    output wire        out_valid,
+    output wire [31:0] out_data
+);
+
+    wire [31:0] core_result;
+    wire unused_invalid_operation;
+    reg         result_valid;
+    reg  [31:0] result_data;
+
+    assign in_ready  = !result_valid;
+    assign out_valid = result_valid;
+    assign out_data  = result_data;
+
+    la32_bit_count u_selected_operation (
+        .operation         (OPERATION),
+        .operand           (in_data),
+        .result            (core_result),
+        .invalid_operation (unused_invalid_operation)
+    );
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            result_valid <= 1'b0;
+            result_data  <= 32'b0;
+        end
+        else begin
+            if (result_valid)
+                result_valid <= 1'b0;
+
+            if (in_valid && in_ready) begin
+                result_valid <= 1'b1;
+                result_data  <= core_result;
+            end
+        end
+    end
+
+endmodule
+`endif
+
 // 组合逻辑位计数核心。
 // 操作编码：0=CLZ，1=CLO，2=CTZ，3=CTO，4=POPCOUNT。
 // 对零执行 CLZ/CTZ、对全一执行 CLO/CTO 时返回 32。
