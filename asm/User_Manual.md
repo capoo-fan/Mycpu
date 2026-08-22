@@ -192,3 +192,123 @@ elapsed time: ...s
   `$r1`、末尾是否执行 `jr $r1`。这段手写程序的正常运行时间不应达到秒级。
 - 如果上述条件均正确，则按 IF、ISSUE、EX/MEM、WB 顺序检查 `0x80400000` 到
   `0x80700000` 扫描过程中的 PC、valid/stall/flush、load 请求与返回、`bne` 跳转和最后的写回。
+
+## 硬件加速器连续读取数据
+
+如果要一次性操作多个数据，需在 accelerator_logic.v 中增加一个寄存器缓存第一个元素，以此类推。
+
+以四个元素为例，用四个寄存器，进行流动寄存，。
+
+
+```verilog
+reg [1:0]  group_count;
+reg [31:0] item0;
+reg [31:0] item1;
+reg [31:0] item2;
+reg [31:0] result_reg;
+
+wire input_valid = first_valid || data_valid;
+
+always @(posedge clk) begin
+    if (!resetn || run_start) begin
+        group_count <= 2'd0;
+        result_reg  <= 32'b0;
+    end
+    else if (input_valid) begin
+        case (group_count)
+            2'd0: begin
+                item0       <= data;
+                group_count <= 2'd1;
+            end
+            2'd1: begin
+                item1       <= data;
+                group_count <= 2'd2;
+            end
+            2'd2: begin
+                item2       <= data;
+                group_count <= 2'd3;
+            end
+            2'd3: begin
+                // data 是第 4 个数
+                result_reg <= result_reg +
+                              function4(item0, item1, item2, data);
+                group_count <= 2'd0;
+            end
+        endcase
+    end
+end
+```
+
+或者 function 需要同时处理多个数的时候
+
+```verilog
+reg [1:0]  group_count;
+reg [31:0] item0;
+reg [31:0] item1;
+reg [31:0] item2;
+reg [31:0] result_reg;
+
+wire input_valid = first_valid || data_valid;
+wire [127:0] group_data = {item0, item1, item2, data};
+
+function [31:0] function4;
+    input [127:0] packed_data;
+
+    reg [31:0] a;
+    reg [31:0] b;
+    reg [31:0] c;
+    reg [31:0] d;
+    begin
+        a = packed_data[127:96];
+        b = packed_data[95:64];
+        c = packed_data[63:32];
+        d = packed_data[31:0];
+
+        // 按题目修改
+        function4 = a + b + c + d;
+    end
+endfunction
+
+always @(posedge clk) begin
+    if (!resetn) begin
+        group_count <= 2'd0;
+        item0       <= 32'b0;
+        item1       <= 32'b0;
+        item2       <= 32'b0;
+        result_reg  <= 32'b0;
+    end
+    else if (run_start) begin
+        group_count <= 2'd0;
+        result_reg  <= 32'b0;
+    end
+    else if (input_valid) begin
+        case (group_count)
+            2'd0: begin
+                item0       <= data;
+                group_count <= 2'd1;
+            end
+
+            2'd1: begin
+                item1       <= data;
+                group_count <= 2'd2;
+            end
+
+            2'd2: begin
+                item2       <= data;
+                group_count <= 2'd3;
+            end
+
+            2'd3: begin
+                // 此时：
+                // item0=A[4k], item1=A[4k+1],
+                // item2=A[4k+2], data=A[4k+3]
+                result_reg  <= result_reg + function4(group_data);
+                group_count <= 2'd0;
+            end
+        endcase
+    end
+end
+
+assign result = result_reg;
+
+```
